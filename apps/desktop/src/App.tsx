@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import "./App.css";
 
 type Phase = "idle" | "listening" | "thinking" | "done" | "failed" | "cancelled";
@@ -55,23 +54,24 @@ function App() {
   }
 
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    invoke<PipelineStatus>("get_pipeline_state")
-      .then(setStatus)
-      .catch((e) => setError(String(e)));
+    let stop = false;
+    async function poll() {
+      try {
+        setStatus(await invoke<PipelineStatus>("get_pipeline_state"));
+        await refreshStt();
+      } catch (e) {
+        if (!stop) setError(String(e));
+      }
+    }
     invoke<string>("get_hotkey_label")
       .then(setHotkey)
       .catch((e) => setError(String(e)));
-    refreshStt().catch((e) => setError(String(e)));
-    listen<PipelineStatus>("pipeline-state", (event) => {
-      setStatus(event.payload);
-      refreshStt().catch((e) => setError(String(e)));
-    })
-      .then((fn) => {
-        unlisten = fn;
-      })
-      .catch((e) => setError(String(e)));
-    return () => unlisten?.();
+    poll();
+    const timer = setInterval(poll, 1000);
+    return () => {
+      stop = true;
+      clearInterval(timer);
+    };
   }, []);
 
   return (

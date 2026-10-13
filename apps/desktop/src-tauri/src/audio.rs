@@ -96,8 +96,9 @@ struct ActiveTake {
     stream_failed: Arc<AtomicBool>,
 }
 
-// cpal::Stream is !Send, so the live stream lives and dies on the hotkey
-// listener thread, which is the only caller of begin_take/end_take.
+// cpal::Stream is !Send, so the live stream lives and dies on the audio
+// worker thread (spawned by run_listener), which is the only caller of
+// begin_take/end_take. The hook thread only queues edges.
 thread_local! {
     static ACTIVE_TAKE: RefCell<Option<ActiveTake>> = const { RefCell::new(None) };
 }
@@ -231,9 +232,13 @@ pub fn begin_take(app: &AppHandle) {
     match take {
         Ok(active) => {
             ACTIVE_TAKE.with(|slot| *slot.borrow_mut() = Some(active));
+            crate::hotkey::debug_log("begin_take: stream live\n".to_string());
             set_phase(app, Phase::Listening, None);
         }
-        Err(detail) => set_phase(app, Phase::Failed, Some(detail)),
+        Err(detail) => {
+            crate::hotkey::debug_log(format!("begin_take failed: {detail}\n"));
+            set_phase(app, Phase::Failed, Some(detail));
+        }
     }
 }
 
@@ -244,11 +249,14 @@ pub fn end_take(app: &AppHandle) {
         Some(p) => p,
         None => return,
     };
+    crate::hotkey::debug_log(format!("end_take entry phase={phase:?}\n"));
     if resolve_edge(ChordEdge::Released, phase) != Some(Phase::Thinking) {
+        crate::hotkey::debug_log("end_take: ignored, not a live take\n".to_string());
         return;
     }
     let active = ACTIVE_TAKE.with(|slot| slot.borrow_mut().take());
     let Some(active) = active else {
+        crate::hotkey::debug_log("end_take: no active stream\n".to_string());
         set_phase(app, Phase::Failed, Some("capture never started".to_string()));
         return;
     };

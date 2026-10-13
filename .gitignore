@@ -49,3 +49,6 @@ desktop.ini
 .idea/
 *.swp
 *~
+
+# Local scratch space (external inputs, experiments, never committed)
+.chore/

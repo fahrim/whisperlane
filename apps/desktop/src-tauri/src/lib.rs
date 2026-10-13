@@ -18,7 +18,7 @@ pub mod stt_shared;
 use audio::{cancel_live_take, list_input_devices, needs_microphone_choice, reset_pipeline};
 use deliver::copy_last_text;
 use hotkey::{get_hotkey_label, get_key_diag, list_hotkeys, DiagState};
-use models::{download_model, get_download, list_models, ModelState};
+use models::{download_model, ensure_model_ready, get_download, list_models, ModelState};
 use pipeline::{get_pipeline_state, PipelineState, PipelineStatus};
 use settings::{
     get_settings, list_languages, load, set_hotkey, set_language, set_microphone, set_model,
@@ -100,7 +100,8 @@ pub fn run() {
             list_models,
             get_download,
             download_model,
-            set_model
+            set_model,
+            ensure_model_ready
         ])
         .setup(|app| {
             // Settings need the resolved data dir, so they load here

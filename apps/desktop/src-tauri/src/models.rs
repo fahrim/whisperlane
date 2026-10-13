@@ -309,6 +309,29 @@ fn fetch(url: &str, target: &Path, app: &AppHandle) -> Result<u64, String> {
     Ok(declared.unwrap_or(received))
 }
 
+/// Whether the first run should start fetching the chosen model.
+///
+/// Only the honest answer: a model already on disk, or a download already
+/// running, means there is nothing to start. Dictation is never blocked by
+/// this — a take without a model fails plainly in the transcription step.
+pub fn should_start_first_run_download(present: bool, running: bool) -> bool {
+    !present && !running
+}
+
+/// Starts the chosen model's download when the first run still needs it.
+///
+/// First run is one screen with honest progress behind it, so the fetch
+/// begins on its own rather than waiting to be asked for. Anything already
+/// present or in flight is left alone, so calling it again is harmless.
+#[tauri::command]
+pub fn ensure_model_ready(app: AppHandle) -> Download {
+    let chosen = crate::settings::model_of(&app);
+    if should_start_first_run_download(is_present(&app, chosen), get_download(app.clone()).running) {
+        return download_model(app, chosen.id.to_string());
+    }
+    get_download(app)
+}
+
 /// Refuses a file whose length does not match what the source said.
 ///
 /// This is the check that catches a truncated transfer. The engine would
@@ -426,6 +449,16 @@ mod tests {
         std::fs::write(&path, b"abc").unwrap();
         verify_size(&path, 3).unwrap();
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn first_run_starts_a_download_only_when_one_is_missing() {
+        // Nothing on disk and nothing in flight: fetch it.
+        assert!(should_start_first_run_download(false, false));
+        // Already there, or already coming: never start a second.
+        assert!(!should_start_first_run_download(true, false));
+        assert!(!should_start_first_run_download(false, true));
+        assert!(!should_start_first_run_download(true, true));
     }
 
     #[test]

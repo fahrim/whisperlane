@@ -95,6 +95,66 @@ button {
   margin-right: 5px;
 }
 
+/* First run is one screen: one instruction, its chord, and honest model
+   progress behind it. Everything else waits for the take. */
+.first-run {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+
+.first-run h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.first-run-instruction {
+  margin: 0;
+  font-size: 20px;
+  line-height: 32px;
+}
+
+.first-run-instruction kbd {
+  font: inherit;
+  font-weight: 600;
+  padding: 2px 8px;
+  border: 1px solid rgba(127, 127, 127, 0.4);
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.first-run-hint,
+.first-run-footnote {
+  margin: 0;
+  font-size: 14px;
+  opacity: 0.7;
+}
+
+.first-run-model,
+.first-run-state {
+  margin: 0;
+  font-size: 15px;
+}
+
+.first-run-transcript {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: rgba(127, 127, 127, 0.12);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.first-run-done {
+  margin-top: 8px;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     color: #f6f6f6;

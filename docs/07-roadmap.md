@@ -65,6 +65,22 @@ Acceptance criteria:
 - Nothing in the shipped product closes the phase-two agent door: the
   target abstraction is in place even though only one destination exists.
 
+## M2 — slice order
+
+The milestone's scope resolves into slices that are each usable on their
+own. The premium pass and the packaging slice carry open questions they
+depend on, recorded in the decisions document as items eight and six, so
+the work stops at them rather than guessing.
+
+| Slice | Scope | Criterion it carries |
+| --- | --- | --- |
+| 1 | First run is a single screen | One |
+| 2 | The pill carries every state | Two |
+| 3 | Advanced concerns folded away | Two |
+| 4 | Premium pass: tokens, motion, spacing, wording | Two |
+| 5 | Windows packaging: install, offline, clean uninstall | Three |
+| 6 | Delivery routed through the target abstraction | Four |
+
 ## M1 — slice order
 
 The milestone's scope resolves into slices that are each usable on their
@@ -108,8 +124,6 @@ Goal: make dictation into the AI agent a first-class path, starting with
 OpenCode, verified terminal-first as specified in the agent integration
 document. Other agents follow through the same abstraction. Scoped and
 scheduled only after the MVP ships.
-
-## M3 — Wider (post-MVP)
 
 ## M3 — Wider (post-MVP)
 

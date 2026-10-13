@@ -62,6 +62,20 @@ impl Phase {
             .filter(|next| self.can_transition_to(*next))
             .collect()
     }
+
+    /// Plain-language name for a state, as the first-run screen shows
+    /// it. The wording lives in the core so every surface says the same
+    /// thing about the same phase.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Phase::Idle => "Ready when you are",
+            Phase::Listening => "Listening",
+            Phase::Thinking => "Writing that down",
+            Phase::Done => "Done",
+            Phase::Failed => "That did not work",
+            Phase::Cancelled => "Discarded",
+        }
+    }
 }
 
 /// How the last finished take reached the user (ADR-005). The interface
@@ -83,11 +97,28 @@ pub enum DeliveryKind {
 #[derive(Debug, Clone, Serialize)]
 pub struct PipelineStatus {
     pub phase: Phase,
+    /// Plain-language name for the phase. Carried rather than derived
+    /// by the interface, so every surface says the same thing about the
+    /// same state.
+    pub label: &'static str,
     pub target: InsertionTarget,
     pub detail: Option<String>,
     pub valid_next: Vec<Phase>,
     pub last_text: Option<String>,
     pub delivery: DeliveryKind,
+}
+
+impl PipelineStatus {
+    /// The shape the interface receives: the phase's plain name and the
+    /// states it may move to are derived here, so no writer can forget
+    /// either of them.
+    fn reported(&self) -> PipelineStatus {
+        PipelineStatus {
+            label: self.phase.label(),
+            valid_next: self.phase.valid_next(),
+            ..self.clone()
+        }
+    }
 }
 
 pub struct PipelineState(pub Mutex<PipelineStatus>);
@@ -97,6 +128,7 @@ impl Default for PipelineStatus {
         let phase = Phase::Idle;
         Self {
             phase,
+            label: phase.label(),
             target: InsertionTarget::FocusedApp,
             detail: None,
             valid_next: phase.valid_next(),
@@ -111,10 +143,7 @@ impl Default for PipelineStatus {
 #[tauri::command]
 pub fn get_pipeline_state(state: State<PipelineState>) -> PipelineStatus {
     let status = state.0.lock().expect("pipeline state poisoned").clone();
-    PipelineStatus {
-        valid_next: status.phase.valid_next(),
-        ..status
-    }
+    status.reported()
 }
 
 /// Reads the current phase without cloning the whole status.
@@ -128,10 +157,7 @@ pub fn get_pipeline_state_inner(app: &AppHandle) -> PipelineStatus {
         .try_state::<PipelineState>()
         .map(|state| state.0.lock().expect("pipeline state poisoned").clone())
         .unwrap_or_default();
-    PipelineStatus {
-        valid_next: status.phase.valid_next(),
-        ..status
-    }
+    status.reported()
 }
 
 /// Clears the transcript of the take that just finished, so a new take
@@ -141,10 +167,7 @@ pub fn clear_last_text(app: &AppHandle) {
         let snapshot = {
             let mut status = state.0.lock().expect("pipeline state poisoned");
             status.last_text = None;
-            PipelineStatus {
-                valid_next: status.phase.valid_next(),
-                ..status.clone()
-            }
+            status.reported()
         };
         app.emit("pipeline-state", snapshot)
             .expect("failed to emit pipeline-state");
@@ -158,10 +181,7 @@ pub fn set_last_text(app: &AppHandle, text: String) {
         let snapshot = {
             let mut status = state.0.lock().expect("pipeline state poisoned");
             status.last_text = Some(text);
-            PipelineStatus {
-                valid_next: status.phase.valid_next(),
-                ..status.clone()
-            }
+            status.reported()
         };
         app.emit("pipeline-state", snapshot)
             .expect("failed to emit pipeline-state");
@@ -176,10 +196,7 @@ pub fn set_delivery(app: &AppHandle, delivery: DeliveryKind, detail: Option<Stri
             let mut status = state.0.lock().expect("pipeline state poisoned");
             status.delivery = delivery;
             status.detail = detail;
-            PipelineStatus {
-                valid_next: status.phase.valid_next(),
-                ..status.clone()
-            }
+            status.reported()
         };
         app.emit("pipeline-state", snapshot)
             .expect("failed to emit pipeline-state");
@@ -206,10 +223,7 @@ pub fn set_phase(app: &AppHandle, phase: Phase, detail: Option<String>) {
             ));
             status.phase = Phase::Failed;
         }
-        PipelineStatus {
-            valid_next: status.phase.valid_next(),
-            ..status.clone()
-        }
+        status.reported()
     };
     app.emit("pipeline-state", snapshot)
         .expect("failed to emit pipeline-state");
@@ -260,5 +274,46 @@ mod tests {
         assert_eq!(status.phase, Phase::Idle);
         assert_eq!(status.target, InsertionTarget::FocusedApp);
         assert_eq!(status.valid_next, vec![Phase::Listening, Phase::Failed]);
+    }
+
+    #[test]
+    fn the_reported_name_always_matches_the_reported_phase() {
+        // The interface reads the name instead of restating it, so a
+        // moved phase and a stale name would show one state as another.
+        for phase in [
+            Phase::Idle,
+            Phase::Listening,
+            Phase::Thinking,
+            Phase::Done,
+            Phase::Failed,
+            Phase::Cancelled,
+        ] {
+            let moved = PipelineStatus {
+                phase,
+                ..PipelineStatus::default()
+            };
+            let reported = moved.reported();
+            assert_eq!(reported.label, phase.label());
+            assert_eq!(reported.valid_next, phase.valid_next());
+        }
+    }
+
+    #[test]
+    fn every_phase_has_its_own_plain_name() {
+        let labels = [
+            Phase::Idle.label(),
+            Phase::Listening.label(),
+            Phase::Thinking.label(),
+            Phase::Done.label(),
+            Phase::Failed.label(),
+            Phase::Cancelled.label(),
+        ];
+        for label in labels {
+            assert!(!label.is_empty(), "a phase with no name cannot be shown");
+        }
+        let mut unique = labels.to_vec();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), labels.len(), "two phases share a name");
     }
 }

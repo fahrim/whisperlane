@@ -1,19 +1,17 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { FirstRun } from "./FirstRun";
+import type {
+  Download,
+  HotkeyChoice,
+  InputDevice,
+  LanguageChoice,
+  Microphone,
+  ModelOption,
+  PipelineStatus,
+  Settings,
+} from "./types";
 import "./App.css";
-
-type Phase = "idle" | "listening" | "thinking" | "done" | "failed" | "cancelled";
-
-type DeliveryKind = "none" | "typed" | "partial" | "clipboard";
-
-interface PipelineStatus {
-  phase: Phase;
-  target: string | { agent: string };
-  detail: string | null;
-  valid_next: Phase[];
-  last_text: string | null;
-  delivery: DeliveryKind;
-}
 
 interface KeyDiag {
   last_event: string;
@@ -34,50 +32,6 @@ interface SttStatus {
   detail: string | null;
 }
 
-interface Settings {
-  language: string;
-  hotkey: string;
-  microphone: Microphone;
-  model: string;
-}
-
-interface ModelOption {
-  id: string;
-  label: string;
-  size_mb: number;
-  present: boolean;
-  is_default: boolean;
-}
-
-interface Download {
-  running: boolean;
-  model: string | null;
-  received_mb: number;
-  total_mb: number;
-  percent: number | null;
-  error: string | null;
-}
-
-interface Microphone {
-  kind: "system_default" | "device";
-  id?: string;
-}
-
-interface InputDevice {
-  id: string;
-  label: string;
-}
-
-interface LanguageChoice {
-  code: string;
-  label: string;
-}
-
-interface HotkeyChoice {
-  code: string;
-  label: string;
-}
-
 function targetLabel(target: PipelineStatus["target"]): string {
   if (typeof target === "string") return target;
   return `agent:${target.agent}`;
@@ -96,6 +50,7 @@ function App() {
   const [askMic, setAskMic] = useState(false);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [download, setDownload] = useState<Download | null>(null);
+  const [firstRun, setFirstRun] = useState(true);
 
   async function refreshModels() {
     try {
@@ -183,6 +138,14 @@ function App() {
     }
   }
 
+  // The chosen model's own entry, for the first-run line that says
+  // whether it is ready. Found by id, so a settings file naming a model
+  // the catalog dropped falls back to the default rather than vanishing.
+  const chosenModel =
+    modelOptions.find((option) => option.id === settings?.model) ??
+    modelOptions.find((option) => option.is_default) ??
+    null;
+
   useEffect(() => {
     let stop = false;
     async function poll() {
@@ -220,6 +183,12 @@ function App() {
       .catch((e) => setError(String(e)));
     refreshModels();
     poll();
+    // First run brings the model down on its own, quietly, while the
+    // user reads the one instruction. Later runs never fetch anything
+    // the user did not ask for.
+    invoke<Download>("ensure_model_ready")
+      .then(setDownload)
+      .catch((e) => setError(String(e)));
     const timer = setInterval(poll, 1000);
     return () => {
       stop = true;
@@ -229,7 +198,22 @@ function App() {
 
   return (
     <main className="container">
-      <h1>whisperlane (M1)</h1>
+      {firstRun && (
+        <FirstRun
+          hotkey={hotkey}
+          settings={settings ?? { language: "…", hotkey, microphone: { kind: "system_default" }, model: "" }}
+          status={status}
+          download={download}
+          model={chosenModel}
+          onDownload={() =>
+            chosenModel && downloadModel(chosenModel.id)
+          }
+          onDone={() => setFirstRun(false)}
+        />
+      )}
+      {!firstRun && (
+      <>
+      <h1>whisperlane</h1>
       <p>
         hold <strong>{hotkey}</strong> to talk, or tap it to toggle — the
         chord starts a new take straight away after one finishes
@@ -238,7 +222,7 @@ function App() {
       {status ? (
         <section aria-label="pipeline status">
           <p>
-            phase: <strong>{status.phase}</strong>
+            phase: <strong>{status.label}</strong>
           </p>
           <p>target: {targetLabel(status.target)}</p>
           <p>valid next: {status.valid_next.join(", ") || "—"}</p>
@@ -260,7 +244,6 @@ function App() {
       ) : (
         !error && <p>loading pipeline state…</p>
       )}
-      <p>Hotkey, capture, and transcription land in the next slices.</p>
       <section aria-label="hotkey diagnostics">
         <h2>hotkey diagnostics</h2>
         {diag ? (
@@ -410,6 +393,8 @@ function App() {
           </>
         )}
       </section>
+      </>
+      )}
     </main>
   );
 }

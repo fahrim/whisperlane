@@ -7,8 +7,9 @@ scope or decision change. Read this first when resuming work.
 
 M0 and M1 are complete. The application takes a real take on Windows and
 inserts the transcript into the focused application: press the chord,
-speak, release, and the words appear where the caret was. M2 is the next
-milestone and does not start without explicit approval.
+speak, release, and the words appear where the caret was. M2 is under
+way: first run is now one screen, and the milestone continues through
+polish and packaging.
 
 ## Done
 
@@ -65,9 +66,20 @@ Closed decisions this milestone:
 - ADR-001 amended: the chord is not swallowed, and Control plus Space
   carries two known costs rather than one
 
+### M2 — polish and packaging (in progress)
+
+| Slice | Scope | Status |
+| --- | --- | --- |
+| 1 | First run is one screen | done |
+| 2 | The pill carries every state | next |
+| 3 | Advanced concerns folded away | pending |
+| 4 | Premium pass: tokens, motion, spacing, wording | blocked on decision item 8 |
+| 5 | Windows packaging: install, offline, clean uninstall | blocked on decision item 6 |
+| 6 | Delivery routed through the target abstraction | pending |
+
 ## Next (in order)
 
-1. M2 — polish, onboarding, packaging. Closes the MVP. Needs approval.
+1. M2 — polish, onboarding, packaging. Closes the MVP. Under way.
 2. Release automation (skill + command + CI) after the scaffold proves out.
 3. Phase 2 — OpenCode agent integration.
 4. M3 — macOS, then Linux. Public release with first version.

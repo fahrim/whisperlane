@@ -114,9 +114,23 @@ function App() {
           <p>loading service state…</p>
         )}
         {status?.last_text && (
-          <p>
-            transcript: <strong>{status.last_text}</strong>
-          </p>
+          <>
+            <p>
+              transcript: <strong>{status.last_text}</strong>
+            </p>
+            {status.phase === "done" && (
+              <button
+                type="button"
+                onClick={() =>
+                  invoke<PipelineStatus>("copy_last_text")
+                    .then(setStatus)
+                    .catch((e) => setError(String(e)))
+                }
+              >
+                copy again
+              </button>
+            )}
+          </>
         )}
       </section>
     </main>

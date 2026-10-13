@@ -6,12 +6,14 @@ use tauri::{
 };
 
 mod audio;
+mod deliver;
 mod hotkey;
 mod pipeline;
 mod stt;
 pub mod stt_shared;
 
 use audio::reset_pipeline;
+use deliver::copy_last_text;
 use hotkey::get_hotkey_label;
 use pipeline::{get_pipeline_state, PipelineState, PipelineStatus};
 use stt::{get_stt_status, sweep_idle, SttState};
@@ -59,6 +61,7 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(PipelineState(std::sync::Mutex::new(
             PipelineStatus::default(),
         )))
@@ -68,7 +71,8 @@ pub fn run() {
             get_pipeline_state,
             get_hotkey_label,
             reset_pipeline,
-            get_stt_status
+            get_stt_status,
+            copy_last_text
         ])
         .setup(|app| {
             build_tray(app.handle())?;

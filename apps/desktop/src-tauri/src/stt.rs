@@ -316,6 +316,7 @@ pub fn transcribe_take(app: AppHandle, wav_path: String) {
                     set_last_text(&app, text);
                     if current_phase(&app) == Some(Phase::Thinking) {
                         set_phase(&app, Phase::Done, None);
+                        crate::deliver::deliver(&app);
                     }
                 }
             }

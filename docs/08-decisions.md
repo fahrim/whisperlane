@@ -55,6 +55,8 @@ Responsiveness while an agent runs alongside is a phase-two acceptance
 item. Revisit supervised in-process once packaging demands it, with a
 spike.
 
+Status: approved — see `adr/002-engine-hosting.md`.
+
 ## 2. Streaming versus record-then-transcribe
 
 Context: takes can be transcribed incrementally as speech arrives or as a
@@ -134,6 +136,15 @@ silently when switching models.
 Trade-offs: bundling simplifies first run at the cost of installer size.
 Download-on-demand keeps the installer small at the cost of first-run
 waiting, which must then be honest and non-blocking.
+
+Evidence from the existing plugin: turbo-class quantized model at roughly
+half a gigabyte, pinned language default, speech-grade mono capture with
+a hard per-take cap, and tolerant settings handling. The M0 skeleton
+follows this shape provisionally; the default stays open until approved.
+
+Direction: maintainer set the skeleton language default to `auto`
+ despite the ~2x cost; revisit with measured latency pain. Model default
+ still open.
 
 Recommendation: turbo-class quantized default with larger models as
 explicit opt-ins, pinned-by-default language with auto as a visible
@@ -222,6 +233,8 @@ first useful milestone, with the legacy plugin choices retained as
 alternates. Microphone selection stays ask-on-first-press so no setup
 stands between install and first dictation.
 
+Status: approved — see `adr/001-default-hotkey.md`.
+
 ## ADR process
 
 - A decision becomes an ADR only after explicit approval of the
@@ -232,7 +245,7 @@ stands between install and first dictation.
   ADR lands, the corresponding section here points to it and related
   documents update their Related sections.
 
-ADR index: none yet. The first ADR is expected from item 1 above.
+ADR index: `adr/001-default-hotkey.md` (item 7), `adr/002-engine-hosting.md` (item 1).
 
 ## Related
 

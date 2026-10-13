@@ -14,8 +14,8 @@ This folder holds approved decisions. Proposals live in
 
 ## Index
 
-No records yet. The first record is expected from the speech-engine hosting
-question described in `08-decisions.md`.
+- `001-default-hotkey.md` — default hotkey (approved from `08-decisions.md` item 7).
+- `002-engine-hosting.md` — speech-engine hosting (approved from `08-decisions.md` item 1).
 
 ## Related
 

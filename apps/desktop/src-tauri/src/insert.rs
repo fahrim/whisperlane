@@ -140,6 +140,11 @@ pub fn decide(planned_chars: usize, typed_chars: usize, ours: bool) -> Insertion
     }
 }
 
+/// Byte size of one platform input event. `SendInput` refuses every
+/// event unless this matches the real structure size, and reports zero
+/// accepted when it does not, so it is never hardcoded.
+const INPUT_SIZE: i32 = std::mem::size_of::<INPUT>() as i32;
+
 /// One platform input event for a planned keystroke.
 fn input_of(keystroke: Keystroke) -> INPUT {
     INPUT {
@@ -173,10 +178,11 @@ pub fn synthesize(text: &str) -> usize {
     let mut typed = 0usize;
     for chunk in plan.chunks(CHUNK * 2) {
         let sent: Vec<INPUT> = chunk.iter().copied().map(input_of).collect();
-        // SAFETY: the slice is fully initialized and sized by the call.
-        let accepted = unsafe {
-            windows::Win32::UI::Input::KeyboardAndMouse::SendInput(&sent, 1)
-        } as usize;
+        // SAFETY: the slice is fully initialized and the size matches the
+        // structure the call expects.
+        let accepted =
+            unsafe { windows::Win32::UI::Input::KeyboardAndMouse::SendInput(&sent, INPUT_SIZE) }
+                as usize;
         // Every character needs both its press and its release to count.
         typed += accepted / 2;
         if accepted < sent.len() {

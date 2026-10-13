@@ -15,6 +15,8 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
+use crate::hotkey::{apply_binding, Hotkey};
+
 /// The chooser offers common pinned languages plus an explicit
 /// auto-detect entry (docs/08-decisions.md item 4). Auto is the default:
 /// mixed-language dictation is the common case here, at a known time
@@ -75,6 +77,7 @@ impl Language {
 #[serde(default, rename_all = "snake_case")]
 pub struct Settings {
     pub language: Language,
+    pub hotkey: Hotkey,
 }
 
 pub struct SettingsState(pub Mutex<Settings>);
@@ -149,21 +152,36 @@ pub fn get_settings(state: tauri::State<'_, SettingsState>) -> Settings {
 /// reused, because it was started with the previous one.
 #[tauri::command]
 pub fn set_language(app: AppHandle, language: Language) -> Settings {
-    let updated = {
-        let state = app
-            .try_state::<SettingsState>()
-            .expect("settings state managed by the builder");
-        let mut guard = state.0.lock().expect("settings state poisoned");
-        guard.language = language;
-        guard.clone()
-    };
+    let updated = persist(&app, |settings| settings.language = language);
+    // A language change reloads the service, which was started with the
+    // previous one.
     if let Ok(path) = settings_path(&app) {
-        // A failed write is reported through the take pipeline on the
-        // next run, not silently: the in-memory value still applies.
         let _ = write_settings(&path, &updated);
         crate::stt::reload(&app);
     }
     updated
+}
+
+/// Changes the dictation chord and applies it immediately: the hook
+/// reads the binding per keystroke, so the next press uses the new one.
+#[tauri::command]
+pub fn set_hotkey(app: AppHandle, hotkey: Hotkey) -> Settings {
+    let updated = persist(&app, |settings| settings.hotkey = hotkey);
+    apply_binding(hotkey);
+    if let Ok(path) = settings_path(&app) {
+        let _ = write_settings(&path, &updated);
+    }
+    updated
+}
+
+/// Applies one change to the in-memory settings, returns the result.
+fn persist(app: &AppHandle, change: impl FnOnce(&mut Settings)) -> Settings {
+    let state = app
+        .try_state::<SettingsState>()
+        .expect("settings state managed by the builder");
+    let mut guard = state.0.lock().expect("settings state poisoned");
+    change(&mut guard);
+    guard.clone()
 }
 
 #[cfg(test)]
@@ -209,6 +227,7 @@ mod tests {
         let path = std::env::temp_dir().join("whisperlane-settings-roundtrip.json");
         let settings = Settings {
             language: Language::Tr,
+            hotkey: Hotkey::CtrlY,
         };
         write_settings(&path, &settings).unwrap();
         assert_eq!(read_settings(&path), settings);
@@ -228,10 +247,20 @@ mod tests {
     #[test]
     fn settings_from_another_version_keep_defaults_for_new_fields() {
         let path = std::env::temp_dir().join("whisperlane-settings-older.json");
+        // A file written before the hotkey setting existed still loads,
+        // and the missing field falls back to the approved default.
         std::fs::write(&path, r#"{"language":"de"}"#).unwrap();
-        assert_eq!(read_settings(&path).language, Language::De);
+        let loaded = read_settings(&path);
+        assert_eq!(loaded.language, Language::De);
+        assert_eq!(loaded.hotkey, Hotkey::CtrlShiftSpace);
         std::fs::write(&path, "{}").unwrap();
         assert_eq!(read_settings(&path), Settings::default());
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn default_binding_is_the_approved_one() {
+        assert_eq!(Settings::default().hotkey, Hotkey::CtrlShiftSpace);
+        assert_eq!(Hotkey::default(), Hotkey::CtrlShiftSpace);
     }
 }

@@ -15,9 +15,9 @@ pub mod stt_shared;
 
 use audio::reset_pipeline;
 use deliver::copy_last_text;
-use hotkey::{get_hotkey_label, get_key_diag, DiagState};
+use hotkey::{get_hotkey_label, get_key_diag, list_hotkeys, DiagState};
 use pipeline::{get_pipeline_state, PipelineState, PipelineStatus};
-use settings::{get_settings, list_languages, load, set_language, SettingsState};
+use settings::{get_settings, list_languages, load, set_hotkey, set_language, SettingsState};
 use stt::{get_stt_status, sweep_idle, SttState};
 
 #[tauri::command]
@@ -83,12 +83,17 @@ pub fn run() {
             get_key_diag,
             get_settings,
             set_language,
-            list_languages
+            set_hotkey,
+            list_languages,
+            list_hotkeys
         ])
         .setup(|app| {
             // Settings need the resolved data dir, so they load here
-            // rather than in the builder chain.
-            app.manage(SettingsState(std::sync::Mutex::new(load(app.handle()))));
+            // rather than in the builder chain. The saved chord becomes
+            // the active one before the hook is installed.
+            let saved = load(app.handle());
+            app.manage(SettingsState(std::sync::Mutex::new(saved.clone())));
+            hotkey::apply_binding(saved.hotkey);
             build_tray(app.handle())?;
             let handle = app.handle().clone();
             std::thread::spawn(move || hotkey::run_listener(handle));

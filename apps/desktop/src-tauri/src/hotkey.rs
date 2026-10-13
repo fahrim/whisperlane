@@ -1,18 +1,17 @@
-//! Own low-level keyboard hook for the approved default chord
-//! (ADR-001): hold Control + platform key to dictate.
+//! Own low-level keyboard hook for the configurable dictation chord
+//! (ADR-001): Control plus a trigger key, with Shift on the default.
 //!
-//! Why own code instead of a hotkey crate: the chord is bare modifiers
-//! (no plain key), so `RegisterHotKey`-based crates cannot express it,
-//! and owning the hook gives us the raw virtual-key log that diagnosed
-//! the first skeleton issues. Method only — no foreign hotkey package.
-//!
-//! Blocking rule (skeleton): while the chord is active, its key events
-//! are swallowed so the platform key never wakes the Start menu.
-//! Everything else passes through untouched.
+//! Why own code instead of a hotkey crate: the chord is a modifier pair
+//! plus a plain key that the hook must swallow before the focused
+//! application sees it, so `RegisterHotKey`-based crates cannot express
+//! it, and owning the hook keeps the state machine pure and testable.
+//! Method only — no foreign hotkey package.
 
 use std::cell::UnsafeCell;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{mpsc, Mutex};
 
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -24,12 +23,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
 use crate::audio;
 use crate::pipeline::{set_phase, Phase};
 
-/// Approved default (ADR-001, amended by ADR-003): hold Control +
-/// Shift + Space to dictate. Modifier-only Control + Super proved
-/// undeliverable on keyboards with key masking, so the default moved to
-/// a chord with a plain key. Alternates arrive with M1 settings.
-pub const DEFAULT_HOTKEY_LABEL: &str = "Control + Shift + Space (hold)";
-
 const VK_LCONTROL: u32 = 0xA2;
 const VK_RCONTROL: u32 = 0xA3;
 const VK_CONTROL: u32 = 0x11;
@@ -37,8 +30,104 @@ const VK_LSHIFT: u32 = 0xA0;
 const VK_RSHIFT: u32 = 0xA1;
 const VK_SHIFT: u32 = 0x10;
 const VK_SPACE: u32 = 0x20;
+const VK_Y: u32 = 0x59;
 
-/// Edge of the watched chord: both sides down, or no longer both down.
+/// The user-selectable dictation chord (ADR-001: configurable from the
+/// first useful milestone, with the legacy plugin choice retained as an
+/// alternate). Control is present in every binding, so only Shift and
+/// the trigger key vary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Hotkey {
+    #[default]
+    CtrlShiftSpace,
+    CtrlSpace,
+    CtrlY,
+}
+
+impl Hotkey {
+    /// Offered in this order: the approved default first.
+    pub const ALL: [Hotkey; 3] = [Hotkey::CtrlShiftSpace, Hotkey::CtrlSpace, Hotkey::CtrlY];
+
+    pub const fn needs_shift(self) -> bool {
+        matches!(self, Hotkey::CtrlShiftSpace)
+    }
+
+    pub const fn trigger_vk(self) -> u32 {
+        match self {
+            Hotkey::CtrlY => VK_Y,
+            _ => VK_SPACE,
+        }
+    }
+
+    /// Plain-language label for the settings surface. Control plus Space
+    /// keeps a note of its known editor collisions, because a binding
+    /// that fights autocomplete should not be chosen silently.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Hotkey::CtrlShiftSpace => "Control + Shift + Space (hold)",
+            Hotkey::CtrlSpace => "Control + Space (collides with autocomplete in editors)",
+            Hotkey::CtrlY => "Control + Y (plugin legacy)",
+        }
+    }
+
+    const fn code(self) -> u8 {
+        match self {
+            Hotkey::CtrlShiftSpace => 0,
+            Hotkey::CtrlSpace => 1,
+            Hotkey::CtrlY => 2,
+        }
+    }
+
+    const fn from_code(code: u8) -> Self {
+        match code {
+            1 => Hotkey::CtrlSpace,
+            2 => Hotkey::CtrlY,
+            _ => Hotkey::CtrlShiftSpace,
+        }
+    }
+}
+
+/// One offered binding, as the settings surface needs it.
+#[derive(Debug, Clone, Serialize)]
+pub struct HotkeyChoice {
+    pub code: String,
+    pub label: String,
+}
+
+/// The offered bindings come from the core, so the choice list lives in
+/// exactly one place.
+#[tauri::command]
+pub fn list_hotkeys() -> Vec<HotkeyChoice> {
+    Hotkey::ALL
+        .iter()
+        .map(|hotkey| HotkeyChoice {
+            code: serde_json::to_value(hotkey)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .unwrap_or_default(),
+            label: hotkey.label().to_string(),
+        })
+        .collect()
+}
+
+/// The active binding. The hook reads it on every keystroke, so it is a
+/// lock-free snapshot rather than a settings lookup: no mutex runs
+/// inside the hook callback.
+static BINDING: AtomicU8 = AtomicU8::new(Hotkey::CtrlShiftSpace.code());
+
+pub fn current_binding() -> Hotkey {
+    Hotkey::from_code(BINDING.load(Ordering::Relaxed))
+}
+
+/// Applies a new binding. The chord state is left alone on purpose: it
+/// is hook-thread-only, and a half-finished chord always clears itself
+/// on release.
+pub fn apply_binding(hotkey: Hotkey) {
+    BINDING.store(hotkey.code(), Ordering::Relaxed);
+}
+
+/// Edge of the watched chord: all sides down, or no longer all down.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChordEdge {
     Activated,
@@ -53,10 +142,6 @@ fn is_shift(vk: u32) -> bool {
     matches!(vk, VK_LSHIFT | VK_RSHIFT | VK_SHIFT)
 }
 
-fn is_space(vk: u32) -> bool {
-    vk == VK_SPACE
-}
-
 /// Pure chord machine over raw virtual-key events. No OS calls,
 /// fully unit-tested. Returns the edge plus whether to swallow the event.
 /// Shared as a static: the hook callback is the only accessor, so no
@@ -65,7 +150,7 @@ fn is_space(vk: u32) -> bool {
 pub struct ChordState {
     ctrl: bool,
     shift: bool,
-    space: bool,
+    trigger: bool,
     active: bool,
 }
 
@@ -74,7 +159,7 @@ impl ChordState {
         Self {
             ctrl: false,
             shift: false,
-            space: false,
+            trigger: false,
             active: false,
         }
     }
@@ -92,8 +177,12 @@ impl ChordState {
     /// desynchronizes the focused window's own key state, which shows up
     /// as focus-dependent hotkey failures. The trigger key is still
     /// swallowed so it never types into the focused application.
-    pub fn event(&mut self, vk: u32, down: bool) -> (Option<ChordEdge>, bool) {
-        if is_ctrl(vk) || is_shift(vk) {
+    ///
+    /// Keys the binding does not use are not tracked at all, so a
+    /// binding without Shift leaves Shift as ordinary typing.
+    pub fn event(&mut self, vk: u32, down: bool, hotkey: Hotkey) -> (Option<ChordEdge>, bool) {
+        let uses_shift = hotkey.needs_shift();
+        if is_ctrl(vk) || (uses_shift && is_shift(vk)) {
             if is_ctrl(vk) {
                 self.ctrl = down;
             } else {
@@ -108,9 +197,10 @@ impl ChordState {
             }
             return (None, false);
         }
-        if is_space(vk) {
-            self.space = down;
-            if self.ctrl && self.shift && down && !self.active {
+        if vk == hotkey.trigger_vk() {
+            self.trigger = down;
+            let armed = self.ctrl && (!uses_shift || self.shift);
+            if armed && down && !self.active {
                 self.active = true;
                 return (Some(ChordEdge::Activated), true);
             }
@@ -118,7 +208,7 @@ impl ChordState {
                 self.active = false;
                 return (Some(ChordEdge::Released), true);
             }
-            // Space alone: never swallowed.
+            // Trigger key alone: never swallowed.
             return (None, false);
         }
         (None, false)
@@ -157,7 +247,7 @@ pub struct KeyDiag {
     pub last_count: u32,
     pub ctrl: bool,
     pub shift: bool,
-    pub space: bool,
+    pub trigger: bool,
     pub active: bool,
     pub chords_seen: u32,
     pub swallowed: u32,
@@ -184,7 +274,7 @@ fn record(app: &AppHandle, label: String, state: &ChordState) {
         d.last_count = d.last_count.saturating_add(1);
         d.ctrl = state.ctrl;
         d.shift = state.shift;
-        d.space = state.space;
+        d.trigger = state.trigger;
         d.active = state.active;
     }
 }
@@ -229,14 +319,19 @@ unsafe extern "system" fn hook_proc(n_code: i32, w_param: WPARAM, l_param: LPARA
         let down = w_param.0 == WM_KEYDOWN as usize || w_param.0 == WM_SYSKEYDOWN as usize;
         let up = w_param.0 == WM_KEYUP as usize || w_param.0 == WM_SYSKEYUP as usize;
         if down || up {
+            let hotkey = current_binding();
             // SAFETY: STATE is reached only from this hook thread, and a
             // low-level keyboard hook always runs on its installing thread.
             let state = unsafe { &mut *STATE.0.get() };
-            let (edge, mask) = state.event(vk, down);
+            let (edge, mask) = state.event(vk, down, hotkey);
             // SAFETY: APP is written once before the hook starts.
             let diag_app = unsafe { (*APP.0.get()).clone() };
             if let Some(diag_app) = diag_app {
-                let label = format!("vk={vk:#X} down={down} flags={:#X}", kb.flags.0);
+                let label = format!(
+                    "vk={vk:#X} down={down} binding={} flags={:#X}",
+                    hotkey.code(),
+                    kb.flags.0
+                );
                 record(&diag_app, label, state);
                 if edge.is_some() {
                     record_chord(&diag_app, mask);
@@ -324,93 +419,214 @@ fn clear_stale_state(app: &AppHandle) {
 
 #[tauri::command]
 pub fn get_hotkey_label() -> String {
-    DEFAULT_HOTKEY_LABEL.to_string()
+    current_binding().label().to_string()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// The approved default binding, named once for readability.
+    const DEFAULT: Hotkey = Hotkey::CtrlShiftSpace;
+
     #[test]
     fn activates_when_last_side_goes_down() {
         let mut s = ChordState::new();
-        assert_eq!(s.event(VK_LCONTROL, true), (None, false));
-        assert_eq!(s.event(VK_LSHIFT, true), (None, false));
-        assert_eq!(s.event(VK_SPACE, true), (Some(ChordEdge::Activated), true));
+        assert_eq!(s.event(VK_LCONTROL, true, DEFAULT), (None, false));
+        assert_eq!(s.event(VK_LSHIFT, true, DEFAULT), (None, false));
+        assert_eq!(
+            s.event(VK_SPACE, true, DEFAULT),
+            (Some(ChordEdge::Activated), true)
+        );
     }
 
     #[test]
     fn either_side_variant_counts() {
         let mut s = ChordState::new();
-        s.event(VK_RCONTROL, true);
-        s.event(VK_RSHIFT, true);
-        assert_eq!(s.event(VK_SPACE, true), (Some(ChordEdge::Activated), true));
+        s.event(VK_RCONTROL, true, DEFAULT);
+        s.event(VK_RSHIFT, true, DEFAULT);
+        assert_eq!(
+            s.event(VK_SPACE, true, DEFAULT),
+            (Some(ChordEdge::Activated), true)
+        );
     }
 
     #[test]
     fn modifiers_always_pass_through() {
         let mut s = ChordState::new();
-        assert_eq!(s.event(VK_LCONTROL, true), (None, false));
-        assert_eq!(s.event(VK_LSHIFT, true), (None, false));
-        assert_eq!(s.event(VK_SPACE, true), (Some(ChordEdge::Activated), true));
+        assert_eq!(s.event(VK_LCONTROL, true, DEFAULT), (None, false));
+        assert_eq!(s.event(VK_LSHIFT, true, DEFAULT), (None, false));
+        assert_eq!(
+            s.event(VK_SPACE, true, DEFAULT),
+            (Some(ChordEdge::Activated), true)
+        );
         // Repeat and modifier repeats never swallow, never re-fire.
-        assert_eq!(s.event(VK_SPACE, true), (None, false));
-        assert_eq!(s.event(VK_LCONTROL, true), (None, false));
+        assert_eq!(s.event(VK_SPACE, true, DEFAULT), (None, false));
+        assert_eq!(s.event(VK_LCONTROL, true, DEFAULT), (None, false));
     }
 
     #[test]
     fn modifier_release_ends_take_even_while_trigger_held() {
         let mut s = ChordState::new();
-        s.event(VK_LCONTROL, true);
-        s.event(VK_LSHIFT, true);
-        s.event(VK_SPACE, true);
-        assert_eq!(s.event(VK_LCONTROL, false), (Some(ChordEdge::Released), false));
+        s.event(VK_LCONTROL, true, DEFAULT);
+        s.event(VK_LSHIFT, true, DEFAULT);
+        s.event(VK_SPACE, true, DEFAULT);
+        assert_eq!(
+            s.event(VK_LCONTROL, false, DEFAULT),
+            (Some(ChordEdge::Released), false)
+        );
         // Trigger release after the chord ended is plain typing again.
-        assert_eq!(s.event(VK_SPACE, false), (None, false));
+        assert_eq!(s.event(VK_SPACE, false, DEFAULT), (None, false));
     }
 
     #[test]
     fn trigger_release_ends_take_and_is_swallowed() {
         let mut s = ChordState::new();
-        s.event(VK_LCONTROL, true);
-        s.event(VK_LSHIFT, true);
-        s.event(VK_SPACE, true);
-        assert_eq!(s.event(VK_SPACE, false), (Some(ChordEdge::Released), true));
+        s.event(VK_LCONTROL, true, DEFAULT);
+        s.event(VK_LSHIFT, true, DEFAULT);
+        s.event(VK_SPACE, true, DEFAULT);
+        assert_eq!(
+            s.event(VK_SPACE, false, DEFAULT),
+            (Some(ChordEdge::Released), true)
+        );
     }
 
     #[test]
-    fn space_alone_is_never_swallowed() {
+    fn trigger_key_alone_is_never_swallowed() {
         let mut s = ChordState::new();
-        assert_eq!(s.event(VK_SPACE, true), (None, false));
-        assert_eq!(s.event(VK_SPACE, false), (None, false));
+        assert_eq!(s.event(VK_SPACE, true, DEFAULT), (None, false));
+        assert_eq!(s.event(VK_SPACE, false, DEFAULT), (None, false));
     }
 
     #[test]
     fn reset_clears_a_latched_chord() {
         let mut s = ChordState::new();
-        s.event(VK_LCONTROL, true);
-        s.event(VK_LSHIFT, true);
-        s.event(VK_SPACE, true);
+        s.event(VK_LCONTROL, true, DEFAULT);
+        s.event(VK_LSHIFT, true, DEFAULT);
+        s.event(VK_SPACE, true, DEFAULT);
         s.reset();
         // After a reset the same press works again instead of dead.
-        s.event(VK_LCONTROL, true);
-        s.event(VK_LSHIFT, true);
-        assert_eq!(s.event(VK_SPACE, true), (Some(ChordEdge::Activated), true));
+        s.event(VK_LCONTROL, true, DEFAULT);
+        s.event(VK_LSHIFT, true, DEFAULT);
+        assert_eq!(
+            s.event(VK_SPACE, true, DEFAULT),
+            (Some(ChordEdge::Activated), true)
+        );
     }
 
     #[test]
     fn unrelated_keys_pass_through() {
         let mut s = ChordState::new();
-        assert_eq!(s.event(0x41, true), (None, false));
-        assert_eq!(s.event(0x41, false), (None, false));
+        assert_eq!(s.event(0x41, true, DEFAULT), (None, false));
+        assert_eq!(s.event(0x41, false, DEFAULT), (None, false));
     }
 
     #[test]
     fn generic_modifier_codes_count() {
         let mut s = ChordState::new();
-        s.event(VK_CONTROL, true);
-        s.event(VK_SHIFT, true);
-        assert_eq!(s.event(VK_SPACE, true), (Some(ChordEdge::Activated), true));
+        s.event(VK_CONTROL, true, DEFAULT);
+        s.event(VK_SHIFT, true, DEFAULT);
+        assert_eq!(
+            s.event(VK_SPACE, true, DEFAULT),
+            (Some(ChordEdge::Activated), true)
+        );
+    }
+
+    #[test]
+    fn default_binding_needs_shift() {
+        assert!(Hotkey::CtrlShiftSpace.needs_shift());
+        assert_eq!(Hotkey::CtrlShiftSpace.trigger_vk(), VK_SPACE);
+    }
+
+    #[test]
+    fn control_space_binding_ignores_shift_entirely() {
+        let mut s = ChordState::new();
+        // Shift is ordinary typing for this binding: neither tracked nor
+        // swallowed.
+        assert_eq!(s.event(VK_LSHIFT, true, Hotkey::CtrlSpace), (None, false));
+        s.event(VK_LCONTROL, true, Hotkey::CtrlSpace);
+        // A held Shift neither blocks nor changes the binding.
+        assert_eq!(
+            s.event(VK_SPACE, true, Hotkey::CtrlSpace),
+            (Some(ChordEdge::Activated), true)
+        );
+        assert_eq!(
+            s.event(VK_SPACE, false, Hotkey::CtrlSpace),
+            (Some(ChordEdge::Released), true)
+        );
+        // Releasing Shift does not end the take: it is not part of it.
+        assert_eq!(s.event(VK_LSHIFT, false, Hotkey::CtrlSpace), (None, false));
+    }
+
+    #[test]
+    fn control_space_binding_does_not_fire_on_y() {
+        let mut s = ChordState::new();
+        s.event(VK_LCONTROL, true, Hotkey::CtrlSpace);
+        // Y is plain typing while this binding is active.
+        assert_eq!(s.event(VK_Y, true, Hotkey::CtrlSpace), (None, false));
+    }
+
+    #[test]
+    fn control_y_binding_uses_y_and_ignores_space() {
+        let mut s = ChordState::new();
+        s.event(VK_LCONTROL, true, Hotkey::CtrlY);
+        assert_eq!(s.event(VK_SPACE, true, Hotkey::CtrlY), (None, false));
+        assert_eq!(
+            s.event(VK_Y, true, Hotkey::CtrlY),
+            (Some(ChordEdge::Activated), true)
+        );
+        assert_eq!(
+            s.event(VK_Y, false, Hotkey::CtrlY),
+            (Some(ChordEdge::Released), true)
+        );
+    }
+
+    #[test]
+    fn a_binding_change_switches_which_chord_fires() {
+        let mut s = ChordState::new();
+        // Pressed while the default is active: Space fires.
+        s.event(VK_LCONTROL, true, Hotkey::CtrlShiftSpace);
+        s.event(VK_LSHIFT, true, Hotkey::CtrlShiftSpace);
+        assert_eq!(
+            s.event(VK_SPACE, true, Hotkey::CtrlShiftSpace),
+            (Some(ChordEdge::Activated), true)
+        );
+        s.event(VK_SPACE, false, Hotkey::CtrlShiftSpace);
+        s.event(VK_LSHIFT, false, Hotkey::CtrlShiftSpace);
+        s.event(VK_LCONTROL, false, Hotkey::CtrlShiftSpace);
+        // After switching, the old chord is ordinary typing.
+        assert_eq!(s.event(VK_SPACE, true, Hotkey::CtrlY), (None, false));
+        s.event(VK_SPACE, false, Hotkey::CtrlY);
+        s.event(VK_LCONTROL, true, Hotkey::CtrlY);
+        assert_eq!(
+            s.event(VK_Y, true, Hotkey::CtrlY),
+            (Some(ChordEdge::Activated), true)
+        );
+    }
+
+    #[test]
+    fn binding_codes_round_trip() {
+        for hotkey in Hotkey::ALL {
+            assert_eq!(Hotkey::from_code(hotkey.code()), hotkey);
+            assert!(!hotkey.label().is_empty());
+        }
+    }
+
+    #[test]
+    fn choices_cover_every_binding_in_order() {
+        let choices = list_hotkeys();
+        assert_eq!(choices.len(), Hotkey::ALL.len());
+        assert_eq!(choices[0].code, "ctrl_shift_space");
+        assert!(choices.iter().all(|c| !c.label.is_empty()));
+    }
+
+    #[test]
+    fn applied_binding_is_the_active_one() {
+        let original = current_binding();
+        apply_binding(Hotkey::CtrlY);
+        assert_eq!(current_binding(), Hotkey::CtrlY);
+        apply_binding(original);
+        assert_eq!(current_binding(), original);
     }
 
     #[test]

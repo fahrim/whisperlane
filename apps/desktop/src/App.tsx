@@ -17,7 +17,7 @@ interface KeyDiag {
   last_count: number;
   ctrl: boolean;
   shift: boolean;
-  space: boolean;
+  trigger: boolean;
   active: boolean;
   chords_seen: number;
   swallowed: number;
@@ -33,9 +33,15 @@ interface SttStatus {
 
 interface Settings {
   language: string;
+  hotkey: string;
 }
 
 interface LanguageChoice {
+  code: string;
+  label: string;
+}
+
+interface HotkeyChoice {
   code: string;
   label: string;
 }
@@ -53,6 +59,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [languages, setLanguages] = useState<LanguageChoice[]>([]);
+  const [hotkeys, setHotkeys] = useState<HotkeyChoice[]>([]);
 
   async function refreshStt() {
     try {
@@ -65,6 +72,15 @@ function App() {
   async function chooseLanguage(code: string) {
     try {
       setSettings(await invoke<Settings>("set_language", { language: code }));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function chooseHotkey(code: string) {
+    try {
+      setSettings(await invoke<Settings>("set_hotkey", { hotkey: code }));
+      setHotkey(await invoke<string>("get_hotkey_label"));
     } catch (e) {
       setError(String(e));
     }
@@ -103,6 +119,9 @@ function App() {
       .catch((e) => setError(String(e)));
     invoke<LanguageChoice[]>("list_languages")
       .then(setLanguages)
+      .catch((e) => setError(String(e)));
+    invoke<HotkeyChoice[]>("list_hotkeys")
+      .then(setHotkeys)
       .catch((e) => setError(String(e)));
     poll();
     const timer = setInterval(poll, 1000);
@@ -144,7 +163,7 @@ function App() {
             <p>last: {diag.last_event || "—"}</p>
             <p>
               chord state: ctrl={String(diag.ctrl)} shift={String(diag.shift)}{" "}
-              space={String(diag.space)} active={String(diag.active)}
+              trigger={String(diag.trigger)} active={String(diag.active)}
             </p>
             <p>
               edges: {diag.chords_seen} (swallowed {diag.swallowed})
@@ -156,6 +175,19 @@ function App() {
       </section>
       <section aria-label="settings">
         <h2>settings</h2>
+        <label>
+          hotkey:{" "}
+          <select
+            value={settings?.hotkey ?? ""}
+            onChange={(e) => chooseHotkey(e.target.value)}
+          >
+            {hotkeys.map((choice) => (
+              <option key={choice.code} value={choice.code}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <label>
           language:{" "}
           <select

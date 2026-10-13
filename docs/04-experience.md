@@ -58,6 +58,12 @@
   are carried by the pill itself — the signal bar animates while listening,
   settles into a calm waiting presence while thinking, confirms briefly on
   done, and states failure plainly — rather than by text walls.
+- Transcript panel (hybrid). Closed by default: on success the text goes
+  straight to the focused application and the pill settles. The panel
+  opens by itself only when insertion fails, keeping the text accessible
+  with copy and retry. It can also be opened on demand: a setting enables
+  it, and a panel control on the pill unfolds it downward for review,
+  copy, and manual insert. It never opens unprompted on the happy path.
 
 ## States and feedback
 
@@ -78,6 +84,17 @@ Errors never leave the user guessing whether text was inserted.
 Calm, sparse, and confident. Generous spacing, restrained motion, and a
 single accent. The product should read as finished even when the feature
 set is small — closer to a platform utility than to a feature showcase.
+
+## Visual direction
+
+Liquid glass: translucent dark surfaces, restrained blur, a subtle edge
+light, and a soft shadow. The single accent carries state — during
+recording, processing, and success it radiates a soft neon glow that
+diffuses across the glass, and it rests everywhere else. Glow is state
+feedback, never decoration: idle chrome stays quiet, and no control
+glows just for looking premium. An opaque high-readability fallback
+covers transparency-off, and reduced motion is respected throughout.
+Exact token values remain a proposal until approved.
 
 ## Related
 

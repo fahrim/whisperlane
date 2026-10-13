@@ -21,6 +21,9 @@ milestone and does not start without explicit approval.
   whisperlane-craft skills; LOOP.md.
 - Repository: git init, canonical MIT + Apache-2.0 texts, .gitignore,
   private GitHub remote with master pushed.
+- External UI/UX brief merged with triage: stored under docs/reference/
+  with mockup image; survivors in docs/04-experience.md, alternatives in
+  docs/08-decisions.md, parked ideas in IDEAS.md.
 
 ### M0 — skeleton that talks
 

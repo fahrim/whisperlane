@@ -103,3 +103,4 @@ Exact token values remain a proposal until approved.
 - Structure behind the flows: `05-architecture.md`
 - Agent destination behavior (phase two): `06-agent-integration.md`
 - When polish lands: `07-roadmap.md`
+- External input merged here: `reference/external-ui-ux-brief.md`, triage in `reference/ui-brief-triage.md`

@@ -43,8 +43,16 @@ Start with the source plan, then read documents 01 through 09 in order.
 Architecture is narrated, not coded. Diagrams in the set are conceptual
 illustrations; no document contains source code, configuration, or snippets.
 
-## Conventions
+## References (external input, not source of truth)
 
+- `reference/external-ui-ux-brief.md` — Third-party UI/UX brief, stored
+  verbatim with a provenance header. Merged per `reference/ui-brief-triage.md`.
+- `reference/Whisper_Dynamic_Pill_UI_Mockup.png` — Visual direction
+  reference for the pill and glass aesthetic. Direction, not specification.
+- `reference/ui-brief-triage.md` — Field-by-field record of what was
+  adopted, adapted, rejected, or parked from the brief.
+
+## Conventions
 - Every document ends with a Related section linking to the documents it
   depends on and to the source plan where relevant.
 - When a new document is added, this index and the Related sections of the
@@ -62,3 +70,4 @@ illustrations; no document contains source code, configuration, or snippets.
 - First document to read: `01-vision.md`
 - Open questions and ADR process: `08-decisions.md`, `adr/`
 - Repo and contribution rules: `09-repository.md`
+- External UI brief and triage: `reference/`

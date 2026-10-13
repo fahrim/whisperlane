@@ -338,6 +338,27 @@ reset control is the seed of the pill's single start and stop control.
 
 Status: approved — see `adr/007-chord-from-terminal-state.md`.
 
+## 8. Visual tokens (accent, surfaces, glow budget)
+
+Context: the external UI brief proposes exact token values for the
+liquid-glass direction adopted in the experience document. Values are
+proposals until approved; the direction (glass, single accent, glow as
+state feedback only, opaque fallback) is already adopted.
+
+Options:
+
+- Approve the proposed values as the v1 token set.
+- Approve the direction with adjusted values.
+- Defer tokens to the M2 polish milestone and build M0/M1 on unstyled
+  structure.
+
+Trade-offs: approving now gives the polish milestone a fixed target;
+deferring keeps early milestones free of aesthetic churn at the cost of a
+later decision.
+
+Recommendation: approve direction now, lock values at M2 kickoff; record
+the locked set in an ADR.
+
 ## ADR process
 
 - A decision becomes an ADR only after explicit approval of the

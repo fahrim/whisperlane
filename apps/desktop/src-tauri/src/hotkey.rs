@@ -10,10 +10,10 @@
 //! are swallowed so the platform key never wakes the Start menu.
 //! Everything else passes through untouched.
 
-use std::sync::mpsc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::cell::UnsafeCell;
+use std::sync::{mpsc, Mutex};
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -59,7 +59,9 @@ fn is_space(vk: u32) -> bool {
 
 /// Pure chord machine over raw virtual-key events. No OS calls,
 /// fully unit-tested. Returns the edge plus whether to swallow the event.
-#[derive(Debug, Default)]
+/// Shared as a static: the hook callback is the only accessor, so no
+/// locking runs inside the hook.
+#[derive(Debug)]
 pub struct ChordState {
     ctrl: bool,
     shift: bool,
@@ -68,25 +70,58 @@ pub struct ChordState {
 }
 
 impl ChordState {
+    pub const fn new() -> Self {
+        Self {
+            ctrl: false,
+            shift: false,
+            space: false,
+            active: false,
+        }
+    }
+
+    /// Clears a latched chord without emitting an edge. Only used on
+    /// focus regain, where no take is in flight.
+    pub fn reset(&mut self) {
+        *self = Self::new();
+    }
+
+    /// Returns the chord edge and whether to swallow this event.
+    ///
+    /// Only the trigger key is swallowed, and only while the chord is
+    /// formed. Modifier events always pass through: swallowing them
+    /// desynchronizes the focused window's own key state, which shows up
+    /// as focus-dependent hotkey failures. The trigger key is still
+    /// swallowed so it never types into the focused application.
     pub fn event(&mut self, vk: u32, down: bool) -> (Option<ChordEdge>, bool) {
-        if is_ctrl(vk) {
-            self.ctrl = down;
-        } else if is_shift(vk) {
-            self.shift = down;
-        } else if is_space(vk) {
-            self.space = down;
-        } else {
+        if is_ctrl(vk) || is_shift(vk) {
+            if is_ctrl(vk) {
+                self.ctrl = down;
+            } else {
+                self.shift = down;
+            }
+            // Any modifier release ends the take: users release the
+            // modifiers before the trigger key, and waiting for the
+            // trigger release would leave capture open.
+            if self.active && !down {
+                self.active = false;
+                return (Some(ChordEdge::Released), false);
+            }
             return (None, false);
         }
-        if self.ctrl && self.shift && self.space && !self.active {
-            self.active = true;
-            (Some(ChordEdge::Activated), true)
-        } else if self.active && !(self.ctrl && self.shift && self.space) {
-            self.active = false;
-            (Some(ChordEdge::Released), true)
-        } else {
-            (None, self.active)
+        if is_space(vk) {
+            self.space = down;
+            if self.ctrl && self.shift && down && !self.active {
+                self.active = true;
+                return (Some(ChordEdge::Activated), true);
+            }
+            if self.active && !down {
+                self.active = false;
+                return (Some(ChordEdge::Released), true);
+            }
+            // Space alone: never swallowed.
+            return (None, false);
         }
+        (None, false)
     }
 }
 
@@ -113,8 +148,79 @@ pub(crate) fn debug_log(line: String) {
     }
 }
 
-static HOOK_ALIVE: AtomicBool = AtomicBool::new(false);
+/// Diagnostic snapshot of what the hook actually receives. Written in
+/// the callback, read by the UI: proves which events reach us and with
+/// which flags, without logging raw keys anywhere.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct KeyDiag {
+    pub last_event: String,
+    pub last_count: u32,
+    pub ctrl: bool,
+    pub shift: bool,
+    pub space: bool,
+    pub active: bool,
+    pub chords_seen: u32,
+    pub swallowed: u32,
+}
 
+pub fn diag_snapshot(app: &AppHandle) -> KeyDiag {
+    app.try_state::<DiagState>()
+        .map(|s| s.0.lock().expect("diag state poisoned").clone())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn get_key_diag(app: AppHandle) -> KeyDiag {
+    diag_snapshot(&app)
+}
+
+#[derive(Default)]
+pub struct DiagState(pub Mutex<KeyDiag>);
+
+fn record(app: &AppHandle, label: String, state: &ChordState) {
+    if let Some(diag) = app.try_state::<DiagState>() {
+        let mut d = diag.0.lock().expect("diag state poisoned");
+        d.last_event = label;
+        d.last_count = d.last_count.saturating_add(1);
+        d.ctrl = state.ctrl;
+        d.shift = state.shift;
+        d.space = state.space;
+        d.active = state.active;
+    }
+}
+
+fn record_chord(app: &AppHandle, swallowed: bool) {
+    if let Some(diag) = app.try_state::<DiagState>() {
+        let mut d = diag.0.lock().expect("diag state poisoned");
+        d.chords_seen = d.chords_seen.saturating_add(1);
+        if swallowed {
+            d.swallowed = d.swallowed.saturating_add(1);
+        }
+    }
+}
+
+/// Single accessor wrapper: the hook callback is the only user, so the
+/// interior mutability is confined to the hook thread by construction.
+/// `UnsafeCell` also forces the static into the writable data section.
+struct HookState(UnsafeCell<ChordState>);
+
+// SAFETY: the installing hook thread is the only accessor, and the app
+// handle is set once before the hook is installed.
+unsafe impl Sync for HookApp {}
+struct HookApp(UnsafeCell<Option<AppHandle>>);
+
+static APP: HookApp = HookApp(UnsafeCell::new(None));
+
+// SAFETY: only the hook callback thread touches the state, and a
+// low-level keyboard hook always runs on the thread that installed it.
+unsafe impl Sync for HookState {}
+
+static STATE: HookState = HookState(UnsafeCell::new(ChordState::new()));
+
+/// The hook callback itself decides everything: it runs on the same
+/// thread as the message pump, before any other handler sees the event,
+/// so the chord state stays consistent even when the OS swallows the
+/// modifier release that a focused window receives.
 unsafe extern "system" fn hook_proc(n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
     if n_code >= 0 {
         // SAFETY: lParam is a valid KBDLLHOOKSTRUCT pointer for hook events.
@@ -122,33 +228,45 @@ unsafe extern "system" fn hook_proc(n_code: i32, w_param: WPARAM, l_param: LPARA
         let vk = kb.vkCode;
         let down = w_param.0 == WM_KEYDOWN as usize || w_param.0 == WM_SYSKEYDOWN as usize;
         let up = w_param.0 == WM_KEYUP as usize || w_param.0 == WM_SYSKEYUP as usize;
-        if (down || up) && (is_ctrl(vk) || is_shift(vk) || is_space(vk)) {
-            if let Some(tx) = HOOK_TX.get() {
-                let _ = tx.send((vk, down));
+        if down || up {
+            // SAFETY: STATE is reached only from this hook thread, and a
+            // low-level keyboard hook always runs on its installing thread.
+            let state = unsafe { &mut *STATE.0.get() };
+            let (edge, mask) = state.event(vk, down);
+            // SAFETY: APP is written once before the hook starts.
+            let diag_app = unsafe { (*APP.0.get()).clone() };
+            if let Some(diag_app) = diag_app {
+                let label = format!("vk={vk:#X} down={down} flags={:#X}", kb.flags.0);
+                record(&diag_app, label, state);
+                if edge.is_some() {
+                    record_chord(&diag_app, mask);
+                }
             }
-            // Swallowing decision needs shared state; the forwarder thread
-            // owns it and replies through the same channel pair. To keep
-            // this callback in microseconds, swallow optimistically here
-            // only when the chord was already active.
-            if HOOK_ACTIVE.load(Ordering::SeqCst) {
-                debug_log(format!("hook vk={vk:#X} down={down} swallowed\n"));
+            if edge.is_some() || mask {
+                debug_log(format!("hook vk={vk:#X} down={down} mask={mask}\n"));
+                if let Some(tx) = EDGE_TX.get() {
+                    if let Some(edge) = edge {
+                        let _ = tx.send(edge);
+                    }
+                }
+                // Swallow the chord: none of it reaches other apps.
                 return LRESULT(1);
             }
-            debug_log(format!("hook vk={vk:#X} down={down} passed\n"));
+            debug_log(format!("hook vk={vk:#X} down={down} mask=false\n"));
         }
     }
     // SAFETY: forwarding to the next hook in the chain.
     unsafe { CallNextHookEx(HHOOK::default(), n_code, w_param, l_param) }
 }
 
-static HOOK_TX: std::sync::OnceLock<mpsc::Sender<(u32, bool)>> = std::sync::OnceLock::new();
-static HOOK_ACTIVE: AtomicBool = AtomicBool::new(false);
+static EDGE_TX: std::sync::OnceLock<mpsc::Sender<ChordEdge>> = std::sync::OnceLock::new();
 
 /// Installs the hook and pumps messages on this thread. Slow work never
 /// runs here: edges queue to the audio worker; blocking the hook thread
 /// gets a low-level hook silently uninstalled by Windows.
 pub fn run_listener(app: AppHandle) {
     let (tx, rx) = mpsc::channel::<ChordEdge>();
+    let _ = EDGE_TX.set(tx);
     let worker = app.clone();
     std::thread::spawn(move || {
         for edge in rx {
@@ -156,22 +274,6 @@ pub fn run_listener(app: AppHandle) {
             match edge {
                 ChordEdge::Activated => audio::begin_take(&worker),
                 ChordEdge::Released => audio::end_take(&worker),
-            }
-        }
-    });
-    let (raw_tx, raw_rx) = mpsc::channel::<(u32, bool)>();
-    let _ = HOOK_TX.set(raw_tx);
-    let edge_tx = tx.clone();
-    std::thread::spawn(move || {
-        let mut state = ChordState::default();
-        for (vk, down) in raw_rx {
-            let (edge, active) = state.event(vk, down);
-            HOOK_ACTIVE.store(active, Ordering::SeqCst);
-            if let Some(edge) = edge {
-                debug_log(format!("edge {edge:?}\n"));
-                if edge_tx.send(edge).is_err() {
-                    break;
-                }
             }
         }
     });
@@ -191,13 +293,33 @@ pub fn run_listener(app: AppHandle) {
         );
         return;
     };
-    HOOK_ALIVE.store(true, Ordering::SeqCst);
+    // SAFETY: single write before the hook is installed; read-only after.
+    unsafe { *APP.0.get() = Some(app.clone()) };
     debug_log("hook installed\n".to_string());
+    let focus_app = app.clone();
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            clear_stale_state(&focus_app);
+        }
+    });
     let mut msg = MSG::default();
     // SAFETY: standard message pump; keeps the hook alive.
     while unsafe { GetMessageW(&mut msg, None, 0, 0) }.as_bool() {}
     let _ = hook;
-    HOOK_ALIVE.store(false, Ordering::SeqCst);
+}
+
+/// Focus and desktop switches can drop the modifier release, which would
+/// leave the chord latched and every later press dead. The window
+/// regaining focus is the first reliable moment to clear that state.
+fn clear_stale_state(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        if let Ok(true) = window.is_focused() {
+            // SAFETY: same hook-thread-only rule as STATE.
+            let state = unsafe { &mut *STATE.0.get() };
+            state.reset();
+        }
+    }
 }
 
 #[tauri::command]
@@ -211,7 +333,7 @@ mod tests {
 
     #[test]
     fn activates_when_last_side_goes_down() {
-        let mut s = ChordState::default();
+        let mut s = ChordState::new();
         assert_eq!(s.event(VK_LCONTROL, true), (None, false));
         assert_eq!(s.event(VK_LSHIFT, true), (None, false));
         assert_eq!(s.event(VK_SPACE, true), (Some(ChordEdge::Activated), true));
@@ -219,31 +341,37 @@ mod tests {
 
     #[test]
     fn either_side_variant_counts() {
-        let mut s = ChordState::default();
+        let mut s = ChordState::new();
         s.event(VK_RCONTROL, true);
         s.event(VK_RSHIFT, true);
         assert_eq!(s.event(VK_SPACE, true), (Some(ChordEdge::Activated), true));
     }
 
     #[test]
-    fn repeats_while_held_stay_swallowed_without_new_edge() {
-        let mut s = ChordState::default();
-        s.event(VK_LCONTROL, true);
-        s.event(VK_LSHIFT, true);
+    fn modifiers_always_pass_through() {
+        let mut s = ChordState::new();
+        assert_eq!(s.event(VK_LCONTROL, true), (None, false));
+        assert_eq!(s.event(VK_LSHIFT, true), (None, false));
         assert_eq!(s.event(VK_SPACE, true), (Some(ChordEdge::Activated), true));
-        assert_eq!(s.event(VK_SPACE, true), (None, true));
-        assert_eq!(s.event(VK_LCONTROL, true), (None, true));
+        // Repeat and modifier repeats never swallow, never re-fire.
+        assert_eq!(s.event(VK_SPACE, true), (None, false));
+        assert_eq!(s.event(VK_LCONTROL, true), (None, false));
     }
 
     #[test]
-    fn releases_when_any_side_comes_up() {
-        let mut s = ChordState::default();
+    fn modifier_release_ends_take_even_while_trigger_held() {
+        let mut s = ChordState::new();
         s.event(VK_LCONTROL, true);
         s.event(VK_LSHIFT, true);
         s.event(VK_SPACE, true);
-        assert_eq!(s.event(VK_LCONTROL, false), (Some(ChordEdge::Released), true));
+        assert_eq!(s.event(VK_LCONTROL, false), (Some(ChordEdge::Released), false));
+        // Trigger release after the chord ended is plain typing again.
+        assert_eq!(s.event(VK_SPACE, false), (None, false));
+    }
 
-        let mut s = ChordState::default();
+    #[test]
+    fn trigger_release_ends_take_and_is_swallowed() {
+        let mut s = ChordState::new();
         s.event(VK_LCONTROL, true);
         s.event(VK_LSHIFT, true);
         s.event(VK_SPACE, true);
@@ -251,15 +379,35 @@ mod tests {
     }
 
     #[test]
+    fn space_alone_is_never_swallowed() {
+        let mut s = ChordState::new();
+        assert_eq!(s.event(VK_SPACE, true), (None, false));
+        assert_eq!(s.event(VK_SPACE, false), (None, false));
+    }
+
+    #[test]
+    fn reset_clears_a_latched_chord() {
+        let mut s = ChordState::new();
+        s.event(VK_LCONTROL, true);
+        s.event(VK_LSHIFT, true);
+        s.event(VK_SPACE, true);
+        s.reset();
+        // After a reset the same press works again instead of dead.
+        s.event(VK_LCONTROL, true);
+        s.event(VK_LSHIFT, true);
+        assert_eq!(s.event(VK_SPACE, true), (Some(ChordEdge::Activated), true));
+    }
+
+    #[test]
     fn unrelated_keys_pass_through() {
-        let mut s = ChordState::default();
+        let mut s = ChordState::new();
         assert_eq!(s.event(0x41, true), (None, false));
         assert_eq!(s.event(0x41, false), (None, false));
     }
 
     #[test]
     fn generic_modifier_codes_count() {
-        let mut s = ChordState::default();
+        let mut s = ChordState::new();
         s.event(VK_CONTROL, true);
         s.event(VK_SHIFT, true);
         assert_eq!(s.event(VK_SPACE, true), (Some(ChordEdge::Activated), true));

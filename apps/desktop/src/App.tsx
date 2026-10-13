@@ -12,6 +12,17 @@ interface PipelineStatus {
   last_text: string | null;
 }
 
+interface KeyDiag {
+  last_event: string;
+  last_count: number;
+  ctrl: boolean;
+  shift: boolean;
+  space: boolean;
+  active: boolean;
+  chords_seen: number;
+  swallowed: number;
+}
+
 interface SttStatus {
   model_file: string;
   model_present: boolean;
@@ -28,6 +39,7 @@ function targetLabel(target: PipelineStatus["target"]): string {
 function App() {
   const [status, setStatus] = useState<PipelineStatus | null>(null);
   const [stt, setStt] = useState<SttStatus | null>(null);
+  const [diag, setDiag] = useState<KeyDiag | null>(null);
   const [hotkey, setHotkey] = useState<string>("…");
   const [error, setError] = useState<string | null>(null);
 
@@ -58,6 +70,7 @@ function App() {
     async function poll() {
       try {
         setStatus(await invoke<PipelineStatus>("get_pipeline_state"));
+        setDiag(await invoke<KeyDiag>("get_key_diag"));
         await refreshStt();
       } catch (e) {
         if (!stop) setError(String(e));
@@ -99,6 +112,23 @@ function App() {
         !error && <p>loading pipeline state…</p>
       )}
       <p>Hotkey, capture, and transcription land in the next slices.</p>
+      <section aria-label="hotkey diagnostics">
+        <h2>hotkey diagnostics</h2>
+        {diag ? (
+          <>
+            <p>last: {diag.last_event || "—"}</p>
+            <p>
+              chord state: ctrl={String(diag.ctrl)} shift={String(diag.shift)}{" "}
+              space={String(diag.space)} active={String(diag.active)}
+            </p>
+            <p>
+              edges: {diag.chords_seen} (swallowed {diag.swallowed})
+            </p>
+          </>
+        ) : (
+          <p>loading…</p>
+        )}
+      </section>
       <section aria-label="transcription service">
         <h2>transcription</h2>
         {stt ? (

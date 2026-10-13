@@ -14,7 +14,7 @@ pub mod stt_shared;
 
 use audio::reset_pipeline;
 use deliver::copy_last_text;
-use hotkey::get_hotkey_label;
+use hotkey::{get_hotkey_label, get_key_diag, DiagState};
 use pipeline::{get_pipeline_state, PipelineState, PipelineStatus};
 use stt::{get_stt_status, sweep_idle, SttState};
 
@@ -60,19 +60,25 @@ fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Without Always, Tauri only accepts device events while a window
+        // is focused, which starves our global keyboard hook whenever our
+        // own window has focus (wry#1761). Always keeps the hook fed.
+        .device_event_filter(tauri::DeviceEventFilter::Always)
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .manage(PipelineState(std::sync::Mutex::new(
             PipelineStatus::default(),
         )))
         .manage(SttState::default())
+        .manage(DiagState::default())
         .invoke_handler(tauri::generate_handler![
             greet,
             get_pipeline_state,
             get_hotkey_label,
             reset_pipeline,
             get_stt_status,
-            copy_last_text
+            copy_last_text,
+            get_key_diag
         ])
         .setup(|app| {
             build_tray(app.handle())?;

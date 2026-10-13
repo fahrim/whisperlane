@@ -16,6 +16,7 @@ This folder holds approved decisions. Proposals live in
 
 - `001-default-hotkey.md` — default hotkey (approved from `08-decisions.md` item 7).
 - `002-engine-hosting.md` — speech-engine hosting (approved from `08-decisions.md` item 1).
+- `003-device-event-filter.md` — device event filter for the global hotkey (approved from `08-decisions.md` item 7).
 
 ## Related
 

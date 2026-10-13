@@ -225,15 +225,23 @@ Options:
 Trade-offs: familiarity aids adoption; collision-avoidance decides whether
 that familiarity survives contact with editors and input methods.
 
-Recommendation: default to hold Control plus platform key for push-to-talk
-with tap on the same binding acting as toggle, plus the hands-free
-combination above as the explicit alternate — the shared competitor
-behavior in Windows form. Keep the binding user-configurable from the
-first useful milestone, with the legacy plugin choices retained as
-alternates. Microphone selection stays ask-on-first-press so no setup
-stands between install and first dictation.
+Recommendation: default to hold Control plus Shift plus Space for
+push-to-talk with tap on the same binding acting as toggle, plus the
+hands-free combination above as the explicit alternate — the shared
+competitor behavior in Windows form, with Shift avoiding the Control plus
+Space collisions. Keep the binding user-configurable from the first useful
+milestone, with the legacy plugin choices retained as alternates.
+Microphone selection stays ask-on-first-press so no setup stands between
+install and first dictation.
 
-Status: approved — see `adr/001-default-hotkey.md`.
+Evidence from the M0 skeleton: the bare Control plus platform key proved
+undeliverable in practice — the chord is expressible, but the machine
+underneath it did not produce the two modifiers together. The chord also
+has to survive the desktop shell: its own window being focused starved the
+global hook entirely, which the device event filter setting fixes.
+
+Status: approved — see `adr/001-default-hotkey.md`, amended by
+`adr/003-device-event-filter.md`.
 
 ## ADR process
 
@@ -245,7 +253,8 @@ Status: approved — see `adr/001-default-hotkey.md`.
   ADR lands, the corresponding section here points to it and related
   documents update their Related sections.
 
-ADR index: `adr/001-default-hotkey.md` (item 7), `adr/002-engine-hosting.md` (item 1).
+ADR index: `adr/001-default-hotkey.md` (item 7), `adr/002-engine-hosting.md` (item 1),
+`adr/003-device-event-filter.md` (item 7).
 
 ## Related
 

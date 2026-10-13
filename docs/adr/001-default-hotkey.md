@@ -1,6 +1,6 @@
 # ADR-001: Default Hotkey
 
-Status: approved.
+Status: approved, amended by ADR-003.
 
 ## Context
 
@@ -8,8 +8,7 @@ The whole product hinges on one key interaction, but the default must not
 collide with platform, terminal-emulator, or common application shortcuts.
 Agent and terminal-agent bindings join the collision check in phase two.
 Per direction, the default follows the most established competitors rather
-than inventing a new gesture. The shared market pattern is a Space-based
-hold-to-dictate with tap-to-toggle on the same binding.
+than inventing a new gesture.
 
 ## Options considered
 
@@ -23,22 +22,24 @@ hold-to-dictate with tap-to-toggle on the same binding.
 
 ## Decision
 
-Default to hold Control plus platform key for push-to-talk with tap on the
-same binding acting as toggle, plus the hands-free combination above as the
-explicit alternate. The binding stays user-configurable from the first
-useful milestone, with the legacy plugin choices retained as alternates.
-Microphone selection stays ask-on-first-press so no setup stands between
-install and first dictation.
+Hold Control plus Shift plus Space to dictate, with tap on the same binding
+acting as toggle. Control plus Space stays rejected: its autocomplete and
+input-method collisions are real, and the move to Shift avoids them without
+inventing a gesture.
+
+The binding stays user-configurable from the first useful milestone, with the
+legacy plugin choices retained as alternates. Microphone selection stays
+ask-on-first-press so no setup stands between install and first dictation.
 
 ## Consequences
 
-- The M0 skeleton watches the Control plus Super chord through a low-level
-  keyboard hook, since bare-modifier chords cannot go through the
-  register-a-shortcut path.
+- The M0 skeleton watches the chord through a low-level keyboard hook,
+  because bare-modifier chords cannot go through the register-a-shortcut
+  path.
 - Toggle behavior and the hands-free alternate land with the M1 flow and
   settings work, not in the skeleton.
-- A bare Windows-key press may wake the Start menu on some machines; if it
-  does, suppression is M1 scope and must not change this default silently.
+- The chord must not collide with the terminal hosting an agent prompt, which
+  is why the hands-free binding joins the phase-two collision check.
 
 ## Related
 

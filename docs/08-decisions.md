@@ -293,6 +293,49 @@ left out. Stop delivers and Escape discards, always.
 
 Status: approved — see `adr/004-cancel-gesture.md`.
 
+## 9. What the chord does from a finished state
+
+Context: the experience document requires that a terminal state — done,
+failed, cancelled — returns to idle in one action, and the M0 skeleton
+implemented that as a button. It never says what the chord itself does
+once a take has finished. In the M1 build the chord does nothing there:
+the user must reach the window, press the button, and only then can they
+dictate again. The transition table also makes the path strict, so a
+finished take cannot start the next one directly.
+
+That matters more at M1 than it did at M0, because dictation is now
+inserted at a real destination and back-to-back takes are the normal
+case: people dictate a sentence, then a second one, without moving the
+mouse.
+
+Options:
+
+- The chord does nothing from a terminal state and the user must reset
+  first, by button. Keeps every state transition explicit and the
+  pipeline strictly ordered, at the cost of an extra, invisible-feeling
+  step before the next take.
+- Terminal states fall back to idle on their own after a short pause.
+  The chord then always works, but the transcript disappears on its own
+  before the user has had a realistic chance to read it, which loses the
+  honesty the terminal state exists to provide.
+- The chord starts a new take directly from a terminal state. One key,
+  from any state, with the previous transcript still visible until the
+  new take replaces it.
+
+Trade-offs: the first two make the state machine strict at the cost of
+momentum; the third trades a strict order for a flow that matches how
+dictation is actually used. Nothing is inserted twice either way, since
+a new take begins from a finished phase rather than from delivered text.
+
+Recommendation: the chord starts a new take from any non-capturing
+state, and a terminal state's button remains for reading the transcript
+and returning to a quiet idle. Back-to-back dictation should not need
+the mouse, and the transcript stays available until the next take
+replaces it rather than disappearing on a timer.
+
+Status: open — implemented as the recommendation; approval closes it
+into `adr/007-chord-from-terminal-state.md`.
+
 ## ADR process
 
 - A decision becomes an ADR only after explicit approval of the

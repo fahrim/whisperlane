@@ -270,10 +270,20 @@ pub enum ChordAction {
 /// The chord is a switch once a take is live: pressing it again stops
 /// the take whether it was started by hold or by tap, and releasing it
 /// only stops a take that was started by holding.
+///
+/// A finished take is not a barrier. Pressing the chord again starts the
+/// next one directly, because back-to-back dictation is the normal case
+/// and making the user reach a button first breaks the flow. Nothing is
+/// inserted twice: a new take begins from a phase that has already
+/// delivered, not from delivered text.
 pub fn resolve_action(event: HookEvent, phase: Option<Phase>) -> ChordAction {
     use ChordAction::*;
     match (event, phase) {
         (HookEvent::Pressed, Some(Phase::Idle)) => Start,
+        // Terminal states start the next take rather than refusing.
+        (HookEvent::Pressed, Some(Phase::Done))
+        | (HookEvent::Pressed, Some(Phase::Failed))
+        | (HookEvent::Pressed, Some(Phase::Cancelled)) => Start,
         (HookEvent::Pressed, Some(Phase::Listening)) => Stop,
         (HookEvent::Released { held_ms }, Some(Phase::Listening)) => {
             if is_tap(held_ms) {
@@ -778,6 +788,27 @@ mod tests {
     }
 
     #[test]
+    fn the_chord_starts_the_next_take_from_a_finished_state() {
+        // Back-to-back dictation must not need the mouse: a terminal
+        // phase is a resting place, not a barrier.
+        for finished in [Phase::Done, Phase::Failed, Phase::Cancelled] {
+            assert_eq!(
+                resolve_action(HookEvent::Pressed, Some(finished)),
+                ChordAction::Start,
+                "pressing the chord from {finished:?} should start a take"
+            );
+        }
+    }
+
+    #[test]
+    fn a_new_take_is_a_legal_move_from_every_terminal_state() {
+        for finished in [Phase::Done, Phase::Failed, Phase::Cancelled] {
+            assert!(finished.can_transition_to(Phase::Listening));
+            assert!(finished.can_transition_to(Phase::Idle));
+        }
+    }
+
+    #[test]
     fn events_outside_a_live_take_are_ignored() {
         assert_eq!(
             resolve_action(HookEvent::Cancelled, Some(Phase::Idle)),
@@ -789,10 +820,6 @@ mod tests {
         );
         assert_eq!(
             resolve_action(HookEvent::Released { held_ms: 900 }, Some(Phase::Thinking)),
-            ChordAction::Ignore
-        );
-        assert_eq!(
-            resolve_action(HookEvent::Pressed, Some(Phase::Done)),
             ChordAction::Ignore
         );
         assert_eq!(resolve_action(HookEvent::Pressed, None), ChordAction::Ignore);

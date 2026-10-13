@@ -177,7 +177,8 @@ function App() {
     <main className="container">
       <h1>whisperlane (M1)</h1>
       <p>
-        hold <strong>{hotkey}</strong> to talk, or tap it to toggle
+        hold <strong>{hotkey}</strong> to talk, or tap it to toggle — the
+        chord starts a new take straight away after one finishes
       </p>
       {error && <p role="alert">state error: {error}</p>}
       {status ? (
@@ -194,7 +195,7 @@ function App() {
           )}
           {terminal && (
             <button type="button" onClick={reset}>
-              back to idle
+              clear
             </button>
           )}
           {status.delivery === "typed" && (

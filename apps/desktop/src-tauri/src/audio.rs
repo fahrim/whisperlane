@@ -281,6 +281,10 @@ pub fn dispatch(app: &AppHandle, event: HookEvent) {
 /// Hotkey pressed: open the microphone and start the take.
 /// A missing or unusable microphone fails loudly, never silently deaf.
 pub fn begin_take(app: &AppHandle) {
+    // A new take clears the previous one, so the surface never shows or
+    // copies a transcript and delivery note that belong to a finished take.
+    crate::pipeline::clear_last_text(app);
+    crate::pipeline::set_delivery(app, crate::pipeline::DeliveryKind::None, None);
     let take = (|| -> Result<ActiveTake, String> {
         let host = cpal::default_host();
         let device = select_input_device(&host, &crate::settings::microphone_of(app))?;

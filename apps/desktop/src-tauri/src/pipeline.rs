@@ -32,6 +32,11 @@ pub enum Phase {
 impl Phase {
     /// Valid transitions of the take pipeline. Anything else is a bug
     /// at the caller, never a silent state jump.
+    ///
+    /// A terminal state goes straight back to Listening as well as to
+    /// Idle: the chord starts the next take directly, so requiring a
+    /// reset first would reject a legal action rather than an illegal
+    /// one.
     pub fn can_transition_to(self, next: Phase) -> bool {
         use Phase::*;
         match (self, next) {
@@ -43,9 +48,9 @@ impl Phase {
             (Thinking, Done) => true,
             (Thinking, Failed) => true,
             (Thinking, Cancelled) => true,
-            (Done, Idle) => true,
-            (Failed, Idle) => true,
-            (Cancelled, Idle) => true,
+            (Done, Idle) | (Done, Listening) => true,
+            (Failed, Idle) | (Failed, Listening) => true,
+            (Cancelled, Idle) | (Cancelled, Listening) => true,
             _ => false,
         }
     }
@@ -126,6 +131,23 @@ pub fn get_pipeline_state_inner(app: &AppHandle) -> PipelineStatus {
     PipelineStatus {
         valid_next: status.phase.valid_next(),
         ..status
+    }
+}
+
+/// Clears the transcript of the take that just finished, so a new take
+/// never displays or copies the previous one's words.
+pub fn clear_last_text(app: &AppHandle) {
+    if let Some(state) = app.try_state::<PipelineState>() {
+        let snapshot = {
+            let mut status = state.0.lock().expect("pipeline state poisoned");
+            status.last_text = None;
+            PipelineStatus {
+                valid_next: status.phase.valid_next(),
+                ..status.clone()
+            }
+        };
+        app.emit("pipeline-state", snapshot)
+            .expect("failed to emit pipeline-state");
     }
 }
 
@@ -226,7 +248,10 @@ mod tests {
         assert!(!Phase::Idle.can_transition_to(Phase::Done));
         assert!(!Phase::Listening.can_transition_to(Phase::Done));
         assert!(!Phase::Listening.can_transition_to(Phase::Idle));
-        assert!(!Phase::Done.can_transition_to(Phase::Listening));
+        assert!(!Phase::Listening.can_transition_to(Phase::Listening));
+        assert!(!Phase::Thinking.can_transition_to(Phase::Listening));
+        assert!(!Phase::Thinking.can_transition_to(Phase::Idle));
+        assert!(!Phase::Done.can_transition_to(Phase::Done));
     }
 
     #[test]

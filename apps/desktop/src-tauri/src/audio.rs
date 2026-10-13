@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use tauri::{AppHandle, Manager};
 
-use crate::hotkey::{resolve_edge, ChordEdge};
+use crate::hotkey::{resolve_action, ChordAction, HookEvent};
 use crate::pipeline::{current_phase, set_phase, Phase, PipelineStatus};
 use crate::settings::Microphone;
 
@@ -267,16 +267,20 @@ fn spawn_stream(
     }
 }
 
+/// Turns one hook event into take work. The single entry point for the
+/// hook worker, so every dictation flow passes the same decision table.
+pub fn dispatch(app: &AppHandle, event: HookEvent) {
+    match resolve_action(event, current_phase(app)) {
+        ChordAction::Start => begin_take(app),
+        ChordAction::Stop => end_take(app),
+        ChordAction::Cancel => cancel_take(app),
+        ChordAction::Ignore => {}
+    }
+}
+
 /// Hotkey pressed: open the microphone and start the take.
 /// A missing or unusable microphone fails loudly, never silently deaf.
 pub fn begin_take(app: &AppHandle) {
-    let phase = match current_phase(app) {
-        Some(p) => p,
-        None => return,
-    };
-    if resolve_edge(ChordEdge::Activated, phase) != Some(Phase::Listening) {
-        return;
-    }
     let take = (|| -> Result<ActiveTake, String> {
         let host = cpal::default_host();
         let device = select_input_device(&host, &crate::settings::microphone_of(app))?;
@@ -316,18 +320,11 @@ pub fn begin_take(app: &AppHandle) {
     }
 }
 
-/// Hotkey released: stop capture, store the take, validate it.
-/// Silence and very short takes fail here with a plain message.
+/// Hotkey released, or pressed again: stop capture, store the take,
+/// validate it. Silence and very short takes fail here with a plain
+/// message.
 pub fn end_take(app: &AppHandle) {
-    let phase = match current_phase(app) {
-        Some(p) => p,
-        None => return,
-    };
-    crate::hotkey::debug_log(format!("end_take entry phase={phase:?}\n"));
-    if resolve_edge(ChordEdge::Released, phase) != Some(Phase::Thinking) {
-        crate::hotkey::debug_log("end_take: ignored, not a live take\n".to_string());
-        return;
-    }
+    crate::hotkey::debug_log("end_take entry\n".to_string());
     let active = ACTIVE_TAKE.with(|slot| slot.borrow_mut().take());
     let Some(active) = active else {
         crate::hotkey::debug_log("end_take: no active stream\n".to_string());
@@ -379,6 +376,32 @@ pub fn end_take(app: &AppHandle) {
         }
         Err(detail) => set_phase(app, Phase::Failed, Some(detail)),
     }
+}
+
+/// Discards the take. Capture stops and nothing is stored; a take
+/// already being transcribed is abandoned when its result arrives, so
+/// cancelled text is never delivered or copied.
+pub fn cancel_take(app: &AppHandle) {
+    // Dropping the stream stops the device; the samples go with it.
+    ACTIVE_TAKE.with(|slot| slot.borrow_mut().take());
+    set_phase(
+        app,
+        Phase::Cancelled,
+        Some("discarded — nothing was inserted".to_string()),
+    );
+}
+
+/// Cancels a live take from the settings surface. Same rule as the
+/// Escape key: no take means nothing to cancel.
+#[tauri::command]
+pub fn cancel_live_take(app: AppHandle) -> PipelineStatus {
+    if matches!(
+        current_phase(&app),
+        Some(Phase::Listening) | Some(Phase::Thinking)
+    ) {
+        cancel_take(&app);
+    }
+    crate::pipeline::get_pipeline_state_inner(&app)
 }
 
 /// Terminal phases (done, failed, cancelled) return to idle in one action.

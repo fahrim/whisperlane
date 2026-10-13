@@ -65,6 +65,23 @@ Acceptance criteria:
 - Nothing in the shipped product closes the phase-two agent door: the
   target abstraction is in place even though only one destination exists.
 
+## M1 — slice order
+
+The milestone's scope resolves into slices that are each usable on their
+own. The settings and flow slices carry approved decisions; insertion and
+model management wait on the open questions they depend on, recorded in
+the decisions document as items three and four.
+
+| Slice | Scope | Criterion it carries |
+| --- | --- | --- |
+| 1 | Settings foundation and language choice | Three |
+| 2 | Dictation chord as a user setting | Three |
+| 3 | Microphone choice, asked without blocking the first take | Three |
+| 4 | Hold-to-talk, toggle-to-talk, and cancellation | Two |
+| 5 | Focused-application insertion, or a plain stated failure | One |
+| 6 | Model download and readiness, honest and non-blocking | Three |
+| 7 | Verified accelerated transcription on AMD and Intel | Four |
+
 ## Phase 2 — Agent integration (not v1)
 
 Goal: make dictation into the AI agent a first-class path, starting with

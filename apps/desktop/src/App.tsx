@@ -114,9 +114,21 @@ function App() {
       status.phase === "failed" ||
       status.phase === "cancelled");
 
+  const live =
+    status !== null &&
+    (status.phase === "listening" || status.phase === "thinking");
+
   async function reset() {
     try {
       setStatus(await invoke<PipelineStatus>("reset_pipeline"));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function cancel() {
+    try {
+      setStatus(await invoke<PipelineStatus>("cancel_live_take"));
     } catch (e) {
       setError(String(e));
     }
@@ -161,9 +173,9 @@ function App() {
 
   return (
     <main className="container">
-      <h1>whisperlane (M0 skeleton)</h1>
+      <h1>whisperlane (M1)</h1>
       <p>
-        hold <strong>{hotkey}</strong> to talk
+        hold <strong>{hotkey}</strong> to talk, or tap it to toggle
       </p>
       {error && <p role="alert">state error: {error}</p>}
       {status ? (
@@ -173,6 +185,11 @@ function App() {
           </p>
           <p>target: {targetLabel(status.target)}</p>
           <p>valid next: {status.valid_next.join(", ") || "—"}</p>
+          {live && (
+            <button type="button" onClick={cancel}>
+              discard (Esc)
+            </button>
+          )}
           {terminal && (
             <button type="button" onClick={reset}>
               back to idle

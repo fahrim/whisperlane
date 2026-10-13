@@ -13,7 +13,7 @@ mod settings;
 mod stt;
 pub mod stt_shared;
 
-use audio::{list_input_devices, needs_microphone_choice, reset_pipeline};
+use audio::{cancel_live_take, list_input_devices, needs_microphone_choice, reset_pipeline};
 use deliver::copy_last_text;
 use hotkey::{get_hotkey_label, get_key_diag, list_hotkeys, DiagState};
 use pipeline::{get_pipeline_state, PipelineState, PipelineStatus};
@@ -90,7 +90,8 @@ pub fn run() {
             list_languages,
             list_hotkeys,
             list_input_devices,
-            needs_microphone_choice
+            needs_microphone_choice,
+            cancel_live_take
         ])
         .setup(|app| {
             // Settings need the resolved data dir, so they load here

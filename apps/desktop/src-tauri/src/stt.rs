@@ -334,6 +334,11 @@ pub fn transcribe_take(app: AppHandle, wav_path: String) {
         }
         match result {
             Ok(text) => {
+                // A take cancelled or reset while transcribing lands
+                // nothing: no text, no delivery, no clipboard.
+                if current_phase(&app) != Some(Phase::Thinking) {
+                    return;
+                }
                 if text.is_empty() {
                     set_phase(
                         &app,
@@ -342,13 +347,17 @@ pub fn transcribe_take(app: AppHandle, wav_path: String) {
                     );
                 } else {
                     set_last_text(&app, text);
-                    if current_phase(&app) == Some(Phase::Thinking) {
-                        set_phase(&app, Phase::Done, None);
-                        crate::deliver::deliver(&app);
-                    }
+                    set_phase(&app, Phase::Done, None);
+                    crate::deliver::deliver(&app);
                 }
             }
-            Err(detail) => set_phase(&app, Phase::Failed, Some(detail)),
+            Err(detail) => {
+                // Same guard: a failure must not resurrect a take the
+                // user already discarded.
+                if current_phase(&app) == Some(Phase::Thinking) {
+                    set_phase(&app, Phase::Failed, Some(detail));
+                }
+            }
         }
     });
 }

@@ -243,6 +243,49 @@ global hook entirely, which the device event filter setting fixes.
 Status: approved — see `adr/001-default-hotkey.md`, amended by
 `adr/003-device-event-filter.md`.
 
+## 8. How the user discards a take
+
+Context: the experience document requires cancellation — the user
+discards the take at any point before insertion, nothing is inserted,
+and the application returns cleanly to idle in one action — and
+toggle-to-talk, where a tap starts and a tap stops. Neither document
+names the gesture for discarding. The chord is already taken by
+starting and stopping, so cancellation cannot be a third state of it
+without making the chord's meaning ambiguous.
+
+Options:
+
+- The Escape key discards a live take, during capture and while
+  transcription runs, and the pill offers the same as its stop control.
+  Universal on Windows, available without leaving the destination
+  application, and reachable from the mouse through the pill.
+- Pressing the chord again discards instead of stopping. Reuses the one
+  gesture the user already knows, but overloads it: the same press means
+  stop in one moment and discard in the next, with no way to tell which
+  before pressing.
+- A discard control on the pill only. Works for mouse users, and fails
+  entirely for keyboard-only dictation, which is the primary gesture.
+
+Trade-offs: Escape adds one gesture to learn but keeps every meaning
+single and reversible-looking: stop still delivers, Escape always
+throws away. Reusing the chord keeps the gesture count minimal and
+makes a mispress indistinguishable from an intended stop. A pill-only
+control is discoverable but excludes the main input path.
+
+Evidence from the M1 build: with the chord reserved for start and
+stop, the discard action needs a signal of its own. Escape is
+swallowed only while a take is live, so it remains ordinary typing
+everywhere else, and a cancelled take is never delivered: a
+transcription result that arrives after a discard is dropped rather
+than pasted.
+
+Recommendation: the Escape key discards a live take, with the same
+action available from the pill's stop control so mouse-only use is not
+left out. Stop delivers and Escape discards, always.
+
+Status: open — implemented as the recommendation; approval closes it
+into `adr/004-cancel-gesture.md`.
+
 ## ADR process
 
 - A decision becomes an ADR only after explicit approval of the
@@ -254,7 +297,8 @@ Status: approved — see `adr/001-default-hotkey.md`, amended by
   documents update their Related sections.
 
 ADR index: `adr/001-default-hotkey.md` (item 7), `adr/002-engine-hosting.md` (item 1),
-`adr/003-device-event-filter.md` (item 7).
+`adr/003-device-event-filter.md` (item 7). Open proposal implemented in M1:
+item 8 (cancel gesture).
 
 ## Related
 

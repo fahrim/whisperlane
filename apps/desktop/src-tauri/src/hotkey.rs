@@ -10,6 +10,7 @@
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{mpsc, Mutex};
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
@@ -31,6 +32,7 @@ const VK_RSHIFT: u32 = 0xA1;
 const VK_SHIFT: u32 = 0x10;
 const VK_SPACE: u32 = 0x20;
 const VK_Y: u32 = 0x59;
+const VK_ESCAPE: u32 = 0x1B;
 
 /// The user-selectable dictation chord (ADR-001: configurable from the
 /// first useful milestone, with the legacy plugin choice retained as an
@@ -127,11 +129,26 @@ pub fn apply_binding(hotkey: Hotkey) {
     BINDING.store(hotkey.code(), Ordering::Relaxed);
 }
 
-/// Edge of the watched chord: all sides down, or no longer all down.
+/// A chord press shorter than this counts as a tap, which toggles
+/// dictation instead of ending it (docs/04-experience.md,
+/// toggle-to-talk: the user taps to start and taps to stop).
+pub const TAP_MAX_MS: u64 = 300;
+
+/// Whether a press was a tap rather than a hold. Pure and separately
+/// tested, because the machine that measures it cannot control time.
+pub fn is_tap(held_ms: u64) -> bool {
+    held_ms <= TAP_MAX_MS
+}
+
+/// What the hook reports to the take pipeline.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChordEdge {
-    Activated,
-    Released,
+pub enum HookEvent {
+    /// The chord is fully down.
+    Pressed,
+    /// The chord came up after being held this long.
+    Released { held_ms: u64 },
+    /// The user asked to discard the take.
+    Cancelled,
 }
 
 fn is_ctrl(vk: u32) -> bool {
@@ -152,6 +169,9 @@ pub struct ChordState {
     shift: bool,
     trigger: bool,
     active: bool,
+    /// When the chord went fully down, so the release can report how
+    /// long it was held. Tap versus hold is only knowable on release.
+    pressed_at: Option<Instant>,
 }
 
 impl ChordState {
@@ -161,6 +181,7 @@ impl ChordState {
             shift: false,
             trigger: false,
             active: false,
+            pressed_at: None,
         }
     }
 
@@ -170,7 +191,17 @@ impl ChordState {
         *self = Self::new();
     }
 
-    /// Returns the chord edge and whether to swallow this event.
+    /// How long the chord was held, rounded to milliseconds.
+    fn release_after_hold(&mut self) -> HookEvent {
+        let held_ms = self
+            .pressed_at
+            .take()
+            .map(|started| started.elapsed().as_millis() as u64)
+            .unwrap_or(0);
+        HookEvent::Released { held_ms }
+    }
+
+    /// Returns the hook event and whether to swallow this event.
     ///
     /// Only the trigger key is swallowed, and only while the chord is
     /// formed. Modifier events always pass through: swallowing them
@@ -180,7 +211,7 @@ impl ChordState {
     ///
     /// Keys the binding does not use are not tracked at all, so a
     /// binding without Shift leaves Shift as ordinary typing.
-    pub fn event(&mut self, vk: u32, down: bool, hotkey: Hotkey) -> (Option<ChordEdge>, bool) {
+    pub fn event(&mut self, vk: u32, down: bool, hotkey: Hotkey) -> (Option<HookEvent>, bool) {
         let uses_shift = hotkey.needs_shift();
         if is_ctrl(vk) || (uses_shift && is_shift(vk)) {
             if is_ctrl(vk) {
@@ -188,12 +219,12 @@ impl ChordState {
             } else {
                 self.shift = down;
             }
-            // Any modifier release ends the take: users release the
+            // Any modifier release ends the chord: users release the
             // modifiers before the trigger key, and waiting for the
             // trigger release would leave capture open.
             if self.active && !down {
                 self.active = false;
-                return (Some(ChordEdge::Released), false);
+                return (Some(self.release_after_hold()), false);
             }
             return (None, false);
         }
@@ -202,11 +233,12 @@ impl ChordState {
             let armed = self.ctrl && (!uses_shift || self.shift);
             if armed && down && !self.active {
                 self.active = true;
-                return (Some(ChordEdge::Activated), true);
+                self.pressed_at = Some(Instant::now());
+                return (Some(HookEvent::Pressed), true);
             }
             if self.active && !down {
                 self.active = false;
-                return (Some(ChordEdge::Released), true);
+                return (Some(self.release_after_hold()), true);
             }
             // Trigger key alone: never swallowed.
             return (None, false);
@@ -215,14 +247,37 @@ impl ChordState {
     }
 }
 
-/// Hold-to-talk intent for the M0 skeleton: press starts capture,
-/// release ends it and hands the take to transcription. Toggle-to-talk
-/// is M1 scope.
-pub fn resolve_edge(edge: ChordEdge, phase: Phase) -> Option<Phase> {
-    match (edge, phase) {
-        (ChordEdge::Activated, Phase::Idle) => Some(Phase::Listening),
-        (ChordEdge::Released, Phase::Listening) => Some(Phase::Thinking),
-        _ => None,
+/// What one hook event means for the take.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChordAction {
+    Start,
+    Stop,
+    Cancel,
+    Ignore,
+}
+
+/// Pure intent decision over an event and the current phase. Unit-tested
+/// because every dictation flow reduces to this table.
+///
+/// The chord is a switch once a take is live: pressing it again stops
+/// the take whether it was started by hold or by tap, and releasing it
+/// only stops a take that was started by holding.
+pub fn resolve_action(event: HookEvent, phase: Option<Phase>) -> ChordAction {
+    use ChordAction::*;
+    match (event, phase) {
+        (HookEvent::Pressed, Some(Phase::Idle)) => Start,
+        (HookEvent::Pressed, Some(Phase::Listening)) => Stop,
+        (HookEvent::Released { held_ms }, Some(Phase::Listening)) => {
+            if is_tap(held_ms) {
+                // A tap starts dictation and leaves it running.
+                Ignore
+            } else {
+                Stop
+            }
+        }
+        (HookEvent::Cancelled, Some(Phase::Listening)) => Cancel,
+        (HookEvent::Cancelled, Some(Phase::Thinking)) => Cancel,
+        _ => Ignore,
     }
 }
 
@@ -323,7 +378,7 @@ unsafe extern "system" fn hook_proc(n_code: i32, w_param: WPARAM, l_param: LPARA
             // SAFETY: STATE is reached only from this hook thread, and a
             // low-level keyboard hook always runs on its installing thread.
             let state = unsafe { &mut *STATE.0.get() };
-            let (edge, mask) = state.event(vk, down, hotkey);
+            let (event, mask) = state.event(vk, down, hotkey);
             // SAFETY: APP is written once before the hook starts.
             let diag_app = unsafe { (*APP.0.get()).clone() };
             if let Some(diag_app) = diag_app {
@@ -333,43 +388,69 @@ unsafe extern "system" fn hook_proc(n_code: i32, w_param: WPARAM, l_param: LPARA
                     kb.flags.0
                 );
                 record(&diag_app, label, state);
-                if edge.is_some() {
+                if event.is_some() {
                     record_chord(&diag_app, mask);
                 }
             }
-            if edge.is_some() || mask {
+            if event.is_some() || mask {
                 debug_log(format!("hook vk={vk:#X} down={down} mask={mask}\n"));
                 if let Some(tx) = EDGE_TX.get() {
-                    if let Some(edge) = edge {
-                        let _ = tx.send(edge);
+                    if let Some(event) = event {
+                        let _ = tx.send(event);
                     }
                 }
                 // Swallow the chord: none of it reaches other apps.
                 return LRESULT(1);
             }
             debug_log(format!("hook vk={vk:#X} down={down} mask=false\n"));
+            // Escape discards a live take, but only while one exists:
+            // otherwise it stays ordinary typing for the focused window.
+            if vk == VK_ESCAPE && !down {
+                let cancel = cancel_live();
+                if cancel {
+                    debug_log("hook escape: cancel\n".to_string());
+                    if let Some(tx) = EDGE_TX.get() {
+                        let _ = tx.send(HookEvent::Cancelled);
+                    }
+                    return LRESULT(1);
+                }
+            }
         }
     }
     // SAFETY: forwarding to the next hook in the chain.
     unsafe { CallNextHookEx(HHOOK::default(), n_code, w_param, l_param) }
 }
 
-static EDGE_TX: std::sync::OnceLock<mpsc::Sender<ChordEdge>> = std::sync::OnceLock::new();
+/// Whether a take is live and can therefore be cancelled.
+///
+/// One short, uncontended lock against a phase read: the alternative
+/// would be chord-local state, which cannot know that a toggled take is
+/// still running. This is orders of magnitude below the window in which
+/// Windows silently unhooks a slow low-level hook.
+fn cancel_live() -> bool {
+    // SAFETY: APP is written once before the hook starts.
+    let Some(app) = (unsafe { (*APP.0.get()).clone() }) else {
+        return false;
+    };
+    matches!(
+        crate::pipeline::current_phase(&app),
+        Some(Phase::Listening) | Some(Phase::Thinking)
+    )
+}
+
+static EDGE_TX: std::sync::OnceLock<mpsc::Sender<HookEvent>> = std::sync::OnceLock::new();
 
 /// Installs the hook and pumps messages on this thread. Slow work never
-/// runs here: edges queue to the audio worker; blocking the hook thread
+/// runs here: events queue to the audio worker; blocking the hook thread
 /// gets a low-level hook silently uninstalled by Windows.
 pub fn run_listener(app: AppHandle) {
-    let (tx, rx) = mpsc::channel::<ChordEdge>();
+    let (tx, rx) = mpsc::channel::<HookEvent>();
     let _ = EDGE_TX.set(tx);
     let worker = app.clone();
     std::thread::spawn(move || {
-        for edge in rx {
-            debug_log(format!("worker {edge:?}\n"));
-            match edge {
-                ChordEdge::Activated => audio::begin_take(&worker),
-                ChordEdge::Released => audio::end_take(&worker),
-            }
+        for event in rx {
+            debug_log(format!("worker {event:?}\n"));
+            audio::dispatch(&worker, event);
         }
     });
 
@@ -429,6 +510,11 @@ mod tests {
     /// The approved default binding, named once for readability.
     const DEFAULT: Hotkey = Hotkey::CtrlShiftSpace;
 
+    /// Whether an event is a chord release, whatever the hold duration.
+    fn is_release(event: Option<HookEvent>) -> bool {
+        matches!(event, Some(HookEvent::Released { .. }))
+    }
+
     #[test]
     fn activates_when_last_side_goes_down() {
         let mut s = ChordState::new();
@@ -436,7 +522,7 @@ mod tests {
         assert_eq!(s.event(VK_LSHIFT, true, DEFAULT), (None, false));
         assert_eq!(
             s.event(VK_SPACE, true, DEFAULT),
-            (Some(ChordEdge::Activated), true)
+            (Some(HookEvent::Pressed), true)
         );
     }
 
@@ -447,7 +533,7 @@ mod tests {
         s.event(VK_RSHIFT, true, DEFAULT);
         assert_eq!(
             s.event(VK_SPACE, true, DEFAULT),
-            (Some(ChordEdge::Activated), true)
+            (Some(HookEvent::Pressed), true)
         );
     }
 
@@ -458,7 +544,7 @@ mod tests {
         assert_eq!(s.event(VK_LSHIFT, true, DEFAULT), (None, false));
         assert_eq!(
             s.event(VK_SPACE, true, DEFAULT),
-            (Some(ChordEdge::Activated), true)
+            (Some(HookEvent::Pressed), true)
         );
         // Repeat and modifier repeats never swallow, never re-fire.
         assert_eq!(s.event(VK_SPACE, true, DEFAULT), (None, false));
@@ -466,29 +552,27 @@ mod tests {
     }
 
     #[test]
-    fn modifier_release_ends_take_even_while_trigger_held() {
+    fn modifier_release_ends_the_chord_even_while_trigger_held() {
         let mut s = ChordState::new();
         s.event(VK_LCONTROL, true, DEFAULT);
         s.event(VK_LSHIFT, true, DEFAULT);
         s.event(VK_SPACE, true, DEFAULT);
-        assert_eq!(
-            s.event(VK_LCONTROL, false, DEFAULT),
-            (Some(ChordEdge::Released), false)
-        );
+        let (event, mask) = s.event(VK_LCONTROL, false, DEFAULT);
+        assert!(is_release(event));
+        assert!(!mask);
         // Trigger release after the chord ended is plain typing again.
         assert_eq!(s.event(VK_SPACE, false, DEFAULT), (None, false));
     }
 
     #[test]
-    fn trigger_release_ends_take_and_is_swallowed() {
+    fn trigger_release_ends_the_chord_and_is_swallowed() {
         let mut s = ChordState::new();
         s.event(VK_LCONTROL, true, DEFAULT);
         s.event(VK_LSHIFT, true, DEFAULT);
         s.event(VK_SPACE, true, DEFAULT);
-        assert_eq!(
-            s.event(VK_SPACE, false, DEFAULT),
-            (Some(ChordEdge::Released), true)
-        );
+        let (event, mask) = s.event(VK_SPACE, false, DEFAULT);
+        assert!(is_release(event));
+        assert!(mask);
     }
 
     #[test]
@@ -510,7 +594,7 @@ mod tests {
         s.event(VK_LSHIFT, true, DEFAULT);
         assert_eq!(
             s.event(VK_SPACE, true, DEFAULT),
-            (Some(ChordEdge::Activated), true)
+            (Some(HookEvent::Pressed), true)
         );
     }
 
@@ -528,7 +612,7 @@ mod tests {
         s.event(VK_SHIFT, true, DEFAULT);
         assert_eq!(
             s.event(VK_SPACE, true, DEFAULT),
-            (Some(ChordEdge::Activated), true)
+            (Some(HookEvent::Pressed), true)
         );
     }
 
@@ -548,12 +632,11 @@ mod tests {
         // A held Shift neither blocks nor changes the binding.
         assert_eq!(
             s.event(VK_SPACE, true, Hotkey::CtrlSpace),
-            (Some(ChordEdge::Activated), true)
+            (Some(HookEvent::Pressed), true)
         );
-        assert_eq!(
-            s.event(VK_SPACE, false, Hotkey::CtrlSpace),
-            (Some(ChordEdge::Released), true)
-        );
+        let (event, mask) = s.event(VK_SPACE, false, Hotkey::CtrlSpace);
+        assert!(is_release(event));
+        assert!(mask);
         // Releasing Shift does not end the take: it is not part of it.
         assert_eq!(s.event(VK_LSHIFT, false, Hotkey::CtrlSpace), (None, false));
     }
@@ -573,12 +656,11 @@ mod tests {
         assert_eq!(s.event(VK_SPACE, true, Hotkey::CtrlY), (None, false));
         assert_eq!(
             s.event(VK_Y, true, Hotkey::CtrlY),
-            (Some(ChordEdge::Activated), true)
+            (Some(HookEvent::Pressed), true)
         );
-        assert_eq!(
-            s.event(VK_Y, false, Hotkey::CtrlY),
-            (Some(ChordEdge::Released), true)
-        );
+        let (event, mask) = s.event(VK_Y, false, Hotkey::CtrlY);
+        assert!(is_release(event));
+        assert!(mask);
     }
 
     #[test]
@@ -589,7 +671,7 @@ mod tests {
         s.event(VK_LSHIFT, true, Hotkey::CtrlShiftSpace);
         assert_eq!(
             s.event(VK_SPACE, true, Hotkey::CtrlShiftSpace),
-            (Some(ChordEdge::Activated), true)
+            (Some(HookEvent::Pressed), true)
         );
         s.event(VK_SPACE, false, Hotkey::CtrlShiftSpace);
         s.event(VK_LSHIFT, false, Hotkey::CtrlShiftSpace);
@@ -600,7 +682,7 @@ mod tests {
         s.event(VK_LCONTROL, true, Hotkey::CtrlY);
         assert_eq!(
             s.event(VK_Y, true, Hotkey::CtrlY),
-            (Some(ChordEdge::Activated), true)
+            (Some(HookEvent::Pressed), true)
         );
     }
 
@@ -630,22 +712,110 @@ mod tests {
     }
 
     #[test]
-    fn hold_intent_moves_idle_to_listening_to_thinking() {
+    fn tap_is_a_short_press() {
+        assert!(is_tap(0));
+        assert!(is_tap(TAP_MAX_MS));
+        assert!(!is_tap(TAP_MAX_MS + 1));
+    }
+
+    #[test]
+    fn holding_from_idle_starts_and_releasing_ends_the_take() {
         assert_eq!(
-            resolve_edge(ChordEdge::Activated, Phase::Idle),
-            Some(Phase::Listening)
+            resolve_action(HookEvent::Pressed, Some(Phase::Idle)),
+            ChordAction::Start
         );
         assert_eq!(
-            resolve_edge(ChordEdge::Released, Phase::Listening),
-            Some(Phase::Thinking)
+            resolve_action(HookEvent::Released { held_ms: 2_000 }, Some(Phase::Listening)),
+            ChordAction::Stop
         );
     }
 
     #[test]
-    fn edges_outside_a_take_are_ignored() {
-        assert_eq!(resolve_edge(ChordEdge::Released, Phase::Idle), None);
-        assert_eq!(resolve_edge(ChordEdge::Activated, Phase::Listening), None);
-        assert_eq!(resolve_edge(ChordEdge::Activated, Phase::Thinking), None);
-        assert_eq!(resolve_edge(ChordEdge::Released, Phase::Thinking), None);
+    fn tapping_from_idle_starts_a_take_that_keeps_running() {
+        assert_eq!(
+            resolve_action(HookEvent::Pressed, Some(Phase::Idle)),
+            ChordAction::Start
+        );
+        // The short release must not stop what it started.
+        assert_eq!(
+            resolve_action(HookEvent::Released { held_ms: 120 }, Some(Phase::Listening)),
+            ChordAction::Ignore
+        );
+    }
+
+    #[test]
+    fn pressing_again_while_listening_stops_the_take() {
+        assert_eq!(
+            resolve_action(HookEvent::Pressed, Some(Phase::Listening)),
+            ChordAction::Stop
+        );
+        assert_eq!(
+            resolve_action(HookEvent::Released { held_ms: 1_000 }, Some(Phase::Listening)),
+            ChordAction::Stop
+        );
+    }
+
+    #[test]
+    fn cancelling_works_while_capturing_and_while_thinking() {
+        assert_eq!(
+            resolve_action(HookEvent::Cancelled, Some(Phase::Listening)),
+            ChordAction::Cancel
+        );
+        assert_eq!(
+            resolve_action(HookEvent::Cancelled, Some(Phase::Thinking)),
+            ChordAction::Cancel
+        );
+    }
+
+    #[test]
+    fn events_outside_a_live_take_are_ignored() {
+        assert_eq!(
+            resolve_action(HookEvent::Cancelled, Some(Phase::Idle)),
+            ChordAction::Ignore
+        );
+        assert_eq!(
+            resolve_action(HookEvent::Pressed, Some(Phase::Thinking)),
+            ChordAction::Ignore
+        );
+        assert_eq!(
+            resolve_action(HookEvent::Released { held_ms: 900 }, Some(Phase::Thinking)),
+            ChordAction::Ignore
+        );
+        assert_eq!(
+            resolve_action(HookEvent::Pressed, Some(Phase::Done)),
+            ChordAction::Ignore
+        );
+        assert_eq!(resolve_action(HookEvent::Pressed, None), ChordAction::Ignore);
+    }
+
+    #[test]
+    fn a_chord_reports_press_then_release_with_a_duration() {
+        let mut s = ChordState::new();
+        s.event(VK_LCONTROL, true, DEFAULT);
+        s.event(VK_LSHIFT, true, DEFAULT);
+        assert_eq!(
+            s.event(VK_SPACE, true, DEFAULT),
+            (Some(HookEvent::Pressed), true)
+        );
+        let (event, mask) = s.event(VK_SPACE, false, DEFAULT);
+        match event {
+            Some(HookEvent::Released { held_ms }) => assert!(held_ms < TAP_MAX_MS),
+            other => panic!("expected a release, got {other:?}"),
+        }
+        assert!(mask);
+    }
+
+    #[test]
+    fn a_toggle_take_survives_further_releases() {
+        let mut s = ChordState::new();
+        s.event(VK_LCONTROL, true, DEFAULT);
+        s.event(VK_LSHIFT, true, DEFAULT);
+        s.event(VK_SPACE, true, DEFAULT);
+        s.event(VK_SPACE, false, DEFAULT);
+        s.event(VK_LSHIFT, false, DEFAULT);
+        s.event(VK_LCONTROL, false, DEFAULT);
+        // Stray modifier releases after the tap produce no further edge.
+        assert_eq!(s.event(VK_LSHIFT, false, DEFAULT), (None, false));
+        assert_eq!(s.event(VK_LCONTROL, false, DEFAULT), (None, false));
     }
 }

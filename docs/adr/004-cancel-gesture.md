@@ -1,6 +1,8 @@
 # ADR-004: Cancel Gesture
 
-Status: approved.
+Status: approved. Amended by `008-pill-control.md`, which names the
+pill's part of this decision instead of leaving it as "the pill's stop
+control". The discard gesture chosen here is unchanged.
 
 ## Context
 
@@ -23,6 +25,10 @@ without making its meaning depend on what just happened.
 - The Escape key discards a live take, with the same action on the pill
   so mouse-only use is not left out. One gesture with one meaning,
   available without leaving the destination application.
+  Superseded on the pill's side by `008-pill-control.md`: the pill's
+  main control stops and delivers, and discarding gets its own
+  contextual action, so this record's "same action as the stop control"
+  reading no longer applies.
 
 ## Decision
 
@@ -41,7 +47,8 @@ throws away.
   delivered: a discarded take never reaches the clipboard or the
   destination, and a late failure never resurrects it.
 - The discard path must be reachable without the keyboard, so the pill
-  carries it too.
+  carries it too. `008-pill-control.md` carries it as a contextual
+  cancel action during a live take rather than as the main control.
 
 ## Related
 

@@ -37,12 +37,25 @@
 - Pill overlay (primary surface). A borderless, floating pill, visible
   during dictation and dismissible to the tray when idle. It holds exactly
   three elements: a live signal bar that animates while listening, a single
-  start and stop control for mouse-driven use, and a three-dot options
-  control that opens settings. No other chrome lives here. It never takes
-  keyboard focus, stays above the destination without stealing it, and
-  offers a no-overlay fallback with audio feedback where overlays would
-  break insertion. The compact pill serves recording states; a larger card
+  control for mouse-driven dictation, and a three-dot options control that
+  opens settings. No other chrome lives here. It never takes keyboard
+  focus, stays above the destination without stealing it, and offers a
+  no-overlay fallback with audio feedback where overlays would break
+  insertion. The compact pill serves recording states; a larger card
   serves live transcription when present.
+- Pill control. One control, one meaning per state. At rest it shows a
+  microphone, and clicking it starts dictation. While a take is live it
+  becomes stop, and clicking it ends the take, transcribes it, and
+  delivers the text: stop delivers, always. There is no pause. Discarding
+  is a separate action on the same surface, not a fourth element — while
+  a take is live, hovering the pill reveals a cancel action in the status
+  area, and right-clicking the control does the same thing. It throws the
+  take away exactly as Escape does.
+- The chord is a press, measured at 250 milliseconds. A shorter press
+  starts a take that a second press stops; a press held at least that long
+  stops when it is released. Escape discards a live take while it captures
+  and while it transcribes. The mouse and the keyboard express the same
+  three actions, so neither path can behave differently from the other.
 - Tray affordance and popover. The quiet home when the pill is hidden:
   status at a glance, quick access to start dictation, and a path to
   settings.
@@ -103,4 +116,6 @@ Exact token values remain a proposal until approved.
 - Structure behind the flows: `05-architecture.md`
 - Agent destination behavior (phase two): `06-agent-integration.md`
 - When polish lands: `07-roadmap.md`
+- Decisions behind these flows: `08-decisions.md` items 8 and 10,
+  `adr/004-cancel-gesture.md`, `adr/008-pill-control.md`
 - External input merged here: `reference/external-ui-ux-brief.md`, triage in `reference/ui-brief-triage.md`

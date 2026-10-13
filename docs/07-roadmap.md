@@ -68,9 +68,9 @@ Acceptance criteria:
 ## M2 — slice order
 
 The milestone's scope resolves into slices that are each usable on their
-own. Three slices carry open questions they depend on, recorded in the
-decisions document as items ten, eight, and six, so the work stops at
-them rather than guessing.
+own. Two slices carry open questions they depend on, recorded in the
+decisions document as items eight and six, so the work stops at them
+rather than guessing.
 
 | Slice | Scope | Criterion it carries |
 | --- | --- | --- |

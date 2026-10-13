@@ -79,10 +79,6 @@ Closed decisions this milestone:
 
 ## Open (decided nowhere yet)
 
-- Pill control gesture — item 10. The experience document calls it a
-  start and stop control; ADR-004 makes the pill's stop control discard.
-  Recommended: hold to talk, release to deliver, click during a live
-  take to discard. Blocks slice 2.
 - Optional cleanup scope — item 5. Recommended rules-only or none,
   default off.
 - Name, packaging identity, and collision check — item 6. Recommended
@@ -90,6 +86,14 @@ Closed decisions this milestone:
 - Visual tokens (accent, surfaces, glow budget) — item 8. Recommended:
   lock the values at M2 kickoff. Blocks slice 4.
 - Phase-two agent target details — 06-agent-integration.md.
+
+Closed during M2:
+
+- ADR-008 pill control and chord timing (item 10): stop delivers, cancel
+  discards, on mouse and keyboard alike; amends ADR-004. Maintainer
+  rejected hold-to-talk on the pill as uncomfortable on a desk.
+- Bundle identifier moved off `com.whisperlane.app`, which Tauri warns
+  collides with the macOS bundle extension. Resolved ahead of item 6.
 
 ## Next (in order)
 

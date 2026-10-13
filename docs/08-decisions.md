@@ -406,12 +406,23 @@ legible from the pill alone — is stated and needs no ruling. Choosing a
 gesture here would be deciding silently, which is what this list exists
 to prevent, so the pill slice stops until it is settled.
 
-Recommendation: press and hold to talk, release to deliver, click during
-a live take to discard. It satisfies both documents without amending
-either, keeps the pill at three elements, and gives mouse-only dictation
-the same two actions the chord gives keyboard users. Approving it should
-amend ADR-004 to name the click explicitly rather than "the pill's stop
-control".
+Direction: maintainer rejected hold-to-talk on the pill as
+uncomfortable on a desk, and directed the established Windows dictation
+standard instead. Stop delivers and cancel discards on every input
+path: the pill's main control starts a take and becomes stop, clicking
+it ends the take and delivers it, and discarding is a contextual cancel
+action revealed on hover during a live take or reached by right-clicking
+the main control. The chord is a press measured at 250 milliseconds:
+under it starts a take a second press stops, at or over it stops on
+release, and Escape always discards.
+
+Decision: the pill keeps its three elements and gains no permanent
+fourth; the cancel is contextual and only present while a take is live.
+The mouse and the keyboard express the same three intents through the
+same decision table in the core, so neither can drift from the other.
+
+Status: approved — see `adr/008-pill-control.md`, which amends
+`adr/004-cancel-gesture.md`.
 
 ## ADR process
 
@@ -426,7 +437,7 @@ control".
 ADR index: `adr/001-default-hotkey.md` (item 7), `adr/002-engine-hosting.md` (item 1),
 `adr/003-device-event-filter.md` (item 7), `adr/004-cancel-gesture.md` (item 8),
 `adr/005-text-insertion-windows.md` (item 3), `adr/006-model-default-and-download.md` (item 4),
-`adr/007-chord-from-terminal-state.md` (item 9).
+`adr/007-chord-from-terminal-state.md` (item 9), `adr/008-pill-control.md` (item 10).
 
 ## Related
 

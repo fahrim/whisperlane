@@ -1,0 +1,51 @@
+# Rust / Cargo
+target/
+**/target/
+
+# Tauri
+src-tauri/target/
+src-tauri/WixTools/
+*.AppImage
+*.dmg
+*.msi
+*.nsis.zip
+
+# Bun / Node
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.bun-cache/
+
+# Vite
+*.local
+
+# Speech models (downloaded at install or first run, never committed)
+*.bin
+*.gguf
+*.onnx
+models/
+src-tauri/resources/models/
+
+# Logs
+*.log
+logs/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Test and coverage output
+coverage/
+*.lcov
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors
+.idea/
+*.swp
+*~

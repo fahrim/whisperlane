@@ -5,9 +5,10 @@ scope or decision change. Read this first when resuming work.
 
 ## Now
 
-Pre-code. Documentation, loop kit, and repository are done and pushed to
-the private remote. No application code exists yet. Next action: scaffold
-the desktop shell, then run /wl-start M0.
+M0 and M1 are complete. The application takes a real take on Windows and
+inserts the transcript into the focused application: press the chord,
+speak, release, and the words appear where the caret was. M2 is the next
+milestone and does not start without explicit approval.
 
 ## Done
 
@@ -21,23 +22,60 @@ the desktop shell, then run /wl-start M0.
 - Repository: git init, canonical MIT + Apache-2.0 texts, .gitignore,
   private GitHub remote with master pushed.
 
+### M0 — skeleton that talks
+
+Desktop shell, tray presence, global hotkey, capture to a stored take,
+local GPU transcription through the companion service, clipboard
+delivery, and the unhappy paths all recoverable.
+
+### M1 — useful on Windows
+
+| Slice | Scope | Commit |
+| --- | --- | --- |
+| 1 | Settings foundation and language choice | `9d00be4` |
+| 2 | Dictation chord as a user setting | `95a8bf9` |
+| 3 | Microphone choice, asked without blocking the first take | `49d53d1` |
+| 4 | Hold-to-talk, toggle-to-talk, and cancellation | `61b13a0` |
+| 5 | Focused-application insertion | `0aaf5e4`, fixes `e2a54d8`, `f282a76`, `f4bf250` |
+| 6 | Model selector and honest non-blocking download | `8b691e9` |
+| 7 | Verified accelerated transcription on AMD and Intel | `aef981f` |
+
+Acceptance criteria status:
+
+- Dictated text lands in the focused application, or fails plainly with
+  nothing half-inserted. Verified live in Notepad.
+- Hold-to-talk, toggle-to-talk, and cancellation behave as the
+  experience document describes. Verified live.
+- Model download and readiness are honest and non-blocking; progress is
+  reported as bytes over bytes and a download never interrupts dictation.
+- Accelerated transcription is meaningfully faster than the CPU
+  fallback: 16718 ms against 221 ms median on an eleven-second take,
+  with identical transcript text. The backend is verified by launching
+  the service, not by looking for a library.
+
+Closed decisions this milestone:
+
+- ADR-004 cancel gesture (Escape, plus the pill's stop control)
+- ADR-005 Windows text insertion (synthesis first, clipboard fallback)
+- ADR-006 model default and download
+- ADR-007 the chord from a finished state
+- ADR-001 amended: the chord is not swallowed, and Control plus Space
+  carries two known costs rather than one
+
 ## Next (in order)
 
-1. Scaffold apps/desktop (Tauri v2 + Bun + React + TypeScript shell).
-2. /wl-start M0 — skeleton that talks, Windows only.
-3. M1 — useful on Windows with accelerated transcription.
-4. M2 — polish, onboarding, packaging. Closes the MVP.
-5. Release automation (skill + command + CI) after the scaffold proves out.
-6. Phase 2 — OpenCode agent integration.
-7. M3 — macOS, then Linux. Public release with first version.
+1. M2 — polish, onboarding, packaging. Closes the MVP. Needs approval.
+2. Release automation (skill + command + CI) after the scaffold proves out.
+3. Phase 2 — OpenCode agent integration.
+4. M3 — macOS, then Linux. Public release with first version.
 
 ## Open (decided nowhere yet)
 
-- Hosting spike: companion service vs supervised worker — see
-  docs/08-decisions.md item 1.
-- Default hotkey, default model, cleanup scope, name check — see
-  docs/08-decisions.md items 2 through 7.
-- Nothing above blocks scaffolding.
+- Optional cleanup scope — see docs/08-decisions.md item 5. Recommended
+  rules-only or none, default off.
+- Name, packaging identity, and collision check — item 6. Recommended
+  before M2 packaging.
+- Phase-two agent target details — 06-agent-integration.md.
 
 ## Related
 

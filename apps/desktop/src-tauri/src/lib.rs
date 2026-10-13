@@ -112,6 +112,9 @@ pub fn run() {
             build_tray(app.handle())?;
             let handle = app.handle().clone();
             std::thread::spawn(move || hotkey::run_listener(handle));
+            // The backend is verified by launching once, never by
+            // trusting the runtime directory's contents.
+            stt::verify_backend(&app.handle().clone());
             let sweeper = app.handle().clone();
             std::thread::spawn(move || loop {
                 std::thread::sleep(std::time::Duration::from_secs(30));

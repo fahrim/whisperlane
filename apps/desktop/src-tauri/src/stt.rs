@@ -9,6 +9,8 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use std::io::Read;
+
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
@@ -41,6 +43,9 @@ pub struct SttStatus {
     pub model_file: String,
     pub model_present: bool,
     pub backend: String,
+    /// Whether the backend above came from a real launch rather than
+    /// from the runtime directory's contents.
+    pub backend_verified: bool,
     pub service: ServiceState,
     pub detail: Option<String>,
 }
@@ -55,6 +60,10 @@ pub(crate) struct SttInner {
     last_error: Option<String>,
     model_missing: bool,
     reload_pending: bool,
+    /// Backend a real launch loaded, probed once and remembered: the
+    /// answer cannot change without the machine or the runtime
+    /// changing, and the probe is far too slow for a status poll.
+    verified_backend: Option<Backend>,
 }
 
 impl Default for SttInner {
@@ -69,6 +78,7 @@ impl Default for SttInner {
             last_error: None,
             model_missing: false,
             reload_pending: false,
+            verified_backend: None,
         }
     }
 }
@@ -154,9 +164,98 @@ fn pick_port() -> u16 {
         .unwrap_or(DEFAULT_PORT)
 }
 
+/// Backend a launch actually loaded, read from the server's own startup
+/// banner rather than guessed from which libraries are on disk.
+///
+/// File presence is not evidence: a runtime directory can carry a
+/// Vulkan library and still fail to find a usable device, and the
+/// right answer on that machine is the CPU path, not a claim of
+/// acceleration. This is the verified walk ADR-002 asks for.
+pub fn probe_backend(app: &AppHandle) -> Backend {
+    let (Ok(bin), Ok(dir)) = (server_bin(app), runtime_dir(app)) else {
+        return Backend::Cpu;
+    };
+    let Ok(model) = model_path(app) else {
+        return Backend::Cpu;
+    };
+    if !model.is_file() {
+        return Backend::Cpu;
+    }
+    let port = match std::net::TcpListener::bind(("127.0.0.1", 0))
+        .and_then(|l| l.local_addr())
+        .map(|a| a.port())
+    {
+        Ok(port) => port,
+        Err(_) => return Backend::Cpu,
+    };
+    let mut child = match Command::new(bin)
+        .arg("--model")
+        .arg(&model)
+        .arg("--host")
+        .arg("127.0.0.1")
+        .arg("--port")
+        .arg(port.to_string())
+        .current_dir(&dir)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(_) => return Backend::Cpu,
+    };
+    // The banner names the backend it loaded. Waiting is bounded: this
+    // runs on its own thread and must never hold up a take.
+    let banner = read_banner(&mut child, BACKEND_PROBE_TIMEOUT);
+    let _ = child.kill();
+    let _ = child.wait();
+    backend_from_banner(&banner)
+}
+
+/// How long a backend probe waits for the banner before giving up and
+/// answering with what it has.
+const BACKEND_PROBE_TIMEOUT: Duration = Duration::from_secs(90);
+
+/// Drains the child's startup output until the backend line appears or
+/// the child exits.
+fn read_banner(child: &mut Child, timeout: Duration) -> String {
+    let Some(stderr) = child.stderr.as_mut() else {
+        return String::new();
+    };
+    let deadline = Instant::now() + timeout;
+    let mut banner = String::new();
+    let mut buffer = [0u8; 4096];
+    while Instant::now() < deadline {
+        match stderr.read(&mut buffer) {
+            Ok(0) | Err(_) => break,
+            Ok(read) => {
+                banner.push_str(&String::from_utf8_lossy(&buffer[..read]));
+                if backend_from_banner(&banner) != Backend::Cpu
+                    || banner.contains("server is listening")
+                {
+                    break;
+                }
+            }
+        }
+    }
+    banner
+}
+
+/// Reads the loaded backend out of a startup banner. Pure, so the
+/// decision is unit-tested against real banners rather than a live
+/// device.
+pub fn backend_from_banner(banner: &str) -> Backend {
+    if banner.contains("ggml_vulkan: Found") && banner.contains("Vulkan devices") {
+        Backend::Vulkan
+    } else if banner.contains("ggml_cuda") && banner.contains("devices") {
+        Backend::Cuda
+    } else {
+        Backend::Cpu
+    }
+}
+
 /// Ensures a live service, spawning on demand. Returns its port.
 /// Never spawns when the model is missing: that is a Missing report,
-/// not a crash loop (model download arrives in M1).
+/// not a crash loop.
 pub fn ensure_ready(app: &AppHandle) -> Result<u16, String> {
     let chosen = crate::settings::model_of(app);
     let model = model_path(app)?;
@@ -411,8 +510,7 @@ fn transcribe_call(port: u16, wav_path: &str, language: &str) -> Result<String, 
 pub fn get_stt_status(app: AppHandle) -> SttStatus {
     let chosen = crate::settings::model_of(&app);
     let model_present = model_path(&app).map(|p| p.is_file()).unwrap_or(false);
-    let backend = runtime_dir(&app).map(|d| backend_of(&d)).unwrap_or(Backend::Cpu);
-    let (service, detail) = match app.try_state::<SttState>() {
+    let (service, detail, cached) = match app.try_state::<SttState>() {
         Some(state) => {
             let mut inner = state.0.lock().expect("stt state poisoned");
             let alive = inner.child.as_mut().is_some_and(|c| child_alive(c));
@@ -429,17 +527,41 @@ pub fn get_stt_status(app: AppHandle) -> SttStatus {
             } else {
                 ServiceState::Unloaded
             };
-            (svc, inner.last_error.clone())
+            (svc, inner.last_error.clone(), inner.verified_backend)
         }
-        None => (ServiceState::Unloaded, None),
+        None => (ServiceState::Unloaded, None, None),
     };
+    // The verified answer when there is one, and the runtime's declared
+    // capability otherwise — never a guess dressed up as a measurement.
+    let backend = cached.unwrap_or_else(|| {
+        runtime_dir(&app)
+            .map(|dir| backend_of(&dir))
+            .unwrap_or(Backend::Cpu)
+    });
     SttStatus {
         model_file: chosen.file.to_string(),
         model_present,
         backend: backend.as_str().to_string(),
+        backend_verified: cached.is_some(),
         service,
         detail,
     }
+}
+
+/// Probes the backend by launching the service once and reading what it
+/// loaded. Runs on a worker so the status poll never waits for it.
+pub fn verify_backend(app: &AppHandle) {
+    let worker = app.clone();
+    std::thread::spawn(move || {
+        let backend = probe_backend(&worker);
+        if let Some(state) = worker.try_state::<SttState>() {
+            state
+                .0
+                .lock()
+                .expect("stt state poisoned")
+                .verified_backend = Some(backend);
+        }
+    });
 }
 
 #[cfg(test)]
@@ -461,5 +583,33 @@ mod tests {
         assert!(reload_now(0));
         assert!(!reload_now(1));
         assert!(!reload_now(2));
+    }
+
+    #[test]
+    fn a_launch_banner_reports_the_backend_it_actually_loaded() {
+        let vulkan = "ggml_vulkan: Found 1 Vulkan devices:\n\
+                      ggml_vulkan: 0 = AMD Radeon RX 7700 XT (AMD proprietary driver)\n\
+                      load_backend = true\n";
+        assert_eq!(backend_from_banner(vulkan), Backend::Vulkan);
+
+        let cuda = "ggml_cuda: loaded 1 CUDA devices\nload_backend = true\n";
+        assert_eq!(backend_from_banner(cuda), Backend::Cuda);
+
+        // No acceleration banner at all: the honest answer is the CPU.
+        let cpu = "whisper_model_load: n_ctx = 0\nserver is listening on http://127.0.0.1\n";
+        assert_eq!(backend_from_banner(cpu), Backend::Cpu);
+        assert_eq!(backend_from_banner(""), Backend::Cpu);
+    }
+
+    #[test]
+    fn a_vulkan_library_without_a_device_does_not_claim_acceleration() {
+        // The exact failure file-presence detection cannot see: the
+        // runtime carries the Vulkan library, the device is gone.
+        let library_without_device = "ggml_vulkan: Skipping device enumeration: none found\n";
+        assert_eq!(
+            backend_from_banner(library_without_device),
+            Backend::Cpu,
+            "a runtime library is not proof of a usable device"
+        );
     }
 }

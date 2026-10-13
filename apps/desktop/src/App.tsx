@@ -29,6 +29,7 @@ interface SttStatus {
   model_file: string;
   model_present: boolean;
   backend: string;
+  backend_verified: boolean;
   service: "unloaded" | "starting" | "ready" | "failed";
   detail: string | null;
 }
@@ -378,7 +379,12 @@ function App() {
               model: {stt.model_file} (
               {stt.model_present ? "present" : "missing"})
             </p>
-            <p>service: {stt.service} (backend: {stt.backend})</p>
+            <p>
+              service: {stt.service} (backend: {stt.backend}
+              {stt.backend_verified
+                ? ", verified by launching"
+                : ", from runtime files"})
+            </p>
             {stt.detail && <p>detail: {stt.detail}</p>}
           </>
         ) : (

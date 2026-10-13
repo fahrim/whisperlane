@@ -82,6 +82,26 @@ the decisions document as items three and four.
 | 6 | Model download and readiness, honest and non-blocking | Three |
 | 7 | Verified accelerated transcription on AMD and Intel | Four |
 
+## M1 — measured results
+
+The accelerated-path slice measures rather than claims. On the
+development machine, an eleven-second spoken take through the default
+model, three repetitions each, median inference time:
+
+| Backend | Load | Median inference |
+| --- | --- | --- |
+| CPU fallback | 628 ms | 16718 ms |
+| Vulkan, AMD Radeon RX 7700 XT | 1012 ms | 221 ms |
+
+Both runs produced identical transcript text, which is what makes the
+comparison meaningful: the flows are unchanged, only the time differs.
+
+The backend is established by launching the service and reading what it
+loaded, not by looking for an accelerated library in the runtime
+directory. A machine can carry the library and have no usable device, and
+the honest answer there is the CPU path. The status surface says which
+of the two answers it is showing.
+
 ## Phase 2 — Agent integration (not v1)
 
 Goal: make dictation into the AI agent a first-class path, starting with

@@ -60,10 +60,23 @@ on representative machines, not by assumption.
 ## Release strategy (narrated)
 
 Releases follow the same order as the roadmap: internal skeleton, useful
-Windows builds, polished Windows packaging with the agent path, then wider
-platforms with signing and notarization where required. Each release states
-plainly what is included and what remains out of scope. Licensing texts
-travel with every distribution.
+Windows builds, polished Windows packaging, then the phase-two agent work,
+then wider platforms with signing and notarization where required. Each
+release states plainly what is included and what remains out of scope.
+Licensing texts travel with every distribution.
+
+The repository starts private and turns public at the first release; that
+switch is a one-time visibility change, not a code change.
+
+Release automation plan (implemented after the project scaffold exists,
+not before): semantic version tags as the single trigger, signed Windows
+builds with updater signature verification following the reference
+product, draft releases that are verified before publishing, and a
+changelog drawn from milestone acceptance rather than reconstructed
+memory. Once the scaffold lands, this plan becomes a release skill and a
+release command that run the same loop every time: bump, changelog, tag,
+build, sign, draft, verify, publish. The plan lives here; the machinery
+arrives with the scaffold.
 
 ## Related
 

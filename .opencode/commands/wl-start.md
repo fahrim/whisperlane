@@ -11,7 +11,7 @@ Setup first:
 Loop rules, one slice at a time:
 1. Implement the smallest change that satisfies the slice. Windows only, no agent integration, no extras.
 2. Verify: typecheck the changed packages, run their tests, build the desktop shell if touched. Fix failures and re-verify until green.
-3. Report the slice in Turkish: what changed, file list, verify results. Then continue to the next slice without asking for continuation permission.
+3. Commit the slice with an English commit message, then report the slice in Turkish: what changed, file list, verify results, commit hash. Only then continue to the next slice without asking for continuation permission.
 
 Do not ask "shall I continue" between slices; the report is the handoff. Stop only at the gates below.
 

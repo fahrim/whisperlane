@@ -348,7 +348,7 @@ pub fn transcribe_take(app: AppHandle, wav_path: String) {
                 } else {
                     set_last_text(&app, text);
                     set_phase(&app, Phase::Done, None);
-                    crate::deliver::deliver(&app);
+                    crate::insert::deliver(&app);
                 }
             }
             Err(detail) => {

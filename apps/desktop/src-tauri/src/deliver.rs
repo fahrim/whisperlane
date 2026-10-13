@@ -1,19 +1,23 @@
-//! M0 delivery: the simplest reliable path. A finished transcript is
-//! written to the clipboard and stays visible in the window, so no
-//! manual file handling is ever needed. Focused-app insertion (with its
-//! honest fallback) is M1 scope.
+//! Clipboard access and the manual re-copy command (ADR-005).
+//!
+//! Automatic delivery lives in `insert`: a finished take is typed into
+//! the focused application, and the clipboard is the honest fallback
+//! when synthesis cannot complete. What stays here is the user's own
+//! access to that clipboard text, which must keep working whether the
+//! take arrived by typing or by fallback.
 
 use tauri::{AppHandle, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
-use crate::pipeline::{current_phase, get_pipeline_state_inner, set_phase, Phase, PipelineStatus};
+use crate::pipeline::{get_pipeline_state_inner, set_phase, Phase, PipelineStatus};
 
-/// Pure gate, unit-tested: delivery runs once per finished take.
+/// Pure gate, unit-tested: a transcript is only delivered once it is
+/// finished and non-empty.
 pub fn should_deliver(phase: Option<Phase>, text: Option<&str>) -> bool {
     matches!(phase, Some(Phase::Done)) && text.is_some_and(|t| !t.trim().is_empty())
 }
 
-fn last_text_of(app: &AppHandle) -> Option<String> {
+pub fn last_text_of(app: &AppHandle) -> Option<String> {
     app.try_state::<crate::pipeline::PipelineState>()
         .and_then(|state| state.0.lock().expect("pipeline state poisoned").last_text.clone())
 }
@@ -27,18 +31,8 @@ pub fn copy_transcript(app: &AppHandle) -> Result<(), String> {
         .map_err(|e| format!("copy failed: {e}"))
 }
 
-/// Called right after a take reaches Done.
-pub fn deliver(app: &AppHandle) {
-    if !should_deliver(current_phase(app), last_text_of(app).as_deref()) {
-        return;
-    }
-    match copy_transcript(app) {
-        Ok(()) => set_phase(app, Phase::Done, Some("copied to clipboard".to_string())),
-        Err(detail) => set_phase(app, Phase::Done, Some(detail)),
-    }
-}
-
-/// Manual re-copy; the clipboard gets clobbered by everyday use.
+/// Manual re-copy; the clipboard gets clobbered by everyday use, and a
+/// take that fell back to the clipboard needs it reachable.
 #[tauri::command]
 pub fn copy_last_text(app: AppHandle) -> PipelineStatus {
     match copy_transcript(&app) {

@@ -8,6 +8,7 @@ use tauri::{
 mod audio;
 mod deliver;
 mod hotkey;
+mod insert;
 mod pipeline;
 mod settings;
 mod stt;

@@ -59,6 +59,22 @@ impl Phase {
     }
 }
 
+/// How the last finished take reached the user (ADR-005). The interface
+/// reads this rather than parsing the detail text, so "where did my
+/// text go" has exactly one answer in the codebase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeliveryKind {
+    /// Not delivered yet, or reset since.
+    None,
+    /// Typed into the focused application.
+    Typed,
+    /// Partly typed; the platform stopped accepting keystrokes.
+    Partial,
+    /// Could not type, so the text is on the clipboard.
+    Clipboard,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct PipelineStatus {
     pub phase: Phase,
@@ -66,6 +82,7 @@ pub struct PipelineStatus {
     pub detail: Option<String>,
     pub valid_next: Vec<Phase>,
     pub last_text: Option<String>,
+    pub delivery: DeliveryKind,
 }
 
 pub struct PipelineState(pub Mutex<PipelineStatus>);
@@ -79,6 +96,7 @@ impl Default for PipelineStatus {
             detail: None,
             valid_next: phase.valid_next(),
             last_text: None,
+            delivery: DeliveryKind::None,
         }
     }
 }
@@ -118,6 +136,24 @@ pub fn set_last_text(app: &AppHandle, text: String) {
         let snapshot = {
             let mut status = state.0.lock().expect("pipeline state poisoned");
             status.last_text = Some(text);
+            PipelineStatus {
+                valid_next: status.phase.valid_next(),
+                ..status.clone()
+            }
+        };
+        app.emit("pipeline-state", snapshot)
+            .expect("failed to emit pipeline-state");
+    }
+}
+
+/// Records how a finished take was delivered. Stays in Done: the take
+/// itself is already done, this only says where its text went.
+pub fn set_delivery(app: &AppHandle, delivery: DeliveryKind, detail: Option<String>) {
+    if let Some(state) = app.try_state::<PipelineState>() {
+        let snapshot = {
+            let mut status = state.0.lock().expect("pipeline state poisoned");
+            status.delivery = delivery;
+            status.detail = detail;
             PipelineStatus {
                 valid_next: status.phase.valid_next(),
                 ..status.clone()

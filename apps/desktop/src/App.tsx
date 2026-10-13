@@ -4,12 +4,15 @@ import "./App.css";
 
 type Phase = "idle" | "listening" | "thinking" | "done" | "failed" | "cancelled";
 
+type DeliveryKind = "none" | "typed" | "partial" | "clipboard";
+
 interface PipelineStatus {
   phase: Phase;
   target: string | { agent: string };
   detail: string | null;
   valid_next: Phase[];
   last_text: string | null;
+  delivery: DeliveryKind;
 }
 
 interface KeyDiag {
@@ -195,6 +198,9 @@ function App() {
               back to idle
             </button>
           )}
+          {status.delivery === "typed" && (
+            <p role="status">typed into the focused app</p>
+          )}
           {status.detail && <p>detail: {status.detail}</p>}
         </section>
       ) : (
@@ -306,7 +312,7 @@ function App() {
                     .catch((e) => setError(String(e)))
                 }
               >
-                copy again
+                {status.delivery === "clipboard" ? "copy again" : "copy anyway"}
               </button>
             )}
           </>

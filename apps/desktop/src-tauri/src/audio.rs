@@ -411,6 +411,8 @@ pub fn reset_pipeline(app: AppHandle) -> PipelineStatus {
     match phase {
         Some(Phase::Done) | Some(Phase::Failed) | Some(Phase::Cancelled) => {
             set_phase(&app, Phase::Idle, None);
+            // Delivery state belongs to the take that just ended.
+            crate::pipeline::set_delivery(&app, crate::pipeline::DeliveryKind::None, None);
         }
         _ => {}
     }

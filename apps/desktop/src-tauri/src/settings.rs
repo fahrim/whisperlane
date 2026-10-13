@@ -71,6 +71,30 @@ impl Language {
     }
 }
 
+/// Which microphone takes dictation.
+///
+/// The system default is a real answer, not a placeholder: the first
+/// take works with no setup at all (ADR-001 — microphone selection stays
+/// ask-on-first-press). Naming a device is the opt-in once there is
+/// something to choose between.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case", tag = "kind", content = "id")]
+pub enum Microphone {
+    #[default]
+    SystemDefault,
+    Device(String),
+}
+
+impl Microphone {
+    /// The stored device identity, or nothing for the system default.
+    pub fn device_id(&self) -> Option<&str> {
+        match self {
+            Microphone::SystemDefault => None,
+            Microphone::Device(id) => Some(id),
+        }
+    }
+}
+
 /// The persisted set. Unknown or missing fields fall back to defaults so
 /// a settings file written by another version still loads.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -78,6 +102,7 @@ impl Language {
 pub struct Settings {
     pub language: Language,
     pub hotkey: Hotkey,
+    pub microphone: Microphone,
 }
 
 pub struct SettingsState(pub Mutex<Settings>);
@@ -162,12 +187,30 @@ pub fn set_language(app: AppHandle, language: Language) -> Settings {
     updated
 }
 
+/// The microphone the next take uses.
+pub fn microphone_of(app: &AppHandle) -> Microphone {
+    app.try_state::<SettingsState>()
+        .map(|state| state.0.lock().expect("settings state poisoned").microphone.clone())
+        .unwrap_or_default()
+}
+
 /// Changes the dictation chord and applies it immediately: the hook
 /// reads the binding per keystroke, so the next press uses the new one.
 #[tauri::command]
 pub fn set_hotkey(app: AppHandle, hotkey: Hotkey) -> Settings {
     let updated = persist(&app, |settings| settings.hotkey = hotkey);
     apply_binding(hotkey);
+    if let Ok(path) = settings_path(&app) {
+        let _ = write_settings(&path, &updated);
+    }
+    updated
+}
+
+/// Chooses the dictation microphone. The choice takes effect on the next
+/// take; a running take is never disturbed.
+#[tauri::command]
+pub fn set_microphone(app: AppHandle, microphone: Microphone) -> Settings {
+    let updated = persist(&app, |settings| settings.microphone = microphone);
     if let Ok(path) = settings_path(&app) {
         let _ = write_settings(&path, &updated);
     }
@@ -228,6 +271,7 @@ mod tests {
         let settings = Settings {
             language: Language::Tr,
             hotkey: Hotkey::CtrlY,
+            microphone: Microphone::Device("Headset".to_string()),
         };
         write_settings(&path, &settings).unwrap();
         assert_eq!(read_settings(&path), settings);

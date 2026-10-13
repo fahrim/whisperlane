@@ -13,11 +13,13 @@ mod settings;
 mod stt;
 pub mod stt_shared;
 
-use audio::reset_pipeline;
+use audio::{list_input_devices, needs_microphone_choice, reset_pipeline};
 use deliver::copy_last_text;
 use hotkey::{get_hotkey_label, get_key_diag, list_hotkeys, DiagState};
 use pipeline::{get_pipeline_state, PipelineState, PipelineStatus};
-use settings::{get_settings, list_languages, load, set_hotkey, set_language, SettingsState};
+use settings::{
+    get_settings, list_languages, load, set_hotkey, set_language, set_microphone, SettingsState,
+};
 use stt::{get_stt_status, sweep_idle, SttState};
 
 #[tauri::command]
@@ -84,8 +86,11 @@ pub fn run() {
             get_settings,
             set_language,
             set_hotkey,
+            set_microphone,
             list_languages,
-            list_hotkeys
+            list_hotkeys,
+            list_input_devices,
+            needs_microphone_choice
         ])
         .setup(|app| {
             // Settings need the resolved data dir, so they load here

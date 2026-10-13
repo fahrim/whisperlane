@@ -11,6 +11,7 @@ use tauri::{AppHandle, Manager};
 
 use crate::hotkey::{resolve_edge, ChordEdge};
 use crate::pipeline::{current_phase, set_phase, Phase, PipelineStatus};
+use crate::settings::Microphone;
 
 /// Speech-grade capture shape: mono takes, short-take and silence floors.
 /// Gain normalization toward a healthy level happens at the S4 handoff;
@@ -23,6 +24,81 @@ pub const SILENCE_PEAK: f32 = 0.01;
 pub struct TakeStats {
     pub duration_ms: u64,
     pub peak: f32,
+}
+
+/// One usable input device, as the settings surface needs it.
+///
+/// Identity is the device's own name, which is what the host gives us
+/// without extra dependencies. Two identically named devices are a
+/// limitation, stated here rather than hidden.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct InputDevice {
+    pub id: String,
+    pub label: String,
+}
+
+fn device_name(device: &cpal::Device) -> Option<String> {
+    device.name().ok()
+}
+
+/// Every input device the host offers, for the settings surface.
+/// A host that cannot enumerate its inputs reports none rather than
+/// failing: the take path still reaches its own plain failure.
+pub fn input_devices(host: &cpal::Host) -> Vec<InputDevice> {
+    let Ok(devices) = host.input_devices() else {
+        return Vec::new();
+    };
+    devices
+        .filter_map(|device| {
+            let name = device_name(&device)?;
+            Some(InputDevice {
+                id: name.clone(),
+                label: name,
+            })
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub fn list_input_devices() -> Vec<InputDevice> {
+    input_devices(&cpal::default_host())
+}
+
+/// Ask-on-first-press rule (ADR-001): ask only when the user has not
+/// chosen and there is actually something to choose between. With one
+/// microphone or an explicit choice, nothing is asked.
+pub fn should_ask_microphone(chosen: &Microphone, device_count: usize) -> bool {
+    matches!(chosen, Microphone::SystemDefault) && device_count > 1
+}
+
+/// Whether the settings surface should be asking which microphone to
+/// use. The rule lives in the core so the interface only renders it.
+#[tauri::command]
+pub fn needs_microphone_choice(app: AppHandle) -> bool {
+    should_ask_microphone(
+        &crate::settings::microphone_of(&app),
+        list_input_devices().len(),
+    )
+}
+
+/// Opens the chosen microphone, or fails with the reason in plain words.
+/// A device that has been unplugged since it was chosen fails by name
+/// rather than silently falling back to something else.
+fn select_input_device(host: &cpal::Host, chosen: &Microphone) -> Result<cpal::Device, String> {
+    match chosen.device_id() {
+        None => host
+            .default_input_device()
+            .ok_or_else(|| "no microphone found — check the system input device".to_string()),
+        Some(id) => device_by_name(host, id)
+            .ok_or_else(|| format!("microphone '{id}' is gone — pick another one")),
+    }
+}
+
+/// Looks the chosen device back up on the host by name.
+fn device_by_name(host: &cpal::Host, name: &str) -> Option<cpal::Device> {
+    host.input_devices()
+        .ok()?
+        .find(|device| device_name(device).as_deref() == Some(name))
 }
 
 /// Pure validation: silence and very short takes end in a clear,
@@ -203,9 +279,7 @@ pub fn begin_take(app: &AppHandle) {
     }
     let take = (|| -> Result<ActiveTake, String> {
         let host = cpal::default_host();
-        let device = host
-            .default_input_device()
-            .ok_or_else(|| "no microphone found — check the system input device".to_string())?;
+        let device = select_input_device(&host, &crate::settings::microphone_of(app))?;
         let (config, format) = pick_config(&device)?;
         let channels = config.channels as usize;
         let sample_rate = config.sample_rate.0;
@@ -373,5 +447,39 @@ mod tests {
         assert_eq!(spec.sample_rate, 16_000);
         assert_eq!(reader.len(), 1600);
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn asks_which_microphone_only_when_there_is_a_choice() {
+        // Unchosen with several devices: ask, after the first take worked.
+        assert!(should_ask_microphone(&Microphone::SystemDefault, 3));
+        // Unchosen with one device: nothing to ask.
+        assert!(!should_ask_microphone(&Microphone::SystemDefault, 1));
+        assert!(!should_ask_microphone(&Microphone::SystemDefault, 0));
+        // Already chosen: never ask again.
+        assert!(!should_ask_microphone(
+            &Microphone::Device("Headset".to_string()),
+            3
+        ));
+    }
+
+    #[test]
+    fn microphone_exposes_only_a_named_device_id() {
+        assert_eq!(Microphone::SystemDefault.device_id(), None);
+        assert_eq!(
+            Microphone::Device("Headset".to_string()).device_id(),
+            Some("Headset")
+        );
+    }
+
+    #[test]
+    fn an_unusable_chosen_microphone_fails_by_name() {
+        let host = cpal::default_host();
+        let missing = Microphone::Device("no such microphone".to_string());
+        let Err(detail) = select_input_device(&host, &missing) else {
+            panic!("a microphone that does not exist must not open");
+        };
+        assert!(detail.contains("no such microphone"));
+        assert!(detail.contains("pick another"));
     }
 }

@@ -34,6 +34,17 @@ interface SttStatus {
 interface Settings {
   language: string;
   hotkey: string;
+  microphone: Microphone;
+}
+
+interface Microphone {
+  kind: "system_default" | "device";
+  id?: string;
+}
+
+interface InputDevice {
+  id: string;
+  label: string;
 }
 
 interface LanguageChoice {
@@ -60,10 +71,21 @@ function App() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [languages, setLanguages] = useState<LanguageChoice[]>([]);
   const [hotkeys, setHotkeys] = useState<HotkeyChoice[]>([]);
+  const [devices, setDevices] = useState<InputDevice[]>([]);
+  const [askMic, setAskMic] = useState(false);
 
   async function refreshStt() {
     try {
       setStt(await invoke<SttStatus>("get_stt_status"));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function chooseMicrophone(microphone: Microphone) {
+    try {
+      setSettings(await invoke<Settings>("set_microphone", { microphone }));
+      setAskMic(await invoke<boolean>("needs_microphone_choice"));
     } catch (e) {
       setError(String(e));
     }
@@ -122,6 +144,12 @@ function App() {
       .catch((e) => setError(String(e)));
     invoke<HotkeyChoice[]>("list_hotkeys")
       .then(setHotkeys)
+      .catch((e) => setError(String(e)));
+    invoke<InputDevice[]>("list_input_devices")
+      .then(setDevices)
+      .catch((e) => setError(String(e)));
+    invoke<boolean>("needs_microphone_choice")
+      .then(setAskMic)
       .catch((e) => setError(String(e)));
     poll();
     const timer = setInterval(poll, 1000);
@@ -188,6 +216,36 @@ function App() {
             ))}
           </select>
         </label>
+        <label>
+          microphone:{" "}
+          <select
+            value={
+              settings?.microphone.kind === "device"
+                ? (settings.microphone.id ?? "")
+                : "system_default"
+            }
+            onChange={(e) =>
+              chooseMicrophone(
+                e.target.value === "system_default"
+                  ? { kind: "system_default" }
+                  : { kind: "device", id: e.target.value },
+              )
+            }
+          >
+            <option value="system_default">System default</option>
+            {devices.map((device) => (
+              <option key={device.id} value={device.id}>
+                {device.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {askMic && (
+          <p>
+            dictation works with the system default right now — pick the
+            microphone you actually speak into.
+          </p>
+        )}
         <label>
           language:{" "}
           <select

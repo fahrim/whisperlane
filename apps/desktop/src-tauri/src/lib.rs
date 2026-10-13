@@ -9,6 +9,7 @@ mod audio;
 mod deliver;
 mod hotkey;
 mod insert;
+mod models;
 mod pipeline;
 mod settings;
 mod stt;
@@ -17,9 +18,11 @@ pub mod stt_shared;
 use audio::{cancel_live_take, list_input_devices, needs_microphone_choice, reset_pipeline};
 use deliver::copy_last_text;
 use hotkey::{get_hotkey_label, get_key_diag, list_hotkeys, DiagState};
+use models::{download_model, get_download, list_models, ModelState};
 use pipeline::{get_pipeline_state, PipelineState, PipelineStatus};
 use settings::{
-    get_settings, list_languages, load, set_hotkey, set_language, set_microphone, SettingsState,
+    get_settings, list_languages, load, set_hotkey, set_language, set_microphone, set_model,
+    SettingsState,
 };
 use stt::{get_stt_status, sweep_idle, SttState};
 
@@ -75,6 +78,7 @@ pub fn run() {
             PipelineStatus::default(),
         )))
         .manage(SttState::default())
+        .manage(ModelState::default())
         .manage(DiagState::default())
         .invoke_handler(tauri::generate_handler![
             greet,
@@ -92,7 +96,11 @@ pub fn run() {
             list_hotkeys,
             list_input_devices,
             needs_microphone_choice,
-            cancel_live_take
+            cancel_live_take,
+            list_models,
+            get_download,
+            download_model,
+            set_model
         ])
         .setup(|app| {
             // Settings need the resolved data dir, so they load here

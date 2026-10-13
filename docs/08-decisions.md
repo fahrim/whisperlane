@@ -333,8 +333,10 @@ and returning to a quiet idle. Back-to-back dictation should not need
 the mouse, and the transcript stays available until the next take
 replaces it rather than disappearing on a timer.
 
-Status: open — implemented as the recommendation; approval closes it
-into `adr/007-chord-from-terminal-state.md`.
+Direction: maintainer approved the recommendation, and noted that the
+reset control is the seed of the pill's single start and stop control.
+
+Status: approved — see `adr/007-chord-from-terminal-state.md`.
 
 ## ADR process
 
@@ -348,7 +350,8 @@ into `adr/007-chord-from-terminal-state.md`.
 
 ADR index: `adr/001-default-hotkey.md` (item 7), `adr/002-engine-hosting.md` (item 1),
 `adr/003-device-event-filter.md` (item 7), `adr/004-cancel-gesture.md` (item 8),
-`adr/005-text-insertion-windows.md` (item 3), `adr/006-model-default-and-download.md` (item 4).
+`adr/005-text-insertion-windows.md` (item 3), `adr/006-model-default-and-download.md` (item 4),
+`adr/007-chord-from-terminal-state.md` (item 9).
 
 ## Related
 

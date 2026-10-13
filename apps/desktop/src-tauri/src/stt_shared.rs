@@ -6,9 +6,6 @@
 
 use std::path::Path;
 
-/// Expected model (docs/08-decisions.md item 4 stays open; this default
-/// follows the proven plugin, no ADR yet).
-pub const EXPECTED_MODEL_FILE: &str = "ggml-large-v3-turbo-q5_0.bin";
 /// Engine input shape.
 pub const ENGINE_SAMPLE_RATE: u32 = 16_000;
 

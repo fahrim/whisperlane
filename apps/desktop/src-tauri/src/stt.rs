@@ -16,8 +16,7 @@ use crate::pipeline::{current_phase, set_last_text, set_phase, Phase};
 use crate::settings::language_of;
 use crate::stt_shared::{
     detect_backend, load_wav_mono_f32, multipart_body, normalize_gain, parse_transcript,
-    resample_linear, Backend, ENGINE_SAMPLE_RATE, EXPECTED_MODEL_FILE, INFERENCE_PATH,
-    OPENAI_FALLBACK_PATH,
+    resample_linear, Backend, ENGINE_SAMPLE_RATE, INFERENCE_PATH, OPENAI_FALLBACK_PATH,
 };
 
 /// Proven idle-unload period: ten minutes, never while a take is live.
@@ -92,14 +91,9 @@ pub fn runtime_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_dir(app)?.join("runtime"))
 }
 
-pub fn models_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app_dir(app)?.join("models");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("could not create models dir: {e}"))?;
-    Ok(dir)
-}
-
+/// The model file the chosen model resolves to on disk.
 fn model_path(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(models_dir(app)?.join(EXPECTED_MODEL_FILE))
+    crate::models::model_path(app, crate::settings::model_of(app))
 }
 
 fn server_bin(app: &AppHandle) -> Result<PathBuf, String> {
@@ -164,9 +158,13 @@ fn pick_port() -> u16 {
 /// Never spawns when the model is missing: that is a Missing report,
 /// not a crash loop (model download arrives in M1).
 pub fn ensure_ready(app: &AppHandle) -> Result<u16, String> {
+    let chosen = crate::settings::model_of(app);
     let model = model_path(app)?;
     if !model.is_file() {
-        let msg = format!("model missing: {EXPECTED_MODEL_FILE} — download arrives in M1");
+        let msg = format!(
+            "model missing: {} — download it in settings",
+            chosen.file
+        );
         if let Some(state) = app.try_state::<SttState>() {
             let mut inner = state.0.lock().expect("stt state poisoned");
             inner.model_missing = true;
@@ -411,6 +409,7 @@ fn transcribe_call(port: u16, wav_path: &str, language: &str) -> Result<String, 
 
 #[tauri::command]
 pub fn get_stt_status(app: AppHandle) -> SttStatus {
+    let chosen = crate::settings::model_of(&app);
     let model_present = model_path(&app).map(|p| p.is_file()).unwrap_or(false);
     let backend = runtime_dir(&app).map(|d| backend_of(&d)).unwrap_or(Backend::Cpu);
     let (service, detail) = match app.try_state::<SttState>() {
@@ -435,7 +434,7 @@ pub fn get_stt_status(app: AppHandle) -> SttStatus {
         None => (ServiceState::Unloaded, None),
     };
     SttStatus {
-        model_file: EXPECTED_MODEL_FILE.to_string(),
+        model_file: chosen.file.to_string(),
         model_present,
         backend: backend.as_str().to_string(),
         service,

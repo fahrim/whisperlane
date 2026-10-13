@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use crate::hotkey::{apply_binding, Hotkey};
+use crate::pipeline::set_phase;
 
 /// The chooser offers common pinned languages plus an explicit
 /// auto-detect entry (docs/08-decisions.md item 4). Auto is the default:
@@ -97,12 +98,29 @@ impl Microphone {
 
 /// The persisted set. Unknown or missing fields fall back to defaults so
 /// a settings file written by another version still loads.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "snake_case")]
 pub struct Settings {
     pub language: Language,
     pub hotkey: Hotkey,
     pub microphone: Microphone,
+    /// Stored as the model id rather than the catalog entry: a settings
+    /// file must stay readable after the catalog changes.
+    pub model: String,
+}
+
+impl Default for Settings {
+    /// The approved default model (ADR-006). Written explicitly rather
+    /// than derived, because an empty id would leave the engine with no
+    /// model at all.
+    fn default() -> Self {
+        Self {
+            language: Language::Auto,
+            hotkey: Hotkey::CtrlShiftSpace,
+            microphone: Microphone::SystemDefault,
+            model: crate::models::ModelChoice::DEFAULT.id.to_string(),
+        }
+    }
 }
 
 pub struct SettingsState(pub Mutex<Settings>);
@@ -194,6 +212,43 @@ pub fn microphone_of(app: &AppHandle) -> Microphone {
         .unwrap_or_default()
 }
 
+/// The model the next take transcribes with.
+///
+/// A stored id that the catalog no longer offers falls back to the
+/// default rather than leaving the engine without a model. The take
+/// path reports the real file it looked for, so nothing is hidden.
+pub fn model_of(app: &AppHandle) -> crate::models::ModelChoice {
+    let id = app
+        .try_state::<SettingsState>()
+        .map(|state| state.0.lock().expect("settings state poisoned").model.clone())
+        .unwrap_or_default();
+    crate::models::ModelChoice::from_id(&id).unwrap_or(crate::models::ModelChoice::DEFAULT)
+}
+
+/// Chooses the model. An unknown id is refused rather than stored, so a
+/// typo cannot leave dictation without a model. The service is reloaded
+/// because it was started with the previous file.
+#[tauri::command]
+pub fn set_model(app: AppHandle, model: String) -> Settings {
+    let Some(choice) = crate::models::ModelChoice::from_id(&model) else {
+        set_phase(
+            &app,
+            crate::pipeline::Phase::Failed,
+            Some(format!("unknown model '{model}'")),
+        );
+        return app
+            .try_state::<SettingsState>()
+            .map(|state| state.0.lock().expect("settings state poisoned").clone())
+            .unwrap_or_default();
+    };
+    let updated = persist(&app, |settings| settings.model = choice.id.to_string());
+    if let Ok(path) = settings_path(&app) {
+        let _ = write_settings(&path, &updated);
+    }
+    crate::stt::reload(&app);
+    updated
+}
+
 /// Changes the dictation chord and applies it immediately: the hook
 /// reads the binding per keystroke, so the next press uses the new one.
 #[tauri::command]
@@ -272,6 +327,7 @@ mod tests {
             language: Language::Tr,
             hotkey: Hotkey::CtrlY,
             microphone: Microphone::Device("Headset".to_string()),
+            model: "base-q5_1".to_string(),
         };
         write_settings(&path, &settings).unwrap();
         assert_eq!(read_settings(&path), settings);

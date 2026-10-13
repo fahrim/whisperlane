@@ -37,6 +37,24 @@ interface Settings {
   language: string;
   hotkey: string;
   microphone: Microphone;
+  model: string;
+}
+
+interface ModelOption {
+  id: string;
+  label: string;
+  size_mb: number;
+  present: boolean;
+  is_default: boolean;
+}
+
+interface Download {
+  running: boolean;
+  model: string | null;
+  received_mb: number;
+  total_mb: number;
+  percent: number | null;
+  error: string | null;
 }
 
 interface Microphone {
@@ -75,6 +93,34 @@ function App() {
   const [hotkeys, setHotkeys] = useState<HotkeyChoice[]>([]);
   const [devices, setDevices] = useState<InputDevice[]>([]);
   const [askMic, setAskMic] = useState(false);
+  const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
+  const [download, setDownload] = useState<Download | null>(null);
+
+  async function refreshModels() {
+    try {
+      setModelOptions(await invoke<ModelOption[]>("list_models"));
+      setDownload(await invoke<Download>("get_download"));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function chooseModel(id: string) {
+    try {
+      setSettings(await invoke<Settings>("set_model", { model: id }));
+      await refreshModels();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function downloadModel(id: string) {
+    try {
+      setDownload(await invoke<Download>("download_model", { id }));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
 
   async function refreshStt() {
     try {
@@ -143,6 +189,12 @@ function App() {
         setStatus(await invoke<PipelineStatus>("get_pipeline_state"));
         setDiag(await invoke<KeyDiag>("get_key_diag"));
         await refreshStt();
+        // Progress has to move while a download runs, and the list has
+        // to change once it finishes.
+        if (download?.running) {
+          setDownload(await invoke<Download>("get_download"));
+          if (!download.running) await refreshModels();
+        }
       } catch (e) {
         if (!stop) setError(String(e));
       }
@@ -165,6 +217,7 @@ function App() {
     invoke<boolean>("needs_microphone_choice")
       .then(setAskMic)
       .catch((e) => setError(String(e)));
+    refreshModels();
     poll();
     const timer = setInterval(poll, 1000);
     return () => {
@@ -237,6 +290,41 @@ function App() {
             ))}
           </select>
         </label>
+        <label>
+          model:{" "}
+          <select
+            value={settings?.model ?? ""}
+            onChange={(e) => chooseModel(e.target.value)}
+          >
+            {modelOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label} ({option.size_mb} MB
+                {option.present ? "" : ", not downloaded"})
+              </option>
+            ))}
+          </select>
+        </label>
+        {modelOptions
+          .filter((option) => !option.present)
+          .map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              disabled={download?.running}
+              onClick={() => downloadModel(option.id)}
+            >
+              download {option.label} ({option.size_mb} MB)
+            </button>
+          ))}
+        {download?.running && (
+          <p>
+            downloading {download.model}: {download.received_mb} /{" "}
+            {download.total_mb} MB
+            {download.percent !== null ? ` (${download.percent}%)` : ""} —
+            dictation stays available
+          </p>
+        )}
+        {download?.error && <p role="alert">download failed: {download.error}</p>}
         <label>
           microphone:{" "}
           <select

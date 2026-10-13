@@ -359,6 +359,60 @@ later decision.
 Recommendation: approve direction now, lock values at M2 kickoff; record
 the locked set in an ADR.
 
+## 10. What the pill's single control does
+
+Context: the experience document gives the pill exactly three elements —
+a live signal bar, "a single start and stop control for mouse-driven
+use", and a three-dot options control. ADR-004 closes the discard
+gesture as Escape, "with the same action available from the pill's stop
+control so mouse-only use is covered", and states plainly that stop
+delivers while Escape always throws away.
+
+Read together, the two leave one case undefined. If the pill's stop
+control delivers, ADR-004's requirement that the discard path be
+reachable without the keyboard is unmet. If it discards, a mouse-only
+user can start a take and throw it away but has no way to deliver one at
+all, which is a worse exclusion than the one the ADR set out to remove.
+
+Options:
+
+- Press and hold to talk, release to deliver, and a click on the control
+  during a live take discards. Both documents hold: the control starts
+  and stops as the experience document says, and the click is the
+  mouse's Escape, so the discard path needs no keyboard. The gesture is a
+  mouse analog of the chord rather than a new idea, but no document
+  states it.
+- The pill's stop control discards, and delivery stays on the chord.
+  The plainest reading of ADR-004 and the fewest gestures, at the cost of
+  leaving a mouse-only user unable to deliver a take.
+- The pill's stop control delivers and Escape remains the only discard.
+  Satisfies the experience document's wording, but withdraws the
+  keyboard-free discard ADR-004 approved, so that ADR would need
+  amending.
+- Two controls on the pill, stop and discard. Leaves the discard
+  reachable with no ambiguity, but spends the one thing the pill's design
+  refuses: surface area.
+
+Trade-offs: the first keeps both documents true and costs one learned
+gesture, hold versus click, on a control the user touches once. The
+second and third each satisfy one document by overriding the other, and
+the second leaves a real capability gap. The fourth buys certainty with
+exactly the chrome the pill's restraint exists to avoid.
+
+Evidence from the M2 build: this is the only part of the pill the written
+documents do not already fix. Everything else — borderless, never
+focusable, always above the destination, three elements, every state
+legible from the pill alone — is stated and needs no ruling. Choosing a
+gesture here would be deciding silently, which is what this list exists
+to prevent, so the pill slice stops until it is settled.
+
+Recommendation: press and hold to talk, release to deliver, click during
+a live take to discard. It satisfies both documents without amending
+either, keeps the pill at three elements, and gives mouse-only dictation
+the same two actions the chord gives keyboard users. Approving it should
+amend ADR-004 to name the click explicitly rather than "the pill's stop
+control".
+
 ## ADR process
 
 - A decision becomes an ADR only after explicit approval of the

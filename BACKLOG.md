@@ -71,11 +71,25 @@ Closed decisions this milestone:
 | Slice | Scope | Status |
 | --- | --- | --- |
 | 1 | First run is one screen | done |
-| 2 | The pill carries every state | next |
+| 2 | The pill carries every state | stopped: decision item 10 |
 | 3 | Advanced concerns folded away | pending |
 | 4 | Premium pass: tokens, motion, spacing, wording | blocked on decision item 8 |
 | 5 | Windows packaging: install, offline, clean uninstall | blocked on decision item 6 |
 | 6 | Delivery routed through the target abstraction | pending |
+
+## Open (decided nowhere yet)
+
+- Pill control gesture — item 10. The experience document calls it a
+  start and stop control; ADR-004 makes the pill's stop control discard.
+  Recommended: hold to talk, release to deliver, click during a live
+  take to discard. Blocks slice 2.
+- Optional cleanup scope — item 5. Recommended rules-only or none,
+  default off.
+- Name, packaging identity, and collision check — item 6. Recommended
+  before M2 packaging.
+- Visual tokens (accent, surfaces, glow budget) — item 8. Recommended:
+  lock the values at M2 kickoff. Blocks slice 4.
+- Phase-two agent target details — 06-agent-integration.md.
 
 ## Next (in order)
 
@@ -83,14 +97,6 @@ Closed decisions this milestone:
 2. Release automation (skill + command + CI) after the scaffold proves out.
 3. Phase 2 — OpenCode agent integration.
 4. M3 — macOS, then Linux. Public release with first version.
-
-## Open (decided nowhere yet)
-
-- Optional cleanup scope — see docs/08-decisions.md item 5. Recommended
-  rules-only or none, default off.
-- Name, packaging identity, and collision check — item 6. Recommended
-  before M2 packaging.
-- Phase-two agent target details — 06-agent-integration.md.
 
 ## Related
 

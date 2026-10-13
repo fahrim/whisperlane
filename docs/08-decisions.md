@@ -109,6 +109,9 @@ terminal-agent destination to the matrix in phase two; evaluate per
 platform with a reliability matrix across representative targets before
 committing; record the chosen primary and fallback per platform in an ADR.
 
+Status: approved — see `adr/005-text-insertion-windows.md` (Windows; the
+other platforms arrive with M3).
+
 ## 4. Which models ship and which is the default
 
 Context: model size trades accuracy against download size, memory, and
@@ -140,16 +143,21 @@ waiting, which must then be honest and non-blocking.
 Evidence from the existing plugin: turbo-class quantized model at roughly
 half a gigabyte, pinned language default, speech-grade mono capture with
 a hard per-take cap, and tolerant settings handling. The M0 skeleton
-follows this shape provisionally; the default stays open until approved.
+follows this shape provisionally.
 
 Direction: maintainer set the skeleton language default to `auto`
- despite the ~2x cost; revisit with measured latency pain. Model default
- still open.
+despite the ~2x cost; revisit with measured latency pain.
 
 Recommendation: turbo-class quantized default with larger models as
-explicit opt-ins, pinned-by-default language with auto as a visible
-explicit option, tolerant settings handling, and the proven capture shape;
-confirm against early milestone hardware measurements.
+explicit opt-ins, tolerant settings handling, and the proven capture
+shape; confirm against early milestone hardware measurements.
+
+Decision: the turbo-class quantized large model is the default and
+models become a choice in settings, downloaded on demand with honest
+non-blocking progress. The language default stays `auto` per maintainer
+direction, with pinned languages as an explicit choice.
+
+Status: approved — see `adr/006-model-default-and-download.md`.
 
 ## 5. Optional cleanup: rules, small local model, or none
 
@@ -283,8 +291,7 @@ Recommendation: the Escape key discards a live take, with the same
 action available from the pill's stop control so mouse-only use is not
 left out. Stop delivers and Escape discards, always.
 
-Status: open — implemented as the recommendation; approval closes it
-into `adr/004-cancel-gesture.md`.
+Status: approved — see `adr/004-cancel-gesture.md`.
 
 ## ADR process
 
@@ -297,8 +304,8 @@ into `adr/004-cancel-gesture.md`.
   documents update their Related sections.
 
 ADR index: `adr/001-default-hotkey.md` (item 7), `adr/002-engine-hosting.md` (item 1),
-`adr/003-device-event-filter.md` (item 7). Open proposal implemented in M1:
-item 8 (cancel gesture).
+`adr/003-device-event-filter.md` (item 7), `adr/004-cancel-gesture.md` (item 8),
+`adr/005-text-insertion-windows.md` (item 3), `adr/006-model-default-and-download.md` (item 4).
 
 ## Related
 

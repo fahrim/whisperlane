@@ -31,6 +31,15 @@ interface SttStatus {
   detail: string | null;
 }
 
+interface Settings {
+  language: string;
+}
+
+interface LanguageChoice {
+  code: string;
+  label: string;
+}
+
 function targetLabel(target: PipelineStatus["target"]): string {
   if (typeof target === "string") return target;
   return `agent:${target.agent}`;
@@ -42,10 +51,20 @@ function App() {
   const [diag, setDiag] = useState<KeyDiag | null>(null);
   const [hotkey, setHotkey] = useState<string>("…");
   const [error, setError] = useState<string | null>(null);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [languages, setLanguages] = useState<LanguageChoice[]>([]);
 
   async function refreshStt() {
     try {
       setStt(await invoke<SttStatus>("get_stt_status"));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function chooseLanguage(code: string) {
+    try {
+      setSettings(await invoke<Settings>("set_language", { language: code }));
     } catch (e) {
       setError(String(e));
     }
@@ -78,6 +97,12 @@ function App() {
     }
     invoke<string>("get_hotkey_label")
       .then(setHotkey)
+      .catch((e) => setError(String(e)));
+    invoke<Settings>("get_settings")
+      .then(setSettings)
+      .catch((e) => setError(String(e)));
+    invoke<LanguageChoice[]>("list_languages")
+      .then(setLanguages)
       .catch((e) => setError(String(e)));
     poll();
     const timer = setInterval(poll, 1000);
@@ -128,6 +153,23 @@ function App() {
         ) : (
           <p>loading…</p>
         )}
+      </section>
+      <section aria-label="settings">
+        <h2>settings</h2>
+        <label>
+          language:{" "}
+          <select
+            value={settings?.language ?? ""}
+            onChange={(e) => chooseLanguage(e.target.value)}
+          >
+            {languages.map((choice) => (
+              <option key={choice.code} value={choice.code}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p>language applies to the next take; the service reloads.</p>
       </section>
       <section aria-label="transcription service">
         <h2>transcription</h2>

@@ -9,9 +9,6 @@ use std::path::Path;
 /// Expected model (docs/08-decisions.md item 4 stays open; this default
 /// follows the proven plugin, no ADR yet).
 pub const EXPECTED_MODEL_FILE: &str = "ggml-large-v3-turbo-q5_0.bin";
-/// Provisional pinned language (same open item; auto costs ~2x and
-/// misreads some languages). Maintainer direction: default `auto`.
-pub const TRANSCRIBE_LANGUAGE: &str = "auto";
 /// Engine input shape.
 pub const ENGINE_SAMPLE_RATE: u32 = 16_000;
 

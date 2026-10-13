@@ -13,10 +13,11 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
 use crate::pipeline::{current_phase, set_last_text, set_phase, Phase};
+use crate::settings::language_of;
 use crate::stt_shared::{
     detect_backend, load_wav_mono_f32, multipart_body, normalize_gain, parse_transcript,
     resample_linear, Backend, ENGINE_SAMPLE_RATE, EXPECTED_MODEL_FILE, INFERENCE_PATH,
-    OPENAI_FALLBACK_PATH, TRANSCRIBE_LANGUAGE,
+    OPENAI_FALLBACK_PATH,
 };
 
 /// Proven idle-unload period: ten minutes, never while a take is live.
@@ -54,6 +55,7 @@ pub(crate) struct SttInner {
     consecutive_crashes: u32,
     last_error: Option<String>,
     model_missing: bool,
+    reload_pending: bool,
 }
 
 impl Default for SttInner {
@@ -67,6 +69,7 @@ impl Default for SttInner {
             consecutive_crashes: 0,
             last_error: None,
             model_missing: false,
+            reload_pending: false,
         }
     }
 }
@@ -208,7 +211,7 @@ pub fn ensure_ready(app: &AppHandle) -> Result<u16, String> {
         .arg("--port")
         .arg(port.to_string())
         .arg("--language")
-        .arg(TRANSCRIBE_LANGUAGE)
+        .arg(language_of(app).code())
         .current_dir(runtime_dir(app)?)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -265,6 +268,26 @@ fn stop_locked(inner: &mut SttInner) {
     inner.port = None;
 }
 
+/// Pure reload decision, unit-tested: a setting change never kills a
+/// live request, it waits for the take to finish.
+pub fn reload_now(active_requests: u32) -> bool {
+    active_requests == 0
+}
+
+/// Drops the loaded service so the next take starts it with current
+/// settings. Used when a setting the service was launched with changes.
+pub fn reload(app: &AppHandle) {
+    if let Some(state) = app.try_state::<SttState>() {
+        let mut inner = state.0.lock().expect("stt state poisoned");
+        if !reload_now(inner.active_requests) {
+            inner.reload_pending = true;
+            return;
+        }
+        stop_locked(&mut inner);
+        inner.starting = false;
+    }
+}
+
 /// Idle sweeper body, called on a timer. Unloads only when no take is
 /// live: never mid-recording, never mid-transcription.
 pub fn sweep_idle(app: &AppHandle) {
@@ -296,12 +319,17 @@ pub fn transcribe_take(app: AppHandle, wav_path: String) {
                 state.0.lock().expect("stt state poisoned").active_requests += 1;
             }
         }
-        let result = transcribe_call(port, &wav_path);
+        let result = transcribe_call(port, &wav_path, language_of(&app).code());
         {
             if let Some(state) = app.try_state::<SttState>() {
                 let mut inner = state.0.lock().expect("stt state poisoned");
                 inner.active_requests = inner.active_requests.saturating_sub(1);
                 inner.last_use = Some(Instant::now());
+                // A deferred reload lands now that the request is done.
+                if inner.reload_pending && reload_now(inner.active_requests) {
+                    inner.reload_pending = false;
+                    stop_locked(&mut inner);
+                }
             }
         }
         match result {
@@ -327,7 +355,8 @@ pub fn transcribe_take(app: AppHandle, wav_path: String) {
 
 /// Loads the take, lifts quiet input toward a healthy level, and posts
 /// it to the service: primary endpoint first, OpenAI-compatible fallback.
-fn transcribe_call(port: u16, wav_path: &str) -> Result<String, String> {
+/// The language comes from settings, so one take never mixes languages.
+fn transcribe_call(port: u16, wav_path: &str, language: &str) -> Result<String, String> {
     let (pcm, rate) = load_wav_mono_f32(std::path::Path::new(wav_path))?;
     let mut pcm = resample_linear(&pcm, rate, ENGINE_SAMPLE_RATE);
     normalize_gain(&mut pcm);
@@ -349,7 +378,7 @@ fn transcribe_call(port: u16, wav_path: &str) -> Result<String, String> {
         writer.finalize().map_err(|e| e.to_string())?;
     }
     let boundary = "whisperlane-take";
-    let body = multipart_body(boundary, &wav, TRANSCRIBE_LANGUAGE);
+    let body = multipart_body(boundary, &wav, language);
     for path in [INFERENCE_PATH, OPENAI_FALLBACK_PATH] {
         let url = format!("http://127.0.0.1:{port}{path}");
         match ureq::post(&url)
@@ -417,5 +446,12 @@ mod tests {
         assert!(!should_unload(true, 1, false, IDLE_UNLOAD_SECS + 999));
         assert!(!should_unload(true, 0, true, IDLE_UNLOAD_SECS + 999));
         assert!(!should_unload(true, 0, false, IDLE_UNLOAD_SECS - 1));
+    }
+
+    #[test]
+    fn reload_waits_for_live_requests() {
+        assert!(reload_now(0));
+        assert!(!reload_now(1));
+        assert!(!reload_now(2));
     }
 }

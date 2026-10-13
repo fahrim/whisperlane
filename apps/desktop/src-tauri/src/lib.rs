@@ -9,6 +9,7 @@ mod audio;
 mod deliver;
 mod hotkey;
 mod pipeline;
+mod settings;
 mod stt;
 pub mod stt_shared;
 
@@ -16,6 +17,7 @@ use audio::reset_pipeline;
 use deliver::copy_last_text;
 use hotkey::{get_hotkey_label, get_key_diag, DiagState};
 use pipeline::{get_pipeline_state, PipelineState, PipelineStatus};
+use settings::{get_settings, list_languages, load, set_language, SettingsState};
 use stt::{get_stt_status, sweep_idle, SttState};
 
 #[tauri::command]
@@ -78,9 +80,15 @@ pub fn run() {
             reset_pipeline,
             get_stt_status,
             copy_last_text,
-            get_key_diag
+            get_key_diag,
+            get_settings,
+            set_language,
+            list_languages
         ])
         .setup(|app| {
+            // Settings need the resolved data dir, so they load here
+            // rather than in the builder chain.
+            app.manage(SettingsState(std::sync::Mutex::new(load(app.handle()))));
             build_tray(app.handle())?;
             let handle = app.handle().clone();
             std::thread::spawn(move || hotkey::run_listener(handle));

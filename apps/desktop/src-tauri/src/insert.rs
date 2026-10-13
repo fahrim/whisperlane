@@ -166,6 +166,53 @@ fn input_of(keystroke: Keystroke) -> INPUT {
     }
 }
 
+/// Sends a real virtual key press and release, by key code rather than
+/// by character.
+fn virtual_key_events(vk: VIRTUAL_KEY) -> Vec<INPUT> {
+    let event = |up: bool| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: vk,
+                wScan: 0,
+                dwFlags: if up {
+                    KEYEVENTF_KEYUP
+                } else {
+                    KEYBD_EVENT_FLAGS(0)
+                },
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    };
+    vec![event(false), event(true)]
+}
+
+/// Sends events and reports how many the platform accepted.
+fn send_all(events: &[INPUT]) -> usize {
+    // SAFETY: the slice is fully initialized and the size matches the
+    // structure the call expects.
+    unsafe {
+        windows::Win32::UI::Input::KeyboardAndMouse::SendInput(events, INPUT_SIZE)
+            as usize
+    }
+}
+
+/// Releases a modifier to the focused window, so it cannot stay latched.
+///
+/// A modifier the user physically released while the chord was live has
+/// already been passed through, so sending a second release is harmless
+/// for applications that track physical state, and rescues the ones
+/// that do not. The wide form is used because an application remembers
+/// which extended-key path a modifier arrived on; releasing only the
+/// standard path can leave the extended one stuck.
+pub fn clear_latched_modifiers() {
+    for vk in [VIRTUAL_KEY(0xA2), VIRTUAL_KEY(0xA0)] {
+        let wide = virtual_key_events(vk);
+        send_all(&wide);
+    }
+}
+
 /// Types `text` into the focused application, returning how many
 /// characters the platform accepted.
 ///
@@ -178,11 +225,7 @@ pub fn synthesize(text: &str) -> usize {
     let mut typed = 0usize;
     for chunk in plan.chunks(CHUNK * 2) {
         let sent: Vec<INPUT> = chunk.iter().copied().map(input_of).collect();
-        // SAFETY: the slice is fully initialized and the size matches the
-        // structure the call expects.
-        let accepted =
-            unsafe { windows::Win32::UI::Input::KeyboardAndMouse::SendInput(&sent, INPUT_SIZE) }
-                as usize;
+        let accepted = send_all(&sent);
         // Every character needs both its press and its release to count.
         typed += accepted / 2;
         if accepted < sent.len() {
@@ -204,7 +247,16 @@ pub fn insert(app: &AppHandle, text: &str) -> Insertion {
     }
     let ours = focus_is_ours(app);
     // Our own focus is known before typing: there is nothing to send.
-    let typed = if ours { 0 } else { synthesize(text) };
+    // The modifier release happens either way: a take that ended while
+    // a key was still down must not leave the destination latched.
+    let typed = if ours {
+        clear_latched_modifiers();
+        0
+    } else {
+        let typed = synthesize(text);
+        clear_latched_modifiers();
+        typed
+    };
     let outcome = decide(planned, typed, ours);
     // Some of the text already in the application is never re-sent: a
     // second copy would duplicate the part that arrived.

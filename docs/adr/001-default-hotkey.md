@@ -36,6 +36,18 @@ ask-on-first-press so no setup stands between install and first dictation.
 - The M0 skeleton watches the chord through a low-level keyboard hook,
   because bare-modifier chords cannot go through the register-a-shortcut
   path.
+- The hook observes the chord and never hides a keystroke. Swallowing the
+  trigger key while leaving the modifiers visible left the focused
+  application with a modifier it never saw released, which latched as a
+  stuck modifier in everyday targets and made later keystrokes arrive as
+  accidental shortcuts. Letting the chord through costs one visible space
+  character in a text field; a latched Control costs a keystroke. The
+  press-and-release that ends a take additionally sends a modifier
+  release, so a key still held when the take ended cannot stay latched.
+- Control plus Space therefore carries two known collisions rather than
+  one: the editor autocomplete conflict recorded above, and the stray
+  space it types into a text field. Both are stated in the binding's own
+  label rather than discovered in use.
 - Toggle behavior and the hands-free alternate land with the M1 flow and
   settings work, not in the skeleton.
 - The chord must not collide with the terminal hosting an agent prompt, which

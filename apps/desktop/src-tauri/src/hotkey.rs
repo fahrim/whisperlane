@@ -1,11 +1,17 @@
 //! Own low-level keyboard hook for the configurable dictation chord
 //! (ADR-001): Control plus a trigger key, with Shift on the default.
 //!
-//! Why own code instead of a hotkey crate: the chord is a modifier pair
-//! plus a plain key that the hook must swallow before the focused
-//! application sees it, so `RegisterHotKey`-based crates cannot express
-//! it, and owning the hook keeps the state machine pure and testable.
-//! Method only — no foreign hotkey package.
+//! Why own code instead of a hotkey crate: bare-modifier chords cannot
+//! go through the register-a-shortcut path, and owning the hook keeps
+//! the state machine pure and testable. Method only — no foreign hotkey
+//! package.
+//!
+//! The hook observes and never hides a keystroke. Swallowing a key the
+//! focused application never sees released leaves its own modifier state
+//! latched, and the next keystroke then arrives as an accidental
+//! shortcut. Letting the chord through costs one visible space
+//! character in a text field; a latched Control costs the user their
+//! next keystroke.
 
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -62,13 +68,13 @@ impl Hotkey {
         }
     }
 
-    /// Plain-language label for the settings surface. Control plus Space
-    /// keeps a note of its known editor collisions, because a binding
-    /// that fights autocomplete should not be chosen silently.
+    /// Plain-language label for the settings surface. A binding with a
+    /// known cost says so, because a chord that fights the editor or
+    /// types a stray space should not be chosen silently.
     pub const fn label(self) -> &'static str {
         match self {
             Hotkey::CtrlShiftSpace => "Control + Shift + Space (hold)",
-            Hotkey::CtrlSpace => "Control + Space (collides with autocomplete in editors)",
+            Hotkey::CtrlSpace => "Control + Space (types a space; collides with autocomplete)",
             Hotkey::CtrlY => "Control + Y (plugin legacy)",
         }
     }
@@ -159,10 +165,10 @@ fn is_shift(vk: u32) -> bool {
     matches!(vk, VK_LSHIFT | VK_RSHIFT | VK_SHIFT)
 }
 
-/// Pure chord machine over raw virtual-key events. No OS calls,
-/// fully unit-tested. Returns the edge plus whether to swallow the event.
-/// Shared as a static: the hook callback is the only accessor, so no
-/// locking runs inside the hook.
+/// Pure chord machine over raw virtual-key events. No OS calls, fully
+/// unit-tested, and it never asks to hide a keystroke: the hook only
+/// observes. Shared as a static: the hook callback is the only
+/// accessor, so no locking runs inside the hook.
 #[derive(Debug)]
 pub struct ChordState {
     ctrl: bool,
@@ -201,17 +207,19 @@ impl ChordState {
         HookEvent::Released { held_ms }
     }
 
-    /// Returns the hook event and whether to swallow this event.
+    /// Returns what the hook observed, if anything.
     ///
-    /// Only the trigger key is swallowed, and only while the chord is
-    /// formed. Modifier events always pass through: swallowing them
-    /// desynchronizes the focused window's own key state, which shows up
-    /// as focus-dependent hotkey failures. The trigger key is still
-    /// swallowed so it never types into the focused application.
+    /// Nothing is swallowed. Swallowing a key the focused application
+    /// never sees released leaves that application's own modifier state
+    /// latched, so the next keystroke arrives as an accidental shortcut;
+    /// Control plus Space stays held on Windows for exactly this reason.
+    /// The product has nothing to lose by letting the chord through: the
+    /// trigger key types a space into a text field, which the user can
+    /// see, and the transcript is inserted afterwards.
     ///
     /// Keys the binding does not use are not tracked at all, so a
     /// binding without Shift leaves Shift as ordinary typing.
-    pub fn event(&mut self, vk: u32, down: bool, hotkey: Hotkey) -> (Option<HookEvent>, bool) {
+    pub fn event(&mut self, vk: u32, down: bool, hotkey: Hotkey) -> Option<HookEvent> {
         let uses_shift = hotkey.needs_shift();
         if is_ctrl(vk) || (uses_shift && is_shift(vk)) {
             if is_ctrl(vk) {
@@ -224,9 +232,9 @@ impl ChordState {
             // trigger release would leave capture open.
             if self.active && !down {
                 self.active = false;
-                return (Some(self.release_after_hold()), false);
+                return Some(self.release_after_hold());
             }
-            return (None, false);
+            return None;
         }
         if vk == hotkey.trigger_vk() {
             self.trigger = down;
@@ -234,16 +242,16 @@ impl ChordState {
             if armed && down && !self.active {
                 self.active = true;
                 self.pressed_at = Some(Instant::now());
-                return (Some(HookEvent::Pressed), true);
+                return Some(HookEvent::Pressed);
             }
             if self.active && !down {
                 self.active = false;
-                return (Some(self.release_after_hold()), true);
+                return Some(self.release_after_hold());
             }
-            // Trigger key alone: never swallowed.
-            return (None, false);
+            // Trigger key without the modifier is ordinary typing.
+            return None;
         }
-        (None, false)
+        None
     }
 }
 
@@ -275,6 +283,8 @@ pub fn resolve_action(event: HookEvent, phase: Option<Phase>) -> ChordAction {
                 Stop
             }
         }
+        // Escape is observed here, not in the callback: the decision table is
+        // the only place that knows what a live take is.
         (HookEvent::Cancelled, Some(Phase::Listening)) => Cancel,
         (HookEvent::Cancelled, Some(Phase::Thinking)) => Cancel,
         _ => Ignore,
@@ -305,7 +315,6 @@ pub struct KeyDiag {
     pub trigger: bool,
     pub active: bool,
     pub chords_seen: u32,
-    pub swallowed: u32,
 }
 
 pub fn diag_snapshot(app: &AppHandle) -> KeyDiag {
@@ -334,13 +343,10 @@ fn record(app: &AppHandle, label: String, state: &ChordState) {
     }
 }
 
-fn record_chord(app: &AppHandle, swallowed: bool) {
+fn record_chord(app: &AppHandle) {
     if let Some(diag) = app.try_state::<DiagState>() {
         let mut d = diag.0.lock().expect("diag state poisoned");
         d.chords_seen = d.chords_seen.saturating_add(1);
-        if swallowed {
-            d.swallowed = d.swallowed.saturating_add(1);
-        }
     }
 }
 
@@ -378,7 +384,7 @@ unsafe extern "system" fn hook_proc(n_code: i32, w_param: WPARAM, l_param: LPARA
             // SAFETY: STATE is reached only from this hook thread, and a
             // low-level keyboard hook always runs on its installing thread.
             let state = unsafe { &mut *STATE.0.get() };
-            let (event, mask) = state.event(vk, down, hotkey);
+            let event = state.event(vk, down, hotkey);
             // SAFETY: APP is written once before the hook starts.
             let diag_app = unsafe { (*APP.0.get()).clone() };
             if let Some(diag_app) = diag_app {
@@ -389,30 +395,24 @@ unsafe extern "system" fn hook_proc(n_code: i32, w_param: WPARAM, l_param: LPARA
                 );
                 record(&diag_app, label, state);
                 if event.is_some() {
-                    record_chord(&diag_app, mask);
+                    record_chord(&diag_app);
                 }
             }
-            if event.is_some() || mask {
-                debug_log(format!("hook vk={vk:#X} down={down} mask={mask}\n"));
+            if let Some(event) = event {
+                debug_log(format!("hook {event:?}\n"));
                 if let Some(tx) = EDGE_TX.get() {
-                    if let Some(event) = event {
-                        let _ = tx.send(event);
-                    }
+                    let _ = tx.send(event);
                 }
-                // Swallow the chord: none of it reaches other apps.
-                return LRESULT(1);
+            } else {
+                debug_log(format!("hook vk={vk:#X} down={down}\n"));
             }
-            debug_log(format!("hook vk={vk:#X} down={down} mask=false\n"));
-            // Escape discards a live take, but only while one exists:
-            // otherwise it stays ordinary typing for the focused window.
-            if vk == VK_ESCAPE && !down {
-                let cancel = cancel_live();
-                if cancel {
-                    debug_log("hook escape: cancel\n".to_string());
-                    if let Some(tx) = EDGE_TX.get() {
-                        let _ = tx.send(HookEvent::Cancelled);
-                    }
-                    return LRESULT(1);
+            // Escape discards a live take. It is still passed through,
+            // because the hook never hides a keystroke; the focused
+            // window keeps its own idea of what Escape means.
+            if vk == VK_ESCAPE && !down && cancel_live() {
+                debug_log("hook escape: cancel\n".to_string());
+                if let Some(tx) = EDGE_TX.get() {
+                    let _ = tx.send(HookEvent::Cancelled);
                 }
             }
         }
@@ -518,11 +518,11 @@ mod tests {
     #[test]
     fn activates_when_last_side_goes_down() {
         let mut s = ChordState::new();
-        assert_eq!(s.event(VK_LCONTROL, true, DEFAULT), (None, false));
-        assert_eq!(s.event(VK_LSHIFT, true, DEFAULT), (None, false));
+        assert_eq!(s.event(VK_LCONTROL, true, DEFAULT), None);
+        assert_eq!(s.event(VK_LSHIFT, true, DEFAULT), None);
         assert_eq!(
             s.event(VK_SPACE, true, DEFAULT),
-            (Some(HookEvent::Pressed), true)
+            Some(HookEvent::Pressed)
         );
     }
 
@@ -533,22 +533,22 @@ mod tests {
         s.event(VK_RSHIFT, true, DEFAULT);
         assert_eq!(
             s.event(VK_SPACE, true, DEFAULT),
-            (Some(HookEvent::Pressed), true)
+            Some(HookEvent::Pressed)
         );
     }
 
     #[test]
     fn modifiers_always_pass_through() {
         let mut s = ChordState::new();
-        assert_eq!(s.event(VK_LCONTROL, true, DEFAULT), (None, false));
-        assert_eq!(s.event(VK_LSHIFT, true, DEFAULT), (None, false));
+        assert_eq!(s.event(VK_LCONTROL, true, DEFAULT), None);
+        assert_eq!(s.event(VK_LSHIFT, true, DEFAULT), None);
         assert_eq!(
             s.event(VK_SPACE, true, DEFAULT),
-            (Some(HookEvent::Pressed), true)
+            Some(HookEvent::Pressed)
         );
         // Repeat and modifier repeats never swallow, never re-fire.
-        assert_eq!(s.event(VK_SPACE, true, DEFAULT), (None, false));
-        assert_eq!(s.event(VK_LCONTROL, true, DEFAULT), (None, false));
+        assert_eq!(s.event(VK_SPACE, true, DEFAULT), None);
+        assert_eq!(s.event(VK_LCONTROL, true, DEFAULT), None);
     }
 
     #[test]
@@ -557,29 +557,43 @@ mod tests {
         s.event(VK_LCONTROL, true, DEFAULT);
         s.event(VK_LSHIFT, true, DEFAULT);
         s.event(VK_SPACE, true, DEFAULT);
-        let (event, mask) = s.event(VK_LCONTROL, false, DEFAULT);
-        assert!(is_release(event));
-        assert!(!mask);
+        assert!(is_release(s.event(VK_LCONTROL, false, DEFAULT)));
         // Trigger release after the chord ended is plain typing again.
-        assert_eq!(s.event(VK_SPACE, false, DEFAULT), (None, false));
+        assert_eq!(s.event(VK_SPACE, false, DEFAULT), None);
     }
 
     #[test]
-    fn trigger_release_ends_the_chord_and_is_swallowed() {
+    fn trigger_release_ends_the_chord() {
         let mut s = ChordState::new();
         s.event(VK_LCONTROL, true, DEFAULT);
         s.event(VK_LSHIFT, true, DEFAULT);
         s.event(VK_SPACE, true, DEFAULT);
-        let (event, mask) = s.event(VK_SPACE, false, DEFAULT);
-        assert!(is_release(event));
-        assert!(mask);
+        assert!(is_release(s.event(VK_SPACE, false, DEFAULT)));
     }
 
     #[test]
-    fn trigger_key_alone_is_never_swallowed() {
+    fn a_full_chord_leaves_no_latched_state_behind() {
+        // The hook observes without hiding, so a matched press and
+        // release must leave nothing pending: the same chord works again
+        // immediately afterwards.
         let mut s = ChordState::new();
-        assert_eq!(s.event(VK_SPACE, true, DEFAULT), (None, false));
-        assert_eq!(s.event(VK_SPACE, false, DEFAULT), (None, false));
+        s.event(VK_LCONTROL, true, DEFAULT);
+        s.event(VK_LSHIFT, true, DEFAULT);
+        assert_eq!(s.event(VK_SPACE, true, DEFAULT), Some(HookEvent::Pressed));
+        assert!(is_release(s.event(VK_SPACE, false, DEFAULT)));
+        assert_eq!(s.event(VK_LSHIFT, false, DEFAULT), None);
+        assert_eq!(s.event(VK_LCONTROL, false, DEFAULT), None);
+        // Second take without any reset in between.
+        s.event(VK_LCONTROL, true, DEFAULT);
+        s.event(VK_LSHIFT, true, DEFAULT);
+        assert_eq!(s.event(VK_SPACE, true, DEFAULT), Some(HookEvent::Pressed));
+    }
+
+    #[test]
+    fn trigger_key_alone_is_plain_typing() {
+        let mut s = ChordState::new();
+        assert_eq!(s.event(VK_SPACE, true, DEFAULT), None);
+        assert_eq!(s.event(VK_SPACE, false, DEFAULT), None);
     }
 
     #[test]
@@ -594,15 +608,15 @@ mod tests {
         s.event(VK_LSHIFT, true, DEFAULT);
         assert_eq!(
             s.event(VK_SPACE, true, DEFAULT),
-            (Some(HookEvent::Pressed), true)
+            Some(HookEvent::Pressed)
         );
     }
 
     #[test]
     fn unrelated_keys_pass_through() {
         let mut s = ChordState::new();
-        assert_eq!(s.event(0x41, true, DEFAULT), (None, false));
-        assert_eq!(s.event(0x41, false, DEFAULT), (None, false));
+        assert_eq!(s.event(0x41, true, DEFAULT), None);
+        assert_eq!(s.event(0x41, false, DEFAULT), None);
     }
 
     #[test]
@@ -612,7 +626,7 @@ mod tests {
         s.event(VK_SHIFT, true, DEFAULT);
         assert_eq!(
             s.event(VK_SPACE, true, DEFAULT),
-            (Some(HookEvent::Pressed), true)
+            Some(HookEvent::Pressed)
         );
     }
 
@@ -627,18 +641,16 @@ mod tests {
         let mut s = ChordState::new();
         // Shift is ordinary typing for this binding: neither tracked nor
         // swallowed.
-        assert_eq!(s.event(VK_LSHIFT, true, Hotkey::CtrlSpace), (None, false));
+        assert_eq!(s.event(VK_LSHIFT, true, Hotkey::CtrlSpace), None);
         s.event(VK_LCONTROL, true, Hotkey::CtrlSpace);
         // A held Shift neither blocks nor changes the binding.
         assert_eq!(
             s.event(VK_SPACE, true, Hotkey::CtrlSpace),
-            (Some(HookEvent::Pressed), true)
+            Some(HookEvent::Pressed)
         );
-        let (event, mask) = s.event(VK_SPACE, false, Hotkey::CtrlSpace);
-        assert!(is_release(event));
-        assert!(mask);
+        assert!(is_release(s.event(VK_SPACE, false, Hotkey::CtrlSpace)));
         // Releasing Shift does not end the take: it is not part of it.
-        assert_eq!(s.event(VK_LSHIFT, false, Hotkey::CtrlSpace), (None, false));
+        assert_eq!(s.event(VK_LSHIFT, false, Hotkey::CtrlSpace), None);
     }
 
     #[test]
@@ -646,21 +658,19 @@ mod tests {
         let mut s = ChordState::new();
         s.event(VK_LCONTROL, true, Hotkey::CtrlSpace);
         // Y is plain typing while this binding is active.
-        assert_eq!(s.event(VK_Y, true, Hotkey::CtrlSpace), (None, false));
+        assert_eq!(s.event(VK_Y, true, Hotkey::CtrlSpace), None);
     }
 
     #[test]
     fn control_y_binding_uses_y_and_ignores_space() {
         let mut s = ChordState::new();
         s.event(VK_LCONTROL, true, Hotkey::CtrlY);
-        assert_eq!(s.event(VK_SPACE, true, Hotkey::CtrlY), (None, false));
+        assert_eq!(s.event(VK_SPACE, true, Hotkey::CtrlY), None);
         assert_eq!(
             s.event(VK_Y, true, Hotkey::CtrlY),
-            (Some(HookEvent::Pressed), true)
+            Some(HookEvent::Pressed)
         );
-        let (event, mask) = s.event(VK_Y, false, Hotkey::CtrlY);
-        assert!(is_release(event));
-        assert!(mask);
+        assert!(is_release(s.event(VK_Y, false, Hotkey::CtrlY)));
     }
 
     #[test]
@@ -671,18 +681,18 @@ mod tests {
         s.event(VK_LSHIFT, true, Hotkey::CtrlShiftSpace);
         assert_eq!(
             s.event(VK_SPACE, true, Hotkey::CtrlShiftSpace),
-            (Some(HookEvent::Pressed), true)
+            Some(HookEvent::Pressed)
         );
         s.event(VK_SPACE, false, Hotkey::CtrlShiftSpace);
         s.event(VK_LSHIFT, false, Hotkey::CtrlShiftSpace);
         s.event(VK_LCONTROL, false, Hotkey::CtrlShiftSpace);
         // After switching, the old chord is ordinary typing.
-        assert_eq!(s.event(VK_SPACE, true, Hotkey::CtrlY), (None, false));
+        assert_eq!(s.event(VK_SPACE, true, Hotkey::CtrlY), None);
         s.event(VK_SPACE, false, Hotkey::CtrlY);
         s.event(VK_LCONTROL, true, Hotkey::CtrlY);
         assert_eq!(
             s.event(VK_Y, true, Hotkey::CtrlY),
-            (Some(HookEvent::Pressed), true)
+            Some(HookEvent::Pressed)
         );
     }
 
@@ -795,14 +805,12 @@ mod tests {
         s.event(VK_LSHIFT, true, DEFAULT);
         assert_eq!(
             s.event(VK_SPACE, true, DEFAULT),
-            (Some(HookEvent::Pressed), true)
+            Some(HookEvent::Pressed)
         );
-        let (event, mask) = s.event(VK_SPACE, false, DEFAULT);
-        match event {
+        match s.event(VK_SPACE, false, DEFAULT) {
             Some(HookEvent::Released { held_ms }) => assert!(held_ms < TAP_MAX_MS),
             other => panic!("expected a release, got {other:?}"),
         }
-        assert!(mask);
     }
 
     #[test]
@@ -815,7 +823,7 @@ mod tests {
         s.event(VK_LSHIFT, false, DEFAULT);
         s.event(VK_LCONTROL, false, DEFAULT);
         // Stray modifier releases after the tap produce no further edge.
-        assert_eq!(s.event(VK_LSHIFT, false, DEFAULT), (None, false));
-        assert_eq!(s.event(VK_LCONTROL, false, DEFAULT), (None, false));
+        assert_eq!(s.event(VK_LSHIFT, false, DEFAULT), None);
+        assert_eq!(s.event(VK_LCONTROL, false, DEFAULT), None);
     }
 }

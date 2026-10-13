@@ -23,7 +23,6 @@ interface KeyDiag {
   trigger: boolean;
   active: boolean;
   chords_seen: number;
-  swallowed: number;
 }
 
 interface SttStatus {
@@ -216,9 +215,7 @@ function App() {
               chord state: ctrl={String(diag.ctrl)} shift={String(diag.shift)}{" "}
               trigger={String(diag.trigger)} active={String(diag.active)}
             </p>
-            <p>
-              edges: {diag.chords_seen} (swallowed {diag.swallowed})
-            </p>
+            <p>chords: {diag.chords_seen} (nothing is swallowed)</p>
           </>
         ) : (
           <p>loading…</p>

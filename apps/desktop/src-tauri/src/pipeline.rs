@@ -225,6 +225,10 @@ pub fn set_phase(app: &AppHandle, phase: Phase, detail: Option<String>) {
         }
         status.reported()
     };
+    // The pill rests on screen exactly while the pipeline has something
+    // to say. Notifying here rather than at every call site keeps the
+    // rule in one place and means no writer can leave it stale.
+    crate::windows::apply_phase(app, Some(snapshot.phase));
     app.emit("pipeline-state", snapshot)
         .expect("failed to emit pipeline-state");
 }

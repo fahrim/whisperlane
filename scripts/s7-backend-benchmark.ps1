@@ -12,8 +12,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$runtime = "$env:APPDATA\com.whisperlane.app\runtime"
-$model = "$env:APPDATA\com.whisperlane.app\models\ggml-large-v3-turbo-q5_0.bin"
+$runtime = "$env:APPDATA\com.whisperlane.desktop\runtime"
+$model = "$env:APPDATA\com.whisperlane.desktop\models\ggml-large-v3-turbo-q5_0.bin"
 $server = Join-Path $runtime "whisper-server.exe"
 
 if (-not (Test-Path $server)) { throw "runtime missing: $server" }

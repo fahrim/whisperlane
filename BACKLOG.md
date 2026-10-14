@@ -71,8 +71,8 @@ Closed decisions this milestone:
 | Slice | Scope | Status |
 | --- | --- | --- |
 | 1 | First run is one screen | done |
-| 2 | The pill carries every state | stopped: decision item 10 |
-| 3 | Advanced concerns folded away | pending |
+| 2 | The pill carries every state | done |
+| 3 | Advanced concerns folded away | next |
 | 4 | Premium pass: tokens, motion, spacing, wording | blocked on decision item 8 |
 | 5 | Windows packaging: install, offline, clean uninstall | blocked on decision item 6 |
 | 6 | Delivery routed through the target abstraction | pending |

@@ -14,8 +14,11 @@ mod pipeline;
 mod settings;
 mod stt;
 pub mod stt_shared;
+mod windows;
 
-use audio::{cancel_live_take, list_input_devices, needs_microphone_choice, reset_pipeline};
+use audio::{
+    cancel_live_take, list_input_devices, needs_microphone_choice, reset_pipeline, take_control,
+};
 use deliver::copy_last_text;
 use hotkey::{get_hotkey_label, get_key_diag, list_hotkeys, DiagState};
 use models::{download_model, ensure_model_ready, get_download, list_models, ModelState};
@@ -25,11 +28,7 @@ use settings::{
     SettingsState,
 };
 use stt::{get_stt_status, sweep_idle, SttState};
-
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
-}
+use windows::open_settings;
 
 fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
     let quit = MenuItem::with_id(app, "quit", "Quit whisperlane", true, None::<&str>)?;
@@ -81,7 +80,6 @@ pub fn run() {
         .manage(ModelState::default())
         .manage(DiagState::default())
         .invoke_handler(tauri::generate_handler![
-            greet,
             get_pipeline_state,
             get_hotkey_label,
             reset_pipeline,
@@ -101,7 +99,9 @@ pub fn run() {
             get_download,
             download_model,
             set_model,
-            ensure_model_ready
+            ensure_model_ready,
+            take_control,
+            open_settings
         ])
         .setup(|app| {
             // Settings need the resolved data dir, so they load here
@@ -111,6 +111,11 @@ pub fn run() {
             app.manage(SettingsState(std::sync::Mutex::new(saved.clone())));
             hotkey::apply_binding(saved.hotkey);
             build_tray(app.handle())?;
+            windows::build_pill(app.handle())?;
+            // The take worker exists before the hook, so no chord edge
+            // can arrive before there is a thread that owns the live
+            // capture stream.
+            audio::spawn_worker(app.handle().clone());
             let handle = app.handle().clone();
             std::thread::spawn(move || hotkey::run_listener(handle));
             // The backend is verified by launching once, never by

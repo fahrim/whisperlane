@@ -100,19 +100,29 @@ pub fn keystrokes(text: &str) -> Vec<Keystroke> {
 /// Inserting into ourselves would be useless and confusing: the text
 /// would land in a status panel instead of the application the user
 /// meant to write in. Detected up front, because after typing there is
-/// nothing to undo.
+/// nothing to undo. Both of our windows count — settings and pill — so
+/// a pill that somehow took focus still refuses the text.
 pub fn focus_is_ours(app: &AppHandle) -> bool {
-    let Some(window) = app.get_webview_window("main") else {
-        return false;
-    };
-    let Ok(ours) = window.hwnd() else {
-        return false;
-    };
-    // Tauri hands back a handle from `windows-sys` while the platform
-    // call returns one from `windows`: the same pointer in two wrapper
-    // types, so the raw values are what get compared.
-    // SAFETY: reading both handle values cannot fail.
-    unsafe { GetForegroundWindow().0 as isize == ours.0 as isize }
+    [crate::windows::MAIN, crate::windows::PILL]
+        .iter()
+        .any(|label| window_handle(app, label) == foreground_handle())
+}
+
+/// Our window handle, in the platform's own width. Tauri hands back a
+/// handle from `windows-sys` while the platform call returns one from
+/// `windows`: the same pointer in two wrapper types, so the raw values
+/// are what get compared.
+fn window_handle(app: &AppHandle, label: &str) -> Option<isize> {
+    let hwnd = app.get_webview_window(label)?.hwnd().ok()?;
+    Some(hwnd.0 as isize)
+}
+
+/// None when Windows reports no foreground window at all, which is not
+/// one of ours.
+fn foreground_handle() -> Option<isize> {
+    // SAFETY: GetForegroundWindow takes no arguments and never fails.
+    let handle = unsafe { GetForegroundWindow().0 as isize };
+    (handle != 0).then_some(handle)
 }
 
 /// What a synthesis result means.

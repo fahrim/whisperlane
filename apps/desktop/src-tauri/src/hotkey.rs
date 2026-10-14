@@ -15,7 +15,7 @@
 
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::{mpsc, Mutex};
+use std::sync::Mutex;
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
@@ -135,15 +135,16 @@ pub fn apply_binding(hotkey: Hotkey) {
     BINDING.store(hotkey.code(), Ordering::Relaxed);
 }
 
-/// A chord press shorter than this counts as a tap, which toggles
-/// dictation instead of ending it (docs/04-experience.md,
-/// toggle-to-talk: the user taps to start and taps to stop).
-pub const TAP_MAX_MS: u64 = 300;
+/// A chord press shorter than this counts as a tap, which starts dictation
+/// instead of ending it (docs/04-experience.md, toggle-to-talk: the user
+/// taps to start and taps to stop). The bound is exclusive: a press held
+/// for exactly this long is a hold, so it stops on release (ADR-008).
+pub const TAP_MAX_MS: u64 = 250;
 
 /// Whether a press was a tap rather than a hold. Pure and separately
 /// tested, because the machine that measures it cannot control time.
 pub fn is_tap(held_ms: u64) -> bool {
-    held_ms <= TAP_MAX_MS
+    held_ms < TAP_MAX_MS
 }
 
 /// What the hook reports to the take pipeline.
@@ -410,20 +411,19 @@ unsafe extern "system" fn hook_proc(n_code: i32, w_param: WPARAM, l_param: LPARA
             }
             if let Some(event) = event {
                 debug_log(format!("hook {event:?}\n"));
-                if let Some(tx) = EDGE_TX.get() {
-                    let _ = tx.send(event);
-                }
+                audio::send_edge(event);
             } else {
                 debug_log(format!("hook vk={vk:#X} down={down}\n"));
             }
             // Escape discards a live take. It is still passed through,
             // because the hook never hides a keystroke; the focused
-            // window keeps its own idea of what Escape means.
-            if vk == VK_ESCAPE && !down && cancel_live() {
+            // window keeps its own idea of what Escape means. Whether a
+            // take is live is the decision table's call, not this
+            // callback's: it only reports the key and moves on, so no
+            // lock runs inside a low-level hook.
+            if vk == VK_ESCAPE && !down {
                 debug_log("hook escape: cancel\n".to_string());
-                if let Some(tx) = EDGE_TX.get() {
-                    let _ = tx.send(HookEvent::Cancelled);
-                }
+                audio::send_edge(HookEvent::Cancelled);
             }
         }
     }
@@ -431,39 +431,11 @@ unsafe extern "system" fn hook_proc(n_code: i32, w_param: WPARAM, l_param: LPARA
     unsafe { CallNextHookEx(HHOOK::default(), n_code, w_param, l_param) }
 }
 
-/// Whether a take is live and can therefore be cancelled.
-///
-/// One short, uncontended lock against a phase read: the alternative
-/// would be chord-local state, which cannot know that a toggled take is
-/// still running. This is orders of magnitude below the window in which
-/// Windows silently unhooks a slow low-level hook.
-fn cancel_live() -> bool {
-    // SAFETY: APP is written once before the hook starts.
-    let Some(app) = (unsafe { (*APP.0.get()).clone() }) else {
-        return false;
-    };
-    matches!(
-        crate::pipeline::current_phase(&app),
-        Some(Phase::Listening) | Some(Phase::Thinking)
-    )
-}
-
-static EDGE_TX: std::sync::OnceLock<mpsc::Sender<HookEvent>> = std::sync::OnceLock::new();
-
 /// Installs the hook and pumps messages on this thread. Slow work never
-/// runs here: events queue to the audio worker; blocking the hook thread
-/// gets a low-level hook silently uninstalled by Windows.
+/// runs here: edges queue to the take worker, which owns the live
+/// capture stream; blocking the hook thread gets a low-level hook
+/// silently uninstalled by Windows.
 pub fn run_listener(app: AppHandle) {
-    let (tx, rx) = mpsc::channel::<HookEvent>();
-    let _ = EDGE_TX.set(tx);
-    let worker = app.clone();
-    std::thread::spawn(move || {
-        for event in rx {
-            debug_log(format!("worker {event:?}\n"));
-            audio::dispatch(&worker, event);
-        }
-    });
-
     let err_app = app.clone();
     // SAFETY: module handle of our own binary; hook runs on this thread's
     // message pump below, unhooked automatically when the thread exits.
@@ -734,8 +706,15 @@ mod tests {
     #[test]
     fn tap_is_a_short_press() {
         assert!(is_tap(0));
-        assert!(is_tap(TAP_MAX_MS));
+        assert!(is_tap(TAP_MAX_MS - 1));
+        // Exactly the threshold is a hold, so it stops on release.
+        assert!(!is_tap(TAP_MAX_MS));
         assert!(!is_tap(TAP_MAX_MS + 1));
+    }
+
+    #[test]
+    fn the_threshold_is_the_approved_250_milliseconds() {
+        assert_eq!(TAP_MAX_MS, 250);
     }
 
     #[test]

@@ -2,15 +2,16 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex,
+    mpsc, Arc, Mutex, OnceLock,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use crate::hotkey::{resolve_action, ChordAction, HookEvent};
-use crate::pipeline::{current_phase, set_phase, Phase, PipelineStatus};
+use crate::pipeline::{current_phase, get_pipeline_state_inner, set_phase, Phase, PipelineStatus};
 use crate::settings::Microphone;
 
 /// Speech-grade capture shape: mono takes, short-take and silence floors.
@@ -267,15 +268,103 @@ fn spawn_stream(
     }
 }
 
-/// Turns one hook event into take work. The single entry point for the
-/// hook worker, so every dictation flow passes the same decision table.
-pub fn dispatch(app: &AppHandle, event: HookEvent) {
+/// What the pill's own controls ask for (ADR-008).
+///
+/// The main control is one control, not two: it starts a take from a
+/// resting state and stops a live one. Which of the two it means is the
+/// decision table's call and never the surface's, so a pill showing a
+/// stale phase cannot ask to stop a take that never began.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TakeCommand {
+    /// The main control was pressed: start at rest, stop while live.
+    Control,
+    /// The cancel action: throw the take away, exactly as Escape does.
+    Discard,
+}
+
+impl From<TakeCommand> for HookEvent {
+    /// A control press stands for the chord press that would have meant
+    /// the same thing, so both reach the one decision table instead of
+    /// restating its rules.
+    fn from(command: TakeCommand) -> Self {
+        match command {
+            TakeCommand::Control => HookEvent::Pressed,
+            TakeCommand::Discard => HookEvent::Cancelled,
+        }
+    }
+}
+
+/// One turn of the take worker.
+#[derive(Debug)]
+pub enum Intent {
+    /// A chord edge observed by the hook.
+    Chord(HookEvent),
+    /// A press of the pill's own control.
+    Control(TakeCommand),
+}
+
+static INBOX: OnceLock<mpsc::Sender<Intent>> = OnceLock::new();
+
+/// Starts the take worker.
+///
+/// The live capture stream is `!Send` and lives on this one thread, so
+/// every intent is handed to the worker instead of being acted on by
+/// whichever surface pressed it.
+pub fn spawn_worker(app: AppHandle) {
+    let (tx, rx) = mpsc::channel::<Intent>();
+    let _ = INBOX.set(tx);
+    std::thread::spawn(move || {
+        for intent in rx {
+            crate::hotkey::debug_log(format!("worker {intent:?}\n"));
+            dispatch(&app, intent);
+        }
+    });
+}
+
+/// Queues an intent for the take worker. Reports whether it was
+/// accepted, because a dropped stop would leave a take open until the
+/// next press.
+pub fn send(intent: Intent) -> bool {
+    INBOX.get().is_some_and(|tx| tx.send(intent).is_ok())
+}
+
+/// Queues a chord edge from the hook.
+pub fn send_edge(event: HookEvent) -> bool {
+    send(Intent::Chord(event))
+}
+
+/// Queues a press of the pill's control.
+pub fn request(command: TakeCommand) -> bool {
+    send(Intent::Control(command))
+}
+
+/// Turns one intent into take work. The single entry point for the take
+/// worker, so every dictation flow — chord or mouse — passes the same
+/// decision table.
+pub fn dispatch(app: &AppHandle, intent: Intent) {
+    let event = match intent {
+        Intent::Chord(event) => event,
+        Intent::Control(command) => command.into(),
+    };
     match resolve_action(event, current_phase(app)) {
         ChordAction::Start => begin_take(app),
         ChordAction::Stop => end_take(app),
         ChordAction::Cancel => cancel_take(app),
         ChordAction::Ignore => {}
     }
+}
+
+/// The pill's control, and the settings surface's cancel button.
+///
+/// The intent is queued rather than acted on here: the live stream
+/// belongs to the take worker, so a take started or ended anywhere else
+/// would never find it. The returned state is the honest snapshot at
+/// this instant; the worker publishes the real one as it happens.
+#[tauri::command]
+pub fn take_control(app: AppHandle, command: TakeCommand) -> PipelineStatus {
+    request(command);
+    get_pipeline_state_inner(&app)
 }
 
 /// Hotkey pressed: open the microphone and start the take.
@@ -385,7 +474,16 @@ pub fn end_take(app: &AppHandle) {
 /// Discards the take. Capture stops and nothing is stored; a take
 /// already being transcribed is abandoned when its result arrives, so
 /// cancelled text is never delivered or copied.
+/// Only a live take can be discarded. The decision table settles that
+/// before this is reached; re-checking here keeps a late intent from
+/// resurrecting a take that has already delivered.
 pub fn cancel_take(app: &AppHandle) {
+    if !matches!(
+        current_phase(app),
+        Some(Phase::Listening) | Some(Phase::Thinking)
+    ) {
+        return;
+    }
     // Dropping the stream stops the device; the samples go with it.
     ACTIVE_TAKE.with(|slot| slot.borrow_mut().take());
     set_phase(
@@ -395,17 +493,12 @@ pub fn cancel_take(app: &AppHandle) {
     );
 }
 
-/// Cancels a live take from the settings surface. Same rule as the
-/// Escape key: no take means nothing to cancel.
+/// Cancels a live take from a surface. Same rule as the Escape key: no
+/// take means nothing to cancel.
 #[tauri::command]
 pub fn cancel_live_take(app: AppHandle) -> PipelineStatus {
-    if matches!(
-        current_phase(&app),
-        Some(Phase::Listening) | Some(Phase::Thinking)
-    ) {
-        cancel_take(&app);
-    }
-    crate::pipeline::get_pipeline_state_inner(&app)
+    request(TakeCommand::Discard);
+    get_pipeline_state_inner(&app)
 }
 
 /// Terminal phases (done, failed, cancelled) return to idle in one action.
@@ -510,5 +603,57 @@ mod tests {
         };
         assert!(detail.contains("no such microphone"));
         assert!(detail.contains("pick another"));
+    }
+
+    #[test]
+    fn every_control_command_stands_for_a_chord_edge() {
+        // The pill and the chord must not drift apart: a control press
+        // resolves through the same table, so each one maps to the edge
+        // that would have meant the same thing.
+        assert_eq!(HookEvent::from(TakeCommand::Control), HookEvent::Pressed);
+        assert_eq!(
+            HookEvent::from(TakeCommand::Discard),
+            HookEvent::Cancelled
+        );
+    }
+
+    #[test]
+    fn the_mouse_reaches_exactly_what_the_keyboard_reaches() {
+        // One control, two meanings: it starts at rest and stops a live
+        // take, which is what a press of the chord already does.
+        for resting in [
+            Some(Phase::Idle),
+            Some(Phase::Done),
+            Some(Phase::Failed),
+            Some(Phase::Cancelled),
+        ] {
+            assert_eq!(
+                resolve_action(TakeCommand::Control.into(), resting),
+                ChordAction::Start,
+                "the control starts from {resting:?}"
+            );
+        }
+        assert_eq!(
+            resolve_action(TakeCommand::Control.into(), Some(Phase::Listening)),
+            ChordAction::Stop
+        );
+        // Nothing to stop while transcribing: the take is already gone.
+        assert_eq!(
+            resolve_action(TakeCommand::Control.into(), Some(Phase::Thinking)),
+            ChordAction::Ignore
+        );
+
+        for live in [Some(Phase::Listening), Some(Phase::Thinking)] {
+            assert_eq!(
+                resolve_action(TakeCommand::Discard.into(), live),
+                ChordAction::Cancel,
+                "discard while {live:?}"
+            );
+        }
+        assert_eq!(
+            resolve_action(TakeCommand::Discard.into(), Some(Phase::Done)),
+            ChordAction::Ignore,
+            "a delivered take cannot be discarded afterwards"
+        );
     }
 }

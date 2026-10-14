@@ -1,0 +1,172 @@
+/* The pill's shape and its motion. Structure and state only: the exact
+   colours, glow and easing are the token set, which is still an open
+   decision (docs/08-decisions.md item 8). Nothing here invents one. */
+
+.pill {
+  box-sizing: border-box;
+  height: 100vh;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 38px;
+  background: #1c1c1e;
+  color: #f2f2f7;
+  font-family: inherit;
+  /* Never selectable: the pill is a status surface, not a text field. */
+  user-select: none;
+  overflow: hidden;
+}
+
+.pill-bar {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+}
+
+.pill-bar span {
+  width: 3px;
+  height: 6px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.35;
+}
+
+/* A calm waiting presence while transcribing: nothing moves, because
+   nothing is being heard. */
+.pill[data-phase="thinking"] .pill-bar span {
+  animation: pill-breathe 1.6s ease-in-out infinite;
+}
+
+.pill[data-phase="thinking"] .pill-bar span:nth-child(2) { animation-delay: 0.12s; }
+.pill[data-phase="thinking"] .pill-bar span:nth-child(3) { animation-delay: 0.24s; }
+.pill[data-phase="thinking"] .pill-bar span:nth-child(4) { animation-delay: 0.36s; }
+.pill[data-phase="thinking"] .pill-bar span:nth-child(5) { animation-delay: 0.48s; }
+
+/* Speech being heard: the bars move while the microphone is open. */
+.pill[data-phase="listening"] .pill-bar span {
+  background: #ff453a;
+  opacity: 1;
+  animation: pill-listen 900ms ease-in-out infinite alternate;
+}
+
+.pill[data-phase="listening"] .pill-bar span:nth-child(1) { animation-delay: 0s; }
+.pill[data-phase="listening"] .pill-bar span:nth-child(2) { animation-delay: 110ms; }
+.pill[data-phase="listening"] .pill-bar span:nth-child(3) { animation-delay: 220ms; }
+.pill[data-phase="listening"] .pill-bar span:nth-child(4) { animation-delay: 330ms; }
+.pill[data-phase="listening"] .pill-bar span:nth-child(5) { animation-delay: 440ms; }
+
+/* A brief confirm on done, then a settled bar. */
+.pill[data-phase="done"] .pill-bar span {
+  background: #32d74b;
+  opacity: 1;
+}
+
+.pill[data-phase="cancelled"] .pill-bar,
+.pill[data-phase="failed"] .pill-bar {
+  opacity: 0.5;
+}
+
+@keyframes pill-listen {
+  from { height: 5px; }
+  to { height: 20px; }
+}
+
+@keyframes pill-breathe {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 0.6; }
+}
+
+.pill-state {
+  flex: 1;
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pill-control,
+.pill-cancel,
+.pill-options {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: #2c2c2e;
+  color: inherit;
+  cursor: pointer;
+}
+
+.pill-control { background: #f2f2f7; color: #1c1c1e; }
+.pill-cancel { background: #45332f; color: #ff9f94; }
+
+/* The cancel is contextual: it is absent until a take is live, and on
+   hover it settles into the row so the pill keeps its three elements. */
+.pill-cancel {
+  animation: pill-appear 120ms ease-out;
+}
+
+.pill-options {
+  background: transparent;
+}
+
+.pill-glyph {
+  display: block;
+}
+
+/* Glyphs are drawn from one shape each, so nothing depends on a
+   multi-shadow trick that a minifier can reject. */
+.pill-mic {
+  width: 9px;
+  height: 15px;
+  border-radius: 5px;
+  background: currentColor;
+  /* The open bottom reads as a microphone capsule at this size. */
+  box-shadow: inset 0 -3px 0 0 #f2f2f7;
+}
+
+.pill-dots {
+  width: 18px;
+  height: 4px;
+}
+
+.pill-stop {
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  background: currentColor;
+}
+
+.pill-close {
+  width: 13px;
+  height: 13px;
+  background: currentColor;
+  /* A cross cut from one box: no icon font to load, so it cannot fail
+     to render on a bare machine. */
+  clip-path: polygon(
+    14% 0, 0 14%, 36% 50%, 0 86%, 14% 100%,
+    50% 64%, 86% 100%, 100% 86%, 64% 50%, 100% 14%,
+    86% 0, 50% 36%
+  );
+}
+
+@keyframes pill-appear {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Reduced motion is respected everywhere: the states stay legible
+   through colour and the text, never through movement alone. */
+@media (prefers-reduced-motion: reduce) {
+  .pill-bar span,
+  .pill-cancel {
+    animation: none !important;
+  }
+}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { FirstRun } from "./FirstRun";
+import { deliveryNote, transcriptMatters } from "./delivery";
 import type {
   Download,
   HotkeyChoice,
@@ -13,16 +14,6 @@ import type {
 } from "./types";
 import "./App.css";
 
-interface KeyDiag {
-  last_event: string;
-  last_count: number;
-  ctrl: boolean;
-  shift: boolean;
-  trigger: boolean;
-  active: boolean;
-  chords_seen: number;
-}
-
 interface SttStatus {
   model_file: string;
   model_present: boolean;
@@ -32,15 +23,9 @@ interface SttStatus {
   detail: string | null;
 }
 
-function targetLabel(target: PipelineStatus["target"]): string {
-  if (typeof target === "string") return target;
-  return `agent:${target.agent}`;
-}
-
 function App() {
   const [status, setStatus] = useState<PipelineStatus | null>(null);
   const [stt, setStt] = useState<SttStatus | null>(null);
-  const [diag, setDiag] = useState<KeyDiag | null>(null);
   const [hotkey, setHotkey] = useState<string>("…");
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
@@ -112,31 +97,9 @@ function App() {
     }
   }
 
-  const terminal =
-    status !== null &&
-    (status.phase === "done" ||
-      status.phase === "failed" ||
-      status.phase === "cancelled");
-
   const live =
     status !== null &&
     (status.phase === "listening" || status.phase === "thinking");
-
-  async function reset() {
-    try {
-      setStatus(await invoke<PipelineStatus>("reset_pipeline"));
-    } catch (e) {
-      setError(String(e));
-    }
-  }
-
-  async function cancel() {
-    try {
-      setStatus(await invoke<PipelineStatus>("cancel_live_take"));
-    } catch (e) {
-      setError(String(e));
-    }
-  }
 
   // The chosen model's own entry, for the first-run line that says
   // whether it is ready. Found by id, so a settings file naming a model
@@ -151,7 +114,6 @@ function App() {
     async function poll() {
       try {
         setStatus(await invoke<PipelineStatus>("get_pipeline_state"));
-        setDiag(await invoke<KeyDiag>("get_key_diag"));
         await refreshStt();
         // Progress has to move while a download runs, and the list has
         // to change once it finishes.
@@ -214,51 +176,16 @@ function App() {
       {!firstRun && (
       <>
       <h1>whisperlane</h1>
-      <p>
-        hold <strong>{hotkey}</strong> to talk, or tap it to toggle — the
-        chord starts a new take straight away after one finishes
+      <p className="settings-lead">
+        Hold <strong>{hotkey}</strong> to talk, or tap it to keep talking.
+        Your words go wherever the cursor is.
       </p>
       {error && <p role="alert">state error: {error}</p>}
-      {status ? (
-        <section aria-label="pipeline status">
-          <p>
-            phase: <strong>{status.label}</strong>
-          </p>
-          <p>target: {targetLabel(status.target)}</p>
-          <p>valid next: {status.valid_next.join(", ") || "—"}</p>
-          {live && (
-            <button type="button" onClick={cancel}>
-              discard (Esc)
-            </button>
-          )}
-          {terminal && (
-            <button type="button" onClick={reset}>
-              clear
-            </button>
-          )}
-          {status.delivery === "typed" && (
-            <p role="status">typed into the focused app</p>
-          )}
-          {status.detail && <p>detail: {status.detail}</p>}
-        </section>
-      ) : (
-        !error && <p>loading pipeline state…</p>
+      {live && (
+        <p role="status">
+          Listening — press {hotkey} again to insert, Escape to discard.
+        </p>
       )}
-      <section aria-label="hotkey diagnostics">
-        <h2>hotkey diagnostics</h2>
-        {diag ? (
-          <>
-            <p>last: {diag.last_event || "—"}</p>
-            <p>
-              chord state: ctrl={String(diag.ctrl)} shift={String(diag.shift)}{" "}
-              trigger={String(diag.trigger)} active={String(diag.active)}
-            </p>
-            <p>chords: {diag.chords_seen} (nothing is swallowed)</p>
-          </>
-        ) : (
-          <p>loading…</p>
-        )}
-      </section>
       <section aria-label="settings">
         <h2>settings</h2>
         <label>
@@ -355,44 +282,46 @@ function App() {
         <p>language applies to the next take; the service reloads.</p>
       </section>
       <section aria-label="transcription service">
-        <h2>transcription</h2>
+        <h2>speech model</h2>
         {stt ? (
           <>
             <p>
-              model: {stt.model_file} (
-              {stt.model_present ? "present" : "missing"})
+              {stt.model_present
+                ? `Ready, transcribing on the ${stt.backend} path`
+                : "Not downloaded yet — dictation needs it before the first take."}
             </p>
-            <p>
-              service: {stt.service} (backend: {stt.backend}
-              {stt.backend_verified
-                ? ", verified by launching"
-                : ", from runtime files"})
+            <p className="settings-note">
+              The backend is {stt.backend_verified
+                ? "confirmed by launching the engine"
+                : "reported by the runtime, not yet confirmed"}
+              .
             </p>
-            {stt.detail && <p>detail: {stt.detail}</p>}
+            {stt.detail && <p>{stt.detail}</p>}
           </>
         ) : (
           <p>loading service state…</p>
         )}
-        {status?.last_text && (
-          <>
-            <p>
-              transcript: <strong>{status.last_text}</strong>
-            </p>
-            {status.phase === "done" && (
-              <button
-                type="button"
-                onClick={() =>
-                  invoke<PipelineStatus>("copy_last_text")
-                    .then(setStatus)
-                    .catch((e) => setError(String(e)))
-                }
-              >
-                {status.delivery === "clipboard" ? "copy again" : "copy anyway"}
-              </button>
-            )}
-          </>
-        )}
       </section>
+      {status !== null &&
+        transcriptMatters(status.last_text, status.delivery) && (
+        <section aria-label="last take">
+          <h2>last take</h2>
+          <p>
+            <strong>{status.last_text}</strong>
+          </p>
+          <p role="status">{deliveryNote(status.delivery, status.detail)}</p>
+          <button
+            type="button"
+            onClick={() =>
+              invoke<PipelineStatus>("copy_last_text")
+                .then(setStatus)
+                .catch((e) => setError(String(e)))
+            }
+          >
+            {status.delivery === "clipboard" ? "copy again" : "copy to clipboard"}
+          </button>
+        </section>
+      )}
       </>
       )}
     </main>

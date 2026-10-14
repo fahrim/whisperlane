@@ -55,14 +55,6 @@ impl Phase {
         }
     }
 
-    pub fn valid_next(self) -> Vec<Phase> {
-        use Phase::*;
-        [Listening, Thinking, Done, Failed, Cancelled, Idle]
-            .into_iter()
-            .filter(|next| self.can_transition_to(*next))
-            .collect()
-    }
-
     /// Plain-language name for a state, as the first-run screen shows
     /// it. The wording lives in the core so every surface says the same
     /// thing about the same phase.
@@ -76,6 +68,32 @@ impl Phase {
             Phase::Cancelled => "Discarded",
         }
     }
+
+    /// What the pill's main control does while this phase is current
+    /// (ADR-007 with ADR-008): start at rest, stop and deliver while
+    /// live, settle back to a quiet idle once the take has finished.
+    /// Decided here so no surface derives its own meaning from the
+    /// phase it happens to be rendering.
+    pub const fn main_action(self) -> MainAction {
+        match self {
+            Phase::Idle => MainAction::Start,
+            Phase::Listening => MainAction::Stop,
+            Phase::Thinking => MainAction::Unavailable,
+            Phase::Done | Phase::Failed | Phase::Cancelled => MainAction::Dismiss,
+        }
+    }
+}
+
+/// The one meaning the pill's main control carries in a given phase.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MainAction {
+    Start,
+    Stop,
+    Dismiss,
+    /// Nothing to do while the take is being transcribed: capture is
+    /// already over, so the control has nothing left to end.
+    Unavailable,
 }
 
 /// How the last finished take reached the user (ADR-005). The interface
@@ -101,21 +119,24 @@ pub struct PipelineStatus {
     /// by the interface, so every surface says the same thing about the
     /// same state.
     pub label: &'static str,
+    /// What the main control does right now. Carried for the same
+    /// reason as the label: the pill renders one answer instead of
+    /// deciding what a phase means.
+    pub main_action: MainAction,
     pub target: InsertionTarget,
     pub detail: Option<String>,
-    pub valid_next: Vec<Phase>,
     pub last_text: Option<String>,
     pub delivery: DeliveryKind,
 }
 
 impl PipelineStatus {
     /// The shape the interface receives: the phase's plain name and the
-    /// states it may move to are derived here, so no writer can forget
-    /// either of them.
+    /// meaning of its main control are derived here, so no writer can
+    /// forget either of them.
     fn reported(&self) -> PipelineStatus {
         PipelineStatus {
             label: self.phase.label(),
-            valid_next: self.phase.valid_next(),
+            main_action: self.phase.main_action(),
             ..self.clone()
         }
     }
@@ -129,9 +150,9 @@ impl Default for PipelineStatus {
         Self {
             phase,
             label: phase.label(),
+            main_action: phase.main_action(),
             target: InsertionTarget::FocusedApp,
             detail: None,
-            valid_next: phase.valid_next(),
             last_text: None,
             delivery: DeliveryKind::None,
         }
@@ -225,10 +246,12 @@ pub fn set_phase(app: &AppHandle, phase: Phase, detail: Option<String>) {
         }
         status.reported()
     };
-    // The pill rests on screen exactly while the pipeline has something
-    // to say. Notifying here rather than at every call site keeps the
-    // rule in one place and means no writer can leave it stale.
+    // Two surfaces follow the phase, and neither decides anything about
+    // it: the pill rests on screen while there is something to say, and
+    // the tray carries the same state in words. Notifying here rather
+    // than at every call site means no writer can leave either stale.
     crate::windows::apply_phase(app, Some(snapshot.phase));
+    crate::tray::refresh(app, Some(snapshot.phase));
     app.emit("pipeline-state", snapshot)
         .expect("failed to emit pipeline-state");
 }
@@ -277,13 +300,27 @@ mod tests {
         let status = PipelineStatus::default();
         assert_eq!(status.phase, Phase::Idle);
         assert_eq!(status.target, InsertionTarget::FocusedApp);
-        assert_eq!(status.valid_next, vec![Phase::Listening, Phase::Failed]);
+        assert_eq!(status.main_action, MainAction::Start);
     }
 
     #[test]
-    fn the_reported_name_always_matches_the_reported_phase() {
-        // The interface reads the name instead of restating it, so a
-        // moved phase and a stale name would show one state as another.
+    fn the_control_carries_one_meaning_per_phase() {
+        // Start at rest, stop and deliver while live, settle to quiet
+        // idle once finished. Nothing to end while transcribing, because
+        // capture is already over.
+        assert_eq!(Phase::Idle.main_action(), MainAction::Start);
+        assert_eq!(Phase::Listening.main_action(), MainAction::Stop);
+        assert_eq!(Phase::Thinking.main_action(), MainAction::Unavailable);
+        for finished in [Phase::Done, Phase::Failed, Phase::Cancelled] {
+            assert_eq!(finished.main_action(), MainAction::Dismiss);
+        }
+    }
+
+    #[test]
+    fn the_reported_name_and_control_always_match_the_reported_phase() {
+        // The interface reads both instead of restating them, so a moved
+        // phase with a stale name or control would show one state as
+        // another.
         for phase in [
             Phase::Idle,
             Phase::Listening,
@@ -292,13 +329,14 @@ mod tests {
             Phase::Failed,
             Phase::Cancelled,
         ] {
+            assert!(!phase.label().is_empty(), "{phase:?} has no name");
             let moved = PipelineStatus {
                 phase,
                 ..PipelineStatus::default()
             };
             let reported = moved.reported();
             assert_eq!(reported.label, phase.label());
-            assert_eq!(reported.valid_next, phase.valid_next());
+            assert_eq!(reported.main_action, phase.main_action());
         }
     }
 

@@ -11,13 +11,16 @@ export type Phase =
 
 export type DeliveryKind = "none" | "typed" | "partial" | "clipboard";
 
+export type MainAction = "start" | "stop" | "dismiss" | "unavailable";
+
 export interface PipelineStatus {
   phase: Phase;
   /** Plain-language name for the phase, decided by the core. */
   label: string;
+  /** What the main control does right now, decided by the core. */
+  main_action: MainAction;
   target: string | { agent: string };
   detail: string | null;
-  valid_next: Phase[];
   last_text: string | null;
   delivery: DeliveryKind;
 }

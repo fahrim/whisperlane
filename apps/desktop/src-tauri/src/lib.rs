@@ -1,9 +1,5 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-use tauri::{
-    menu::{Menu, MenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Manager,
-};
+use tauri::Manager;
 
 mod audio;
 mod deliver;
@@ -14,13 +10,14 @@ mod pipeline;
 mod settings;
 mod stt;
 pub mod stt_shared;
+mod tray;
 mod windows;
 
 use audio::{
-    cancel_live_take, list_input_devices, needs_microphone_choice, reset_pipeline, take_control,
+    list_input_devices, needs_microphone_choice, reset_pipeline, take_control,
 };
 use deliver::copy_last_text;
-use hotkey::{get_hotkey_label, get_key_diag, list_hotkeys, DiagState};
+use hotkey::{get_hotkey_label, list_hotkeys};
 use models::{download_model, ensure_model_ready, get_download, list_models, ModelState};
 use pipeline::{get_pipeline_state, PipelineState, PipelineStatus};
 use settings::{
@@ -29,40 +26,6 @@ use settings::{
 };
 use stt::{get_stt_status, sweep_idle, SttState};
 use windows::open_settings;
-
-fn build_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
-    let quit = MenuItem::with_id(app, "quit", "Quit whisperlane", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&quit])?;
-    let icon = app
-        .default_window_icon()
-        .cloned()
-        .expect("default window icon missing");
-    TrayIconBuilder::with_id("main")
-        .icon(icon)
-        .tooltip("whisperlane")
-        .menu(&menu)
-        .on_menu_event(|app, event| {
-            if event.id.as_ref() == "quit" {
-                app.exit(0);
-            }
-        })
-        .on_tray_icon_event(|tray, event| {
-            if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
-                ..
-            } = event
-            {
-                let app = tray.app_handle();
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
-            }
-        })
-        .build(app)?;
-    Ok(())
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -78,14 +41,12 @@ pub fn run() {
         )))
         .manage(SttState::default())
         .manage(ModelState::default())
-        .manage(DiagState::default())
         .invoke_handler(tauri::generate_handler![
             get_pipeline_state,
             get_hotkey_label,
             reset_pipeline,
             get_stt_status,
             copy_last_text,
-            get_key_diag,
             get_settings,
             set_language,
             set_hotkey,
@@ -94,7 +55,6 @@ pub fn run() {
             list_hotkeys,
             list_input_devices,
             needs_microphone_choice,
-            cancel_live_take,
             list_models,
             get_download,
             download_model,
@@ -110,7 +70,7 @@ pub fn run() {
             let saved = load(app.handle());
             app.manage(SettingsState(std::sync::Mutex::new(saved.clone())));
             hotkey::apply_binding(saved.hotkey);
-            build_tray(app.handle())?;
+            tray::build(app.handle())?;
             windows::build_pill(app.handle())?;
             // The take worker exists before the hook, so no chord edge
             // can arrive before there is a thread that owns the live

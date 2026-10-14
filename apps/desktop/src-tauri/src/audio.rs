@@ -493,15 +493,10 @@ pub fn cancel_take(app: &AppHandle) {
     );
 }
 
-/// Cancels a live take from a surface. Same rule as the Escape key: no
-/// take means nothing to cancel.
-#[tauri::command]
-pub fn cancel_live_take(app: AppHandle) -> PipelineStatus {
-    request(TakeCommand::Discard);
-    get_pipeline_state_inner(&app)
-}
-
 /// Terminal phases (done, failed, cancelled) return to idle in one action.
+/// This is also the pill's dismiss (ADR-007), so the path back to a
+/// quiet idle never has to go through the settings window. It touches
+/// no capture stream, so it does not queue for the take worker.
 #[tauri::command]
 pub fn reset_pipeline(app: AppHandle) -> PipelineStatus {
     let phase = current_phase(&app);
@@ -513,7 +508,7 @@ pub fn reset_pipeline(app: AppHandle) -> PipelineStatus {
         }
         _ => {}
     }
-    crate::pipeline::get_pipeline_state_inner(&app)
+    get_pipeline_state_inner(&app)
 }
 
 #[cfg(test)]

@@ -15,7 +15,6 @@
 
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::sync::Mutex;
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
@@ -314,64 +313,12 @@ pub(crate) fn debug_log(line: String) {
     }
 }
 
-/// Diagnostic snapshot of what the hook actually receives. Written in
-/// the callback, read by the UI: proves which events reach us and with
-/// which flags, without logging raw keys anywhere.
-#[derive(Debug, Clone, Default, serde::Serialize)]
-pub struct KeyDiag {
-    pub last_event: String,
-    pub last_count: u32,
-    pub ctrl: bool,
-    pub shift: bool,
-    pub trigger: bool,
-    pub active: bool,
-    pub chords_seen: u32,
-}
 
-pub fn diag_snapshot(app: &AppHandle) -> KeyDiag {
-    app.try_state::<DiagState>()
-        .map(|s| s.0.lock().expect("diag state poisoned").clone())
-        .unwrap_or_default()
-}
-
-#[tauri::command]
-pub fn get_key_diag(app: AppHandle) -> KeyDiag {
-    diag_snapshot(&app)
-}
-
-#[derive(Default)]
-pub struct DiagState(pub Mutex<KeyDiag>);
-
-fn record(app: &AppHandle, label: String, state: &ChordState) {
-    if let Some(diag) = app.try_state::<DiagState>() {
-        let mut d = diag.0.lock().expect("diag state poisoned");
-        d.last_event = label;
-        d.last_count = d.last_count.saturating_add(1);
-        d.ctrl = state.ctrl;
-        d.shift = state.shift;
-        d.trigger = state.trigger;
-        d.active = state.active;
-    }
-}
-
-fn record_chord(app: &AppHandle) {
-    if let Some(diag) = app.try_state::<DiagState>() {
-        let mut d = diag.0.lock().expect("diag state poisoned");
-        d.chords_seen = d.chords_seen.saturating_add(1);
-    }
-}
 
 /// Single accessor wrapper: the hook callback is the only user, so the
 /// interior mutability is confined to the hook thread by construction.
 /// `UnsafeCell` also forces the static into the writable data section.
 struct HookState(UnsafeCell<ChordState>);
-
-// SAFETY: the installing hook thread is the only accessor, and the app
-// handle is set once before the hook is installed.
-unsafe impl Sync for HookApp {}
-struct HookApp(UnsafeCell<Option<AppHandle>>);
-
-static APP: HookApp = HookApp(UnsafeCell::new(None));
 
 // SAFETY: only the hook callback thread touches the state, and a
 // low-level keyboard hook always runs on the thread that installed it.
@@ -396,19 +343,10 @@ unsafe extern "system" fn hook_proc(n_code: i32, w_param: WPARAM, l_param: LPARA
             // low-level keyboard hook always runs on its installing thread.
             let state = unsafe { &mut *STATE.0.get() };
             let event = state.event(vk, down, hotkey);
-            // SAFETY: APP is written once before the hook starts.
-            let diag_app = unsafe { (*APP.0.get()).clone() };
-            if let Some(diag_app) = diag_app {
-                let label = format!(
-                    "vk={vk:#X} down={down} binding={} flags={:#X}",
-                    hotkey.code(),
-                    kb.flags.0
-                );
-                record(&diag_app, label, state);
-                if event.is_some() {
-                    record_chord(&diag_app);
-                }
-            }
+            // Diagnosis is a file, not a surface: the log below records
+            // every event the hook actually receives, and the settings
+            // window shows nothing about the keyboard. One writer, no
+            // per-keystroke lock, no developer chrome in the product.
             if let Some(event) = event {
                 debug_log(format!("hook {event:?}\n"));
                 audio::send_edge(event);
@@ -451,8 +389,6 @@ pub fn run_listener(app: AppHandle) {
         );
         return;
     };
-    // SAFETY: single write before the hook is installed; read-only after.
-    unsafe { *APP.0.get() = Some(app.clone()) };
     debug_log("hook installed\n".to_string());
     let focus_app = app.clone();
     std::thread::spawn(move || {

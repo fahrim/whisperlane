@@ -9,27 +9,27 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { DeliveryKind, PipelineStatus } from "./types";
+import { deliveryNote } from "./delivery";
+import type { MainAction, PipelineStatus } from "./types";
 import "./pill.css";
 
 type TakeCommand = "control" | "discard";
 
-/**
- * What the pill says about where the text went. Insertion honesty is
- * the whole point: the user must never wonder whether the words landed.
- */
-function deliveryNote(delivery: DeliveryKind, detail: string | null): string {
-  switch (delivery) {
-    case "typed":
-      return "Typed where your cursor was.";
-    case "clipboard":
-      return detail ?? "Could not type there — the text is on the clipboard.";
-    case "partial":
-      return detail ?? "Only part of the text could be inserted.";
-    default:
-      return "";
-  }
-}
+/** What the main control offers in each of the core's meanings. */
+const CONTROL_LABEL: Record<MainAction, string> = {
+  start: "Start dictation",
+  stop: "Stop and insert",
+  dismiss: "Back to quiet",
+  unavailable: "Nothing to do right now",
+};
+
+/** What the control looks like in each of the core's meanings. */
+const CONTROL_GLYPH: Record<MainAction, string> = {
+  start: "pill-mic",
+  stop: "pill-stop",
+  dismiss: "pill-close",
+  unavailable: "pill-mic",
+};
 
 /** Whether the pill is showing a live take, which is also when the
  *  cancel appears. One rule, read from the phase the core reports. */
@@ -85,7 +85,18 @@ export function Pill() {
     }
   }
 
+  async function dismiss() {
+    try {
+      // A finished take goes back to a quiet idle in one action, from
+      // here rather than from the settings window (ADR-007).
+      await invoke<PipelineStatus>("reset_pipeline");
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   const live = status !== null && isLive(status.phase);
+  const action: MainAction = status?.main_action ?? "start";
   const signal = signalFor(status);
 
   return (
@@ -105,9 +116,12 @@ export function Pill() {
       <button
         type="button"
         className="pill-control"
-        aria-label={live ? "Stop and insert" : "Start dictation"}
-        title={live ? "Stop and insert" : "Start dictation"}
-        onClick={() => press("control")}
+        aria-label={CONTROL_LABEL[action]}
+        title={CONTROL_LABEL[action]}
+        disabled={action === "unavailable"}
+        onClick={() =>
+          action === "dismiss" ? void dismiss() : void press("control")
+        }
         onContextMenu={(e) => {
           // Right-click is the same discard as the hover cancel, so the
           // gesture stays reachable when the pointer never hovers the
@@ -116,7 +130,7 @@ export function Pill() {
           void press("discard");
         }}
       >
-        {live ? <span className="pill-glyph pill-stop" /> : <span className="pill-glyph pill-mic" />}
+        <span className={`pill-glyph ${CONTROL_GLYPH[action]}`} />
       </button>
 
       {live && (

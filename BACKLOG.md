@@ -72,10 +72,10 @@ Closed decisions this milestone:
 | --- | --- | --- |
 | 1 | First run is one screen | done |
 | 2 | The pill carries every state | done |
-| 3 | Advanced concerns folded away | next |
+| 3 | Advanced concerns folded away | done |
 | 4 | Premium pass: tokens, motion, spacing, wording | blocked on decision item 8 |
 | 5 | Windows packaging: install, offline, clean uninstall | blocked on decision item 6 |
-| 6 | Delivery routed through the target abstraction | pending |
+| 6 | Delivery routed through the target abstraction | next |
 
 ## Open (decided nowhere yet)
 
@@ -94,6 +94,8 @@ Closed during M2:
   rejected hold-to-talk on the pill as uncomfortable on a desk.
 - Bundle identifier moved off `com.whisperlane.app`, which Tauri warns
   collides with the macOS bundle extension. Resolved ahead of item 6.
+  The app data folder moved with it: `%APPDATA%\com.whisperlane.desktop`
+  now holds the model, the runtime and the stored takes.
 
 ## Next (in order)
 

@@ -70,13 +70,20 @@ const RIBBONS: WaveRibbon[] = [
   },
 ];
 
-/** How far the raw level is pushed so ordinary speech uses the range. */
-const LEVEL_GAIN = 2.2;
+/**
+ * How far the raw level is pushed so ordinary speech uses the range.
+ * The core already normalises against a full-meter reference; this is
+ * the second lift, and the one to raise if the wave still looks flat at
+ * a normal speaking distance.
+ */
+const LEVEL_GAIN = 1.6;
 /** Rise quickly, fall slowly. See the note at the top of the file. */
 const ATTACK = 0.35;
 const RELEASE = 0.08;
 /** The floor a live take breathes at, so silence is calm, not dead. */
-const IDLE_BREATH = 0.08;
+const IDLE_BREATH = 0.12;
+/** How much of the canvas's half-height the wave is allowed to use. */
+const SWING = 0.98;
 
 export function LiquidWaveform({
   state,
@@ -196,7 +203,7 @@ function drawRibbons(
   // Additive: the ribbons sum where they overlap, which is what forms
   // the bright core without drawing one.
   ctx.globalCompositeOperation = "lighter";
-  const maxRadius = (height / 2) * 0.88;
+  const maxRadius = (height / 2) * SWING;
 
   for (const ribbon of RIBBONS) {
     const grad = ctx.createLinearGradient(0, 0, width, 0);

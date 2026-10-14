@@ -32,12 +32,14 @@ pub const LEVEL_TICK_MS: u64 = 40;
 /// lives rather than only when the tests run.
 const _: () = assert!(LEVEL_TICK_MS >= 30, "the meter would flood the channel");
 
-/// Loudness that counts as a full meter for ordinary speech.
+/// Loudness that counts as a full meter.
 ///
-/// Chosen so a normal voice sits around the middle of the range and only
-/// a raised voice reaches the top, which is what makes the meter
-/// readable rather than pinned at one end.
-pub const LEVEL_LOUD: f32 = 0.25;
+/// Set against the *raw* capture, not the normalised one: the
+/// quiet-input gain is applied later, when the take is transcribed, so
+/// a meter reading pre-gain audio sees a quiet room as silence. This is
+/// the value to raise or lower if the wave still looks flat, or pinned,
+/// on your own microphone.
+pub const LEVEL_LOUD: f32 = 0.12;
 
 /// Loudness of a slice of samples, normalised to `0.0..=1.0`.
 ///
@@ -464,11 +466,14 @@ pub fn begin_take(app: &AppHandle) {
         Ok(active) => {
             let samples = Arc::clone(&active.samples);
             ACTIVE_TAKE.with(|slot| *slot.borrow_mut() = Some(active));
-            // The meter reads the very buffer the take will transcribe,
-            // so it cannot drift from what is actually being heard.
-            spawn_level_ticker(app, samples);
             crate::hotkey::debug_log("begin_take: stream live\n".to_string());
             set_phase(app, Phase::Listening, None);
+            // After the phase, not before: the meter watches the phase
+            // to know when the take ends, so a ticker started while the
+            // pipeline still reads idle stops on its very first look.
+            // It reads the same buffer the take will transcribe, so it
+            // cannot drift from what is actually being heard.
+            spawn_level_ticker(app, samples);
         }
         Err(detail) => {
             crate::hotkey::debug_log(format!("begin_take failed: {detail}\n"));
@@ -604,17 +609,16 @@ mod tests {
 
     #[test]
     fn one_loud_click_does_not_read_as_a_loud_voice() {
-        // Why this is root mean square and not peak: a single click in a
-        // quiet stretch would peg the meter, which reads as noise. Peak
-        // reports a full meter there; spreading the same energy across
-        // the window keeps it well under ordinary speech.
+        // Why this is root mean square and not peak: peak reports a
+        // full meter for a single click, which looks like someone
+        // shouting. Spreading the energy across the window keeps a click
+        // below the level an ordinary voice reads at.
         let mut samples = vec![0.0f32; 639];
         samples.push(1.0);
         let with_click = rms_level(&samples);
-        let speech = rms_level(&[LEVEL_LOUD / 2.0; 640]);
         assert!(
-            with_click < speech / 2.0,
-            "a lone click read as {with_click}, against speech at {speech}"
+            with_click < 0.5,
+            "a lone click read as {with_click}, which looks like loud speech"
         );
     }
 

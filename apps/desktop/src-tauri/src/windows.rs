@@ -7,6 +7,8 @@
 use std::sync::atomic::Ordering;
 
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use windows::Win32::Foundation::POINT;
+use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 use crate::pipeline::Phase;
 
@@ -88,18 +90,41 @@ const _: () = {
     );
 };
 
-/// Whether a cursor at this point inside the window is over the pill
-/// rather than over the empty room around it.
+/// The cursor's position on the screen, in physical pixels.
+///
+/// Read from the platform rather than from the window, because the
+/// window's own reading is the one thing a passing-through window cannot
+/// be trusted to report. `None` only if the platform refuses outright.
+fn cursor_on_screen() -> Option<(f64, f64)> {
+    let mut point = POINT::default();
+    // SAFETY: the pointer is valid and the call fills the point or fails.
+    unsafe { GetCursorPos(&mut point) }.ok()?;
+    Some((point.x as f64, point.y as f64))
+}
+
+/// The pad of screen around the pill that the pill claims for input.
+///
+/// Wider than the pill on purpose. A click that lands in the pad but
+/// just outside the pill still belongs to the pill rather than to the
+/// application underneath, and an overlay that swallows a stray click
+/// is more surprising than one that catches a slightly late one.
+const HOVER_PAD: f64 = 8.0;
+
+/// Whether a cursor on screen at this point is over the pill rather
+/// than over the empty room the window carries around it.
 ///
 /// The window has to be larger than the pill or the glow is clipped,
 /// and a larger window catches clicks meant for whatever sits beneath
 /// it. The empty room therefore passes the pointer straight through and
 /// only the pill itself takes it, so the room costs the application
 /// underneath nothing.
-pub fn pointer_over_pill(cursor: (f64, f64)) -> bool {
-    let (x, y) = cursor;
-    (BLEED_X..=BLEED_X + PILL_WIDTH).contains(&x)
-        && (BLEED_TOP..=BLEED_TOP + PILL_HEIGHT).contains(&y)
+pub fn pointer_over_pill(cursor: (f64, f64), window_at: (f64, f64)) -> bool {
+    let (cx, cy) = cursor;
+    let (wx, wy) = window_at;
+    let left = wx + BLEED_X - HOVER_PAD;
+    let top = wy + BLEED_TOP - HOVER_PAD;
+    (left..=left + PILL_WIDTH + HOVER_PAD * 2.0).contains(&cx)
+        && (top..=top + PILL_HEIGHT + HOVER_PAD * 2.0).contains(&cy)
 }
 
 /// Whether the pill is currently taking the cursor, so the next poll
@@ -121,13 +146,14 @@ pub fn spawn_click_through(app: &AppHandle) {
             let Some(window) = worker.get_webview_window(PILL) else {
                 continue;
             };
-            if !window.is_visible().unwrap_or(false) {
+            let visible = window.is_visible().unwrap_or(false);
+            if !visible {
                 continue;
             }
-            let Ok(cursor) = window.cursor_position() else {
+            let (Some((cx, cy)), Ok(at)) = (cursor_on_screen(), window.outer_position()) else {
                 continue;
             };
-            let over_pill = pointer_over_pill((cursor.x, cursor.y));
+            let over_pill = pointer_over_pill((cx, cy), (at.x as f64, at.y as f64));
             let already = worker
                 .try_state::<CursorPassthrough>()
                 .is_some_and(|state| state.0.load(Ordering::Relaxed));
@@ -293,22 +319,30 @@ mod tests {
         // The window is far larger than the pill so the glow is not
         // clipped. If the empty room took clicks too, it would swallow
         // clicks meant for whatever the user is actually working in.
-        assert!(pointer_over_pill((BLEED_X + 1.0, BLEED_TOP + 1.0)));
-        assert!(pointer_over_pill((
+        let origin = (900.0, 400.0);
+        let on_pill = |x: f64, y: f64| pointer_over_pill((origin.0 + x, origin.1 + y), origin);
+        assert!(on_pill(BLEED_X + 1.0, BLEED_TOP + 1.0));
+        assert!(on_pill(
             BLEED_X + PILL_WIDTH - 1.0,
             BLEED_TOP + PILL_HEIGHT - 1.0
-        )));
-        // The room's own corners, and the strip just above the pill.
-        assert!(!pointer_over_pill((0.0, 0.0)));
-        assert!(!pointer_over_pill((WINDOW_WIDTH, WINDOW_HEIGHT)));
-        assert!(!pointer_over_pill((
-            BLEED_X / 2.0,
-            BLEED_TOP + PILL_HEIGHT / 2.0
-        )));
-        assert!(!pointer_over_pill((
+        ));
+        // The room's own corners, and the strip just past the pad.
+        assert!(!on_pill(0.0, 0.0));
+        assert!(!on_pill(WINDOW_WIDTH, WINDOW_HEIGHT));
+        assert!(!on_pill(BLEED_X / 2.0, BLEED_TOP + PILL_HEIGHT / 2.0));
+        assert!(!on_pill(
             BLEED_X + PILL_WIDTH / 2.0,
-            BLEED_TOP + PILL_HEIGHT + 2.0
-        )));
+            BLEED_TOP + PILL_HEIGHT + HOVER_PAD + 2.0
+        ));
+        // A click in the pad but outside the pill is still the pill's,
+        // not the application's underneath.
+        assert!(on_pill(BLEED_X - HOVER_PAD / 2.0, BLEED_TOP + 10.0));
+        // A window that is not at the origin must not shift the answer:
+        // the offsets are measured from the window, never from the
+        // screen. Getting this wrong makes the pill unclickable exactly
+        // where it sits — centred, as it always is.
+        assert!(pointer_over_pill((1280.0, 1360.0), (998.0, 1235.0)));
+        assert!(!pointer_over_pill((1280.0, 1300.0), (998.0, 1235.0)));
     }
 
     #[test]

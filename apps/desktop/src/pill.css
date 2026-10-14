@@ -46,7 +46,6 @@ body {
    constant by eye. windows.rs holds that check. */
 .pill[data-panel="down"] {
   padding-top: 207px;
-  align-items: flex-start;
 }
 
 /* Dynamic wrapper that binds the neon glow spheres and the panel to the

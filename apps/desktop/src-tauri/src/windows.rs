@@ -253,16 +253,22 @@ pub fn apply_phase(app: &AppHandle, phase: Option<Phase>) {
 
 /// Whether asking for settings should close them rather than open them.
 ///
-/// Only when the window is both visible and in front. A visible window
-/// the user is working behind is what they are asking for, not what
-/// they are asking to get rid of — without the focus half of this, the
-/// control would dismiss settings they never saw.
-fn settings_toggle_closes(visible: bool, focused: bool) -> bool {
-    visible && focused
+/// Visibility alone, with no question asked about focus. Focus is not a
+/// reliable answer at the moment the control is pressed — the click
+/// itself moves focus out from under the check, so a rule that waits
+/// for the window to still be in front takes the open branch and the
+/// control appears to do nothing. One control, one honest flip.
+///
+/// The cost is that pressing it while settings sit behind another
+/// window puts them away instead of bringing them forward. The user
+/// presses it to dismiss or to open, never to rearrange, and a second
+/// press puts it right.
+fn settings_toggle_closes(visible: bool) -> bool {
+    visible
 }
 
 /// Brings the settings window forward, or puts it away again when it is
-/// already there.
+/// already showing.
 ///
 /// A toggle rather than a plain open, so one control both reveals
 /// settings and dismisses them. The pill's three-dot control and the
@@ -273,11 +279,7 @@ pub fn toggle_settings(app: AppHandle) {
     let Some(main) = app.get_webview_window(MAIN) else {
         return;
     };
-    let closes = settings_toggle_closes(
-        main.is_visible().unwrap_or(false),
-        main.is_focused().unwrap_or(false),
-    );
-    if closes {
+    if settings_toggle_closes(main.is_visible().unwrap_or(false)) {
         let _ = main.hide();
         return;
     }
@@ -291,15 +293,14 @@ mod tests {
     use super::settings_toggle_closes;
 
     #[test]
-    fn the_settings_control_closes_only_what_is_in_front() {
-        // Open it: nothing there yet.
-        assert!(!settings_toggle_closes(false, false));
-        // Open it: on screen but the user is working behind it, so bring
-        // it forward rather than dismissing what they never saw.
-        assert!(!settings_toggle_closes(true, false));
-        // Close it: on screen and in front, which is the user changing
-        // their mind about looking at it.
-        assert!(settings_toggle_closes(true, true));
+    fn the_settings_control_flips_on_every_press() {
+        // Hidden: this press opens it.
+        assert!(!settings_toggle_closes(false));
+        // Showing: this press puts it away, whatever else is happening
+        // to focus — the click that asked is itself moving focus, so
+        // asking about it would answer "open" and the control would
+        // appear dead.
+        assert!(settings_toggle_closes(true));
     }
     use super::*;
 

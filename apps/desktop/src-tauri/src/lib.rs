@@ -21,11 +21,11 @@ use hotkey::{get_hotkey_label, list_hotkeys};
 use models::{download_model, ensure_model_ready, get_download, list_models, ModelState};
 use pipeline::{get_pipeline_state, PipelineState, PipelineStatus};
 use settings::{
-    get_settings, list_languages, load, set_hotkey, set_language, set_microphone, set_model,
-    SettingsState,
+    complete_onboarding, get_settings, list_languages, load, set_hotkey, set_language,
+    set_microphone, set_model, SettingsState,
 };
 use stt::{get_stt_status, sweep_idle, SttState};
-use windows::open_settings;
+use windows::toggle_settings;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -61,8 +61,24 @@ pub fn run() {
             set_model,
             ensure_model_ready,
             take_control,
-            open_settings
+            toggle_settings,
+            complete_onboarding
         ])
+        // The settings window is the app's only settings surface, so it
+        // has to survive its own close button. Destroyed here, the window
+        // is gone for the rest of the run and every way back to settings
+        // — the pill's control, the tray item — silently stops working.
+        // Hiding keeps it addressable, and quitting is the tray's job.
+        .on_window_event(|window, event| {
+            let tauri::WindowEvent::CloseRequested { api, .. } = event else {
+                return;
+            };
+            if window.label() != windows::MAIN {
+                return;
+            }
+            api.prevent_close();
+            let _ = window.hide();
+        })
         .setup(|app| {
             // Settings need the resolved data dir, so they load here
             // rather than in the builder chain. The saved chord becomes
@@ -74,6 +90,7 @@ pub fn run() {
             windows::build_pill(app.handle())?;
             app.manage(windows::CursorPassthrough(Default::default()));
             windows::spawn_click_through(app.handle());
+            
             // The take worker exists before the hook, so no chord edge
             // can arrive before there is a thread that owns the live
             // capture stream.

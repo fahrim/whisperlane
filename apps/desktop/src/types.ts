@@ -35,6 +35,8 @@ export interface Settings {
   hotkey: string;
   microphone: Microphone;
   model: string;
+  /** Whether the one-screen introduction has been seen. */
+  onboarded: boolean;
 }
 
 export interface ModelOption {

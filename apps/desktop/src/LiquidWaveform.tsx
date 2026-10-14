@@ -72,11 +72,14 @@ const RIBBONS: WaveRibbon[] = [
 
 /**
  * How far the raw level is pushed so ordinary speech uses the range.
- * The core already normalises against a full-meter reference; this is
- * the second lift, and the one to raise if the wave still looks flat at
- * a normal speaking distance.
+ *
+ * The core already normalises against a full-meter reference measured on
+ * a real microphone — an ordinary voice lands between a third and two
+ * thirds of it — so this lift is what carries a normal syllable from a
+ * token ripple to a wave that reads as speech. Raise it if the wave
+ * still reads flat, lower it if it sits pinned.
  */
-const LEVEL_GAIN = 1.6;
+const LEVEL_GAIN = 2.0;
 /** Rise quickly, fall slowly. See the note at the top of the file. */
 const ATTACK = 0.35;
 const RELEASE = 0.08;
@@ -89,7 +92,10 @@ export function LiquidWaveform({
   state,
   audioLevel,
   width = 150,
-  height = 36,
+  // Tall enough that an ordinary voice visibly moves the ribbon rather
+  // than rippling the centre line. The pill has no vertical padding, so
+  // this still sits inside its height.
+  height = 44,
 }: LiquidWaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const smoothedRef = useRef(0);

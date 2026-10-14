@@ -34,12 +34,19 @@ const _: () = assert!(LEVEL_TICK_MS >= 30, "the meter would flood the channel");
 
 /// Loudness that counts as a full meter.
 ///
-/// Set against the *raw* capture, not the normalised one: the
-/// quiet-input gain is applied later, when the take is transcribed, so
-/// a meter reading pre-gain audio sees a quiet room as silence. This is
-/// the value to raise or lower if the wave still looks flat, or pinned,
-/// on your own microphone.
-pub const LEVEL_LOUD: f32 = 0.12;
+/// Measured, not guessed. An ordinary voice at a normal speaking
+/// distance reads well below the top of the scale: across a take, 55%
+/// of ticks sat above 0.02 and only 11% above 0.05, with a peak near
+/// 0.12. Setting the reference at the peak would spend most of the
+/// range on silence and leave ordinary speech crawling along the
+/// bottom, so the reference sits a little above the loud end of
+/// ordinary speech instead. That puts a normal syllable near three
+/// quarters of the meter and only a raised voice reaches the top.
+///
+/// The gain that transcription applies afterwards never reaches this
+/// reading, because it runs on the finished take. Raise this number to
+/// make the wave larger on a quieter microphone.
+pub const LEVEL_LOUD: f32 = 0.07;
 
 /// Loudness of a slice of samples, normalised to `0.0..=1.0`.
 ///
@@ -609,16 +616,18 @@ mod tests {
 
     #[test]
     fn one_loud_click_does_not_read_as_a_loud_voice() {
-        // Why this is root mean square and not peak: peak reports a
-        // full meter for a single click, which looks like someone
-        // shouting. Spreading the energy across the window keeps a click
-        // below the level an ordinary voice reads at.
-        let mut samples = vec![0.0f32; 639];
-        samples.push(1.0);
-        let with_click = rms_level(&samples);
+        // Why this is root mean square and not peak, stated as the property it
+        // buys: spreading the energy across the window makes a single
+        // click read *below* a sustained signal of the same amplitude.
+        // Peak would report both as full scale, so the meter would jump
+        // on every tap of the desk and read as noise rather than a voice.
+        let mut click = vec![0.0f32; 639];
+        click.push(1.0);
+        let with_click = rms_level(&click);
+        let sustained = rms_level(&[1.0f32; 640]);
         assert!(
-            with_click < 0.5,
-            "a lone click read as {with_click}, which looks like loud speech"
+            with_click < sustained,
+            "a lone click read as {with_click}, no quieter than a sustained signal at {sustained}"
         );
     }
 

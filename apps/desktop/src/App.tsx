@@ -35,7 +35,19 @@ function App() {
   const [askMic, setAskMic] = useState(false);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [download, setDownload] = useState<Download | null>(null);
-  const [firstRun, setFirstRun] = useState(true);
+
+  // Derived from the saved settings rather than remembered here. Held in
+  // state, the introduction would come back on every reload, and a
+  // "first run" that repeats is not one.
+  const firstRun = settings !== null && !settings.onboarded;
+
+  async function finishOnboarding() {
+    try {
+      setSettings(await invoke<Settings>("complete_onboarding"));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
 
   async function refreshModels() {
     try {
@@ -160,7 +172,11 @@ function App() {
 
   return (
     <main className="container">
-      {firstRun && (
+      {/* Nothing is chosen until the saved settings answer which screen
+          this launch is. Rendering the settings screen first would flash
+          it at someone who has not been here before. */}
+      {settings === null && <p role="status">loading…</p>}
+      {settings !== null && firstRun && (
         <FirstRun
           hotkey={hotkey}
           settings={settings ?? { language: "…", hotkey, microphone: { kind: "system_default" }, model: "" }}
@@ -170,10 +186,10 @@ function App() {
           onDownload={() =>
             chosenModel && downloadModel(chosenModel.id)
           }
-          onDone={() => setFirstRun(false)}
+          onDone={finishOnboarding}
         />
       )}
-      {!firstRun && (
+      {settings !== null && !firstRun && (
       <>
       <h1>whisperlane</h1>
       <p className="settings-lead">

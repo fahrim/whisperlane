@@ -107,6 +107,14 @@ pub struct Settings {
     /// Stored as the model id rather than the catalog entry: a settings
     /// file must stay readable after the catalog changes.
     pub model: String,
+    /// Whether the one-screen introduction has been seen.
+    ///
+    /// Persisted rather than held by the window, because the window is
+    /// rebuilt far more often than the user is new. A flag that lived in
+    /// the interface would put the introduction back in front of them on
+    /// every launch and every reload, which is the one thing "first
+    /// run" must never do.
+    pub onboarded: bool,
 }
 
 impl Default for Settings {
@@ -119,6 +127,7 @@ impl Default for Settings {
             hotkey: Hotkey::CtrlShiftSpace,
             microphone: Microphone::SystemDefault,
             model: crate::models::ModelChoice::DEFAULT.id.to_string(),
+            onboarded: false,
         }
     }
 }
@@ -272,6 +281,21 @@ pub fn set_microphone(app: AppHandle, microphone: Microphone) -> Settings {
     updated
 }
 
+/// Records that the introduction has been seen, so it is shown once
+/// rather than on every launch.
+///
+/// Persisted immediately: closing the window straight after finishing
+/// onboarding is the normal way people leave a first-run screen, and a
+/// flag written only in memory would bring the whole thing back.
+#[tauri::command]
+pub fn complete_onboarding(app: AppHandle) -> Settings {
+    let updated = persist(&app, |settings| settings.onboarded = true);
+    if let Ok(path) = settings_path(&app) {
+        let _ = write_settings(&path, &updated);
+    }
+    updated
+}
+
 /// Applies one change to the in-memory settings, returns the result.
 fn persist(app: &AppHandle, change: impl FnOnce(&mut Settings)) -> Settings {
     let state = app
@@ -328,6 +352,7 @@ mod tests {
             hotkey: Hotkey::CtrlY,
             microphone: Microphone::Device("Headset".to_string()),
             model: "base-q5_1".to_string(),
+            onboarded: true,
         };
         write_settings(&path, &settings).unwrap();
         assert_eq!(read_settings(&path), settings);
@@ -355,6 +380,25 @@ mod tests {
         assert_eq!(loaded.hotkey, Hotkey::CtrlShiftSpace);
         std::fs::write(&path, "{}").unwrap();
         assert_eq!(read_settings(&path), Settings::default());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn onboarding_is_remembered_across_a_restart() {
+        // The introduction has to survive a reload, because the window is
+        // rebuilt far more often than the user is new. A flag that lived
+        // only in the interface would put it back in front of them every
+        // time, which is what this pins down.
+        let path = std::env::temp_dir().join("whisperlane-settings-onboarded.json");
+        let _ = std::fs::remove_file(&path);
+        assert!(!read_settings(&path).onboarded, "a first run must show it");
+
+        let seen = Settings {
+            onboarded: true,
+            ..Settings::default()
+        };
+        write_settings(&path, &seen).unwrap();
+        assert!(read_settings(&path).onboarded, "a second run must not");
         let _ = std::fs::remove_file(&path);
     }
 

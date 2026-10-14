@@ -251,13 +251,36 @@ pub fn apply_phase(app: &AppHandle, phase: Option<Phase>) {
     };
 }
 
-/// Brings the first-run and settings window forward. The pill's
-/// three-dot control is the mouse-driven path to it.
+/// Whether asking for settings should close them rather than open them.
+///
+/// Only when the window is both visible and in front. A visible window
+/// the user is working behind is what they are asking for, not what
+/// they are asking to get rid of — without the focus half of this, the
+/// control would dismiss settings they never saw.
+fn settings_toggle_closes(visible: bool, focused: bool) -> bool {
+    visible && focused
+}
+
+/// Brings the settings window forward, or puts it away again when it is
+/// already there.
+///
+/// A toggle rather than a plain open, so one control both reveals
+/// settings and dismisses them. The pill's three-dot control and the
+/// tray's item are the same door, and neither should need a second
+/// thought to close.
 #[tauri::command]
-pub fn open_settings(app: AppHandle) {
+pub fn toggle_settings(app: AppHandle) {
     let Some(main) = app.get_webview_window(MAIN) else {
         return;
     };
+    let closes = settings_toggle_closes(
+        main.is_visible().unwrap_or(false),
+        main.is_focused().unwrap_or(false),
+    );
+    if closes {
+        let _ = main.hide();
+        return;
+    }
     let _ = main.show();
     let _ = main.unminimize();
     let _ = main.set_focus();
@@ -265,6 +288,19 @@ pub fn open_settings(app: AppHandle) {
 
 #[cfg(test)]
 mod tests {
+    use super::settings_toggle_closes;
+
+    #[test]
+    fn the_settings_control_closes_only_what_is_in_front() {
+        // Open it: nothing there yet.
+        assert!(!settings_toggle_closes(false, false));
+        // Open it: on screen but the user is working behind it, so bring
+        // it forward rather than dismissing what they never saw.
+        assert!(!settings_toggle_closes(true, false));
+        // Close it: on screen and in front, which is the user changing
+        // their mind about looking at it.
+        assert!(settings_toggle_closes(true, true));
+    }
     use super::*;
 
     /// The secondary accent circle and both circles' insets, from the

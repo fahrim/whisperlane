@@ -226,7 +226,7 @@ export function Pill() {
           aria-label="Settings"
           title="Settings"
           onClick={() =>
-            invoke("open_settings").catch((e) => setError(String(e)))
+            invoke("toggle_settings").catch((e) => setError(String(e)))
           }
         >
           <span className="pill-glyph pill-dots" />

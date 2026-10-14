@@ -92,7 +92,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             QUIT => app.exit(0),
             // The same command the pill's three-dot control calls, so
             // there is one path to settings rather than two.
-            SETTINGS => crate::windows::open_settings(app.clone()),
+            SETTINGS => crate::windows::toggle_settings(app.clone()),
             // The tray's quick start is the same intent as a chord
             // press, queued to the same worker.
             START => {
@@ -109,7 +109,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             {
                 // The tray's home is settings: the pill is the face, and
                 // the tray is where the occasional setting is reached.
-                crate::windows::open_settings(tray.app_handle().clone());
+                crate::windows::toggle_settings(tray.app_handle().clone());
             }
         })
         .build(app)?;

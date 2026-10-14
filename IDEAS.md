@@ -19,7 +19,10 @@ Source: external mockup streaming state. A larger card showing text as it
 arrives during longer takes.
 
 Parked: needs the streaming decision first (docs/08-decisions.md item 2).
-Re-evaluate if record-then-transcribe feels slow on long takes.
+The pill's own card exists and shows the last finished take, because that
+is what record-then-transcribe can honestly produce; nothing on it implies
+words are arriving while the user is still speaking. Re-evaluate if
+record-then-transcribe feels slow on long takes.
 
 ## Pause and resume
 

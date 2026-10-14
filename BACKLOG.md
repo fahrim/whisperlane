@@ -104,9 +104,18 @@ Closed during M2:
   menu. Both corrections and their reasoning are recorded in
   `docs/adr/008-pill-control.md`.
 - ADR-009 amended in polish: the capsule is read as a droplet rather
-  than a plate, takes its width from its own content so a status line is
-  never cut mid-word, and the window's room now also covers the menu the
-  pill opens above itself while the pill keeps its resting place.
+  than a plate, and it takes its width from its own content so a status
+  line is never cut mid-word.
+- Panels open toward the room, and the pill never moves. The window
+  grows toward whichever side a panel opens on and the pill is
+  re-anchored to the window's opposite edge, so the same pixels are
+  under the pill whichever way a panel goes. Measuring the room against
+  the monitor's work area rather than its bounds is why a docked taskbar
+  does not count as space.
+- The last take has a card: header, words, and the two things worth
+  doing with words. It is named for what it holds rather than for live
+  transcription, which v1 does not do — streaming is still the open
+  question in the decisions document.
 - Bundle identifier moved off `com.whisperlane.app`, which Tauri warns
   collides with the macOS bundle extension. Resolved ahead of item 6.
   The app data folder moved with it: `%APPDATA%\com.whisperlane.desktop`

@@ -25,7 +25,7 @@ use settings::{
     set_microphone, set_model, SettingsState,
 };
 use stt::{get_stt_status, sweep_idle, SttState};
-use windows::{quit_app, set_popover_open, toggle_settings};
+use windows::{quit_app, set_pill_panel, toggle_settings};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -62,7 +62,7 @@ pub fn run() {
             ensure_model_ready,
             take_control,
             toggle_settings,
-            set_popover_open,
+            set_pill_panel,
             quit_app,
             complete_onboarding
         ])
@@ -91,7 +91,7 @@ pub fn run() {
             tray::build(app.handle())?;
             windows::build_pill(app.handle())?;
             app.manage(windows::CursorPassthrough(Default::default()));
-            app.manage(windows::PopoverOpen(Default::default()));
+            app.manage(windows::PanelExpansion(Default::default()));
             windows::spawn_click_through(app.handle());
             
             // The take worker exists before the hook, so no chord edge

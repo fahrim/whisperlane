@@ -42,8 +42,8 @@
   chrome lives here. It never takes keyboard focus, stays above the
   destination without stealing it, and offers a no-overlay fallback with
   audio feedback where overlays would break insertion. The compact pill
-  serves recording states; a larger card serves live transcription when
-  present.
+  serves every state; a panel opened out of it carries the last take's
+  words when the user asks for them.
 - Pill control. One control, one meaning per state. At rest it shows a
   microphone, and clicking it starts dictation. While a take is live it
   becomes stop, and clicking it ends the take, transcribes it, and
@@ -54,11 +54,17 @@
   while a take is live a small cancel sits beside the elapsed time, and
   right-clicking the main control does the same thing. It throws the take
   away exactly as Escape does.
-- Pill menu. The three-dot control opens a small menu above the pill
+- Pill menu. The three-dot control opens a small menu beside the pill
   rather than jumping straight to the settings window, so the common
   choices are one click away and the rarely needed door is one more. It
-  carries the quick per-session choices, the language, the door to
-  settings, and the way out of the application.
+  carries the last take, the language, the door to settings, and the way
+  out of the application.
+- Panels open toward the room. The user can place the pill anywhere on
+  any screen, so a menu or a card opens on whichever side has space
+  rather than on a fixed one, and hangs off the side of the pill that
+  has room so it never runs off the screen. Opening one must not move the
+  pill: the window grows toward the panel and the pill stays on exactly
+  the pixels it was already on.
 - The chord is a press, measured at 250 milliseconds. A shorter press
   starts a take that a second press stops; a press held at least that long
   stops when it is released. Escape discards a live take while it captures
@@ -84,13 +90,15 @@
   can be read without parsing a word, and the written line beside it still
   says what happened in plain language.
 - Transcript panel (hybrid). Closed by default: on success the text goes
-  straight to the focused application and the pill settles. The panel
-  opens by itself only when insertion fails, keeping the text accessible
-  with copy and retry. It can also be opened on demand from the pill's
-  menu, which reveals a compact preview of the last take above it. The
-  full review — copy and manual insert — lives in the settings window
-  until the panel control unfolds on the pill itself. It never opens
-  unprompted on the happy path.
+  straight to the focused application and the pill settles. It can be
+  opened on demand from the pill's menu, which unfolds a card beside the
+  pill carrying the last take's words, the language, and the two things
+  worth doing with words — clear, and copy. The card names itself after
+  what it holds rather than after a streaming pipeline v1 does not have:
+  a take is transcribed whole after capture ends, so what it can honestly
+  show is the last finished take, not the one still being recorded.
+  Live transcription during a take remains the undecided streaming
+  question, and nothing on screen pretends otherwise.
 
 ## States and feedback
 
@@ -127,7 +135,7 @@ bends light back up.
 The capsule takes its width from what it is showing rather than from a
 fixed box, and it widens to fit a status line whole instead of cutting
 a word in half. Everything painted outside the pill's own edge — the
-glow, the shadow, and the menu above it — is bound to the capsule
+glow, the shadow, and the panels beside it — is bound to the capsule
 itself, so it travels with the pill as the pill resizes.
 
 The single accent carries state: during recording, processing and
@@ -139,12 +147,13 @@ accent is the quietest thing on screen.
 Two rules make the material possible at all. The overlay's window is
 transparent and frameless and carries empty room around the pill,
 because the glow is painted outside the pill's own edge and a window
-clips whatever reaches it. That room is sized for the tallest thing the
-pill ever shows above itself, and the pill stays anchored to the bottom
-of it, so opening the menu never costs the pill its resting place. And
-the accent light is drawn inside the window rather than taken from the
-desktop behind it, because a backdrop filter can only bend what is
-inside the document.
+clips whatever reaches it. That room is not a fixed size: the window
+grows toward whichever side a panel opens on and the pill is anchored to
+the window's opposite edge, so the pill keeps its resting margin and the
+same pixels whether or not anything is open beside it. And the accent
+light is drawn inside the window rather than taken from the desktop
+behind it, because a backdrop filter can only bend what is inside the
+document.
 
 An opaque high-readability fallback covers transparency-off and any
 renderer without a backdrop filter, and reduced motion is respected

@@ -6,10 +6,11 @@
 // take at rest and stops one while live; the cancel appears only during
 // a live take, so the pill never carries a fourth element.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { deliveryNote } from "./delivery";
+import { LastTakeCard } from "./LastTakeCard";
 import { LiquidWaveform, type WaveState } from "./LiquidWaveform";
 import type {
   LanguageChoice,
@@ -21,6 +22,15 @@ import type {
 import "./pill.css";
 
 type TakeCommand = "control" | "discard";
+
+/** Which way a panel opened out of the pill, as the core decided it. */
+type Placement = "up" | "down";
+
+/** What the pill is showing besides itself. */
+type Panel = "menu" | "take" | null;
+
+/** How long the copy confirmation stays up. */
+const COPIED_MS = 1500;
 
 /** What the main control offers in each of the core's meanings. */
 const CONTROL_LABEL: Record<MainAction, string> = {
@@ -185,14 +195,25 @@ export function Pill() {
   const [error, setError] = useState<string | null>(null);
   const [audioLevel, setAudioLevel] = useState(0);
   const [elapsedSec, setElapsedSec] = useState(0);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [liveTranscriptOpen, setLiveTranscriptOpen] = useState(false);
+  const [panel, setPanel] = useState<Panel>(null);
+  const [placement, setPlacement] = useState<Placement | null>(null);
+  const [alignEnd, setAlignEnd] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [cleared, setCleared] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [languages, setLanguages] = useState<LanguageChoice[]>([]);
 
   const phase: Phase = status?.phase ?? "idle";
   const isRecording = phase === "listening";
   const isProcessing = phase === "thinking";
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const copiedTimer = useRef<number | null>(null);
+
+  // The copy confirmation is on a timer; leaving it running past the end
+  // of the surface would set state on a card that is no longer there.
+  useEffect(() => () => {
+    if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -229,7 +250,7 @@ export function Pill() {
       setElapsedSec(0);
       return;
     }
-    setMenuOpen(false);
+    setPanel(null);
     setElapsedSec(0);
     const started = Date.now();
     const timer = window.setInterval(() => {
@@ -238,9 +259,61 @@ export function Pill() {
     return () => window.clearInterval(timer);
   }, [isRecording]);
 
+  // A new take is a new set of words, so a card the user had emptied
+  // shows the new take rather than staying empty, and a copy confirmation
+  // left over from the previous one is withdrawn rather than shown
+  // against text that was never copied.
+  const lastText = status?.last_text ?? null;
   useEffect(() => {
-    void invoke("set_popover_open", { open: menuOpen || liveTranscriptOpen }).catch(() => {});
-  }, [menuOpen, liveTranscriptOpen]);
+    setCleared(false);
+    setCopied(false);
+  }, [lastText]);
+
+  /**
+   * Opens or closes the panel by growing the window toward the side
+   * that has room.
+   *
+   * The panel is measured rather than guessed at, and the window is not
+   * grown until it has been measured, so a panel never appears inside a
+   * window too small to hold it. Which way it opens, and which side of
+   * the pill it hangs off, are both the core's answer: it is the only
+   * side that knows where the taskbar is.
+   */
+  const resizeForPanel = useCallback(async () => {
+    const element = panelRef.current;
+    if (!element) {
+      await invoke("set_pill_panel", { requiredHeight: 0 }).catch(() => {});
+      setPlacement(null);
+      return;
+    }
+    const placed = await invoke<{
+      direction: Placement;
+      align_end: boolean;
+    } | null>("set_pill_panel", { requiredHeight: element.offsetHeight }).catch(
+      () => null,
+    );
+    if (!placed) {
+      setPlacement(null);
+      return;
+    }
+    setPlacement(placed.direction);
+    setAlignEnd(placed.align_end);
+  }, []);
+
+  useLayoutEffect(() => {
+    void resizeForPanel();
+  }, [panel, resizeForPanel]);
+
+  // A panel whose own content changes height has to be measured again.
+  // Long text, a language label, anything the user did inside it: the
+  // window follows the panel rather than the other way round.
+  useEffect(() => {
+    const element = panelRef.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => void resizeForPanel());
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [panel, resizeForPanel]);
 
   async function press(command: TakeCommand) {
     try {
@@ -255,10 +328,26 @@ export function Pill() {
     const currentIdx = languages.findIndex((l) => l.code === settings?.language);
     const next = languages[(currentIdx + 1) % languages.length];
     try {
-      const updated = await invoke<Settings>("set_language", {
-        language: next.code,
-      });
-      setSettings(updated);
+      setSettings(
+        await invoke<Settings>("set_language", { language: next.code }),
+      );
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function copyTake() {
+    try {
+      // The core answers with the take it actually copied, so the
+      // confirmation is a fact rather than a hope.
+      const after = await invoke<PipelineStatus>("copy_last_text");
+      if (!after.last_text) return;
+      setCopied(true);
+      if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+      copiedTimer.current = window.setTimeout(() => {
+        setCopied(false);
+        copiedTimer.current = null;
+      }, COPIED_MS);
     } catch (e) {
       setError(String(e));
     }
@@ -274,74 +363,28 @@ export function Pill() {
           settings.language.toUpperCase());
 
   return (
-    <div className="pill" data-phase={phase}>
+    <div
+      className="pill"
+      data-phase={phase}
+      data-panel={placement ?? undefined}
+      data-align={alignEnd ? "end" : "start"}
+    >
       <LiquidRefraction />
 
-      {/* Dynamic wrapper: binds the neon glow spheres and popover directly
-          to the pill's own dynamic width so the glow never detaches or
-          spills far outside the capsule. */}
+      {/* The shell carries the pill and one panel. Which end the pill
+          sits on is the placement's job, so the pill lands on the same
+          screen pixels whichever way the panel opens. */}
       <div className="pill-shell">
-        <div className="pill-aura" aria-hidden="true" />
+        {/* The dock hugs the pill and nothing else, so the aura is the
+            pill's own light rather than the shell's: an open panel must
+            not make the glow any wider than the capsule it comes from.
+            It also stays under the glass, because the glass bends what
+            is behind it and the thing behind it has to be ours. */}
+        <div className="pill-dock">
+          <div className="pill-aura" aria-hidden="true" />
 
-        {liveTranscriptOpen && status?.last_text && (
-          <div className="pill-transcript-card" role="region" aria-label="Live Transcript">
-            <span className="pill-transcript-text">{status.last_text}</span>
-          </div>
-        )}
-
-        {menuOpen && !isRecording && !isProcessing && (
-          <div className="pill-popover" role="menu" aria-label="Quick Options">
-            <button
-              type="button"
-              className="pill-popover-item"
-              role="menuitem"
-              onClick={() => {
-                setLiveTranscriptOpen((v) => !v);
-                setMenuOpen(false);
-              }}
-            >
-              <span>Live Transcript</span>
-              <span className="pill-popover-badge">
-                {liveTranscriptOpen ? "On" : "Off"}
-              </span>
-            </button>
-            <button
-              type="button"
-              className="pill-popover-item"
-              role="menuitem"
-              onClick={() => void cycleLanguage()}
-            >
-              <span>Language</span>
-              <span className="pill-popover-badge">{currentLangLabel}</span>
-            </button>
-            <button
-              type="button"
-              className="pill-popover-item"
-              role="menuitem"
-              onClick={() => {
-                setMenuOpen(false);
-                void invoke("toggle_settings").catch((e) => setError(String(e)));
-              }}
-            >
-              <span>Settings...</span>
-            </button>
-            <div className="pill-popover-divider" />
-            <button
-              type="button"
-              className="pill-popover-item pill-popover-quit"
-              role="menuitem"
-              onClick={() => {
-                setMenuOpen(false);
-                void invoke("quit_app").catch((e) => setError(String(e)));
-              }}
-            >
-              <span>Quit</span>
-            </button>
-          </div>
-        )}
-
-        <div className="liquid-pill">
-          {/* 1. LEFT — Primary Orb Button (40px x 40px)
+          <div className="liquid-pill">
+            {/* 1. LEFT — Primary Orb Button (40px x 40px)
               Always starts a new recording from Idle/Done/Failed/Cancelled,
               and stops+delivers while Recording. Never quits the app. */}
           <button
@@ -351,7 +394,7 @@ export function Pill() {
             title={CONTROL_LABEL[action]}
             disabled={action === "unavailable"}
             onClick={() => {
-              setMenuOpen(false);
+              setPanel(null);
               void press("control");
             }}
             onContextMenu={(e) => {
@@ -415,9 +458,9 @@ export function Pill() {
                 type="button"
                 className="pill-options"
                 aria-label="More options"
-                aria-expanded={menuOpen}
+                aria-expanded={panel === "menu"}
                 title="Options"
-                onClick={() => setMenuOpen((prev) => !prev)}
+                onClick={() => setPanel((prev) => (prev === "menu" ? null : "menu"))}
               >
                 <span className="pill-glyph pill-dots" />
               </button>
@@ -425,7 +468,70 @@ export function Pill() {
           </div>
 
           {error && <span role="alert">{error}</span>}
+          </div>
         </div>
+
+        {panel && (
+          <div className="pill-panel" ref={panelRef}>
+            {panel === "take" ? (
+              <LastTakeCard
+                text={lastText}
+                languageLabel={currentLangLabel}
+                onCycleLanguage={() => void cycleLanguage()}
+                onCopy={() => void copyTake()}
+                onClose={() => setPanel(null)}
+                onClear={() => setCleared(true)}
+                copied={copied}
+                cleared={cleared}
+              />
+            ) : (
+              <div className="pill-popover" role="menu" aria-label="Quick options">
+                <button
+                  type="button"
+                  className="pill-popover-item"
+                  role="menuitem"
+                  onClick={() => setPanel("take")}
+                >
+                  <span>Last take</span>
+                </button>
+                <button
+                  type="button"
+                  className="pill-popover-item"
+                  role="menuitem"
+                  onClick={() => void cycleLanguage()}
+                >
+                  <span>Language</span>
+                  <span className="pill-popover-badge">{currentLangLabel}</span>
+                </button>
+                <button
+                  type="button"
+                  className="pill-popover-item"
+                  role="menuitem"
+                  onClick={() => {
+                    setPanel(null);
+                    void invoke("toggle_settings").catch((e) =>
+                      setError(String(e)),
+                    );
+                  }}
+                >
+                  <span>Settings...</span>
+                </button>
+                <div className="pill-popover-divider" />
+                <button
+                  type="button"
+                  className="pill-popover-item pill-popover-quit"
+                  role="menuitem"
+                  onClick={() => {
+                    setPanel(null);
+                    void invoke("quit_app").catch((e) => setError(String(e)));
+                  }}
+                >
+                  <span>Quit</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

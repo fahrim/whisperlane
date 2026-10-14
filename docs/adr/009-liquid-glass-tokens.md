@@ -1,9 +1,10 @@
 # ADR-009: Liquid Glass Token Set
 
-Status: approved. Amended during M2 polish: the capsule is now read as a
-droplet rather than a plate, its width follows its own content instead of
-a fixed box, and the window's room is sized for the menu the pill opens
-above itself. The refraction-before-blur rule, the specular rim, the
+Status: approved. Amended twice during M2 polish: the capsule is now read
+as a droplet rather than a plate, its width follows its own content
+instead of a fixed box, and the window's room is no longer a fixed size —
+it grows toward whichever side a panel opens on while the pill stays on
+its own pixels. The refraction-before-blur rule, the specular rim, the
 single accent, and the opaque fallback are unchanged.
 
 ## Context
@@ -124,13 +125,13 @@ height, and the single accent are unchanged; the horizontal padding and
 the gap between elements are re-derived, and the capsule's width bounds
 move with them.
 
-The window's room is sized for the tallest thing the pill shows above
-itself. The menu opens upward, and a window cut to the glow alone cut
-the menu off at its own edge. The room above the pill now includes the
-menu's height as well as the glow's reach, and the pill is anchored to
-the bottom of that room, so its resting margin on the screen is exactly
-what it was. Room is also spent on the sides for the pointer and below
-for the shadow, unchanged.
+The window's room is sized for the tallest thing the pill shows
+beside itself. The menu and the last take's card open out of the pill,
+and a window cut to the glow alone cut them off at its own edge. The
+room is no longer a fixed number: the window grows toward whichever side
+a panel opens on, and the pill is re-anchored to the window's opposite
+edge so it lands on the same screen pixels either way. Room is also
+spent on the sides for the pointer and below for the shadow, unchanged.
 
 The accent light follows the capsule rather than the window. Painted in
 the fixed window room, the glow stayed put while the pill grew and

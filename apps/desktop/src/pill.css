@@ -21,10 +21,11 @@ body {
 .pill {
   box-sizing: border-box;
   height: 100vh;
-  /* The room the window carries for the glow, the shadow, and the upward
-     popover. Anchoring to flex-end with the exact bottom bleed keeps the
-     pill pinned at its resting margin while leaving ample headroom above. */
-  padding: 24px 52px 101px;
+  /* The room the window carries for the glow, the shadow, and a panel
+     opened out of the pill. Anchored to the window's bottom edge with
+     the exact bottom bleed, so the pill rests at its margin whether or
+     not a panel is open. */
+  padding: 0 52px 101px;
   position: relative;
   display: flex;
   justify-content: center;
@@ -34,18 +35,48 @@ body {
   user-select: none;
 }
 
-/* Dynamic wrapper that binds the neon glow spheres and popover directly
-   to the pill's own width, so the glow scales with the capsule instead
-   of floating detached in the fixed window room. */
+/* A panel that opens downward pins the pill to the window's top edge
+   instead, so the window can grow below it without carrying the pill
+   down with it. The top bleed is the same room the upward case needs,
+   so the pill lands on the same screen pixels either way. */
+/* The room above the pill when a panel opens downward. This is the same
+   number as BLEED_TOP in windows.rs, rounded for the pixel grid: the two
+   have to agree or the pill lands on different pixels in the two
+   directions, and a stylesheet cannot be checked against a Rust
+   constant by eye. windows.rs holds that check. */
+.pill[data-panel="down"] {
+  padding-top: 207px;
+  align-items: flex-start;
+}
+
+/* Dynamic wrapper that binds the neon glow spheres and the panel to the
+   pill's own width, so the glow scales with the capsule instead of
+   floating detached in the fixed window room. */
 .pill-shell {
   position: relative;
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
 }
 
+/* Opened upward, the panel is rendered above the pill without the DOM
+   order changing, so the spring always grows away from the pill. */
+.pill[data-panel="up"] .pill-shell {
+  flex-direction: column-reverse;
+}
+
+/* The dock hugs the pill and nothing else, so the aura stays the pill's
+   own light even when a panel is open beside it. */
+.pill-dock {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+}
+
 /* Layer 0 — the accent, as light rather than as paint. Anchored to
-   .pill-shell so it expands and contracts with .liquid-pill. */
+   .pill-dock so it is the pill's own light even while a panel is open
+   beside it. */
 .pill-aura {
   position: absolute;
   inset: -14px -18px;
@@ -292,13 +323,34 @@ body {
   to { transform: rotate(360deg); }
 }
 
-/* Compact Liquid Glass Popover menu above the pill */
-.pill-popover {
+/* The panel wrapper. Taken out of flow until the core has said which way
+   it opens: a hidden-but-laid-out panel would push the pill up inside a
+   window that has not grown to hold it yet, and the pill would flinch
+   every time a panel opened. Out of flow it cannot move anything, and
+   it can still be measured. */
+.pill-panel {
   position: absolute;
-  bottom: calc(100% + 8px);
-  right: 0;
-  z-index: 10;
+  flex: none;
+  visibility: hidden;
+}
+
+.pill[data-panel] .pill-panel {
+  position: static;
+  visibility: visible;
+}
+
+.pill[data-panel="down"] .pill-panel {
+  margin-top: 10px;
+}
+
+.pill[data-panel="up"] .pill-panel {
+  margin-bottom: 10px;
+}
+
+/* Compact Liquid Glass Popover menu, the quick doors out of the app */
+.pill-popover {
   box-sizing: border-box;
+  position: relative;
   width: 180px;
   padding: 6px;
   display: flex;
@@ -314,7 +366,14 @@ body {
     inset 0 6px 14px -2px rgba(255, 255, 255, 0.25),
     inset 0 -3px 8px 0 rgba(139, 92, 246, 0.40),
     inset 0 -1px 1px 0 rgba(255, 255, 255, 0.30);
-  animation: pill-appear 140ms ease;
+  /* The spring always grows away from the pill, whichever edge it
+     opened from. */
+  transform-origin: top center;
+  animation: pill-open 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.pill[data-panel="up"] .pill-popover {
+  transform-origin: bottom center;
 }
 
 .pill-popover::before {
@@ -330,6 +389,16 @@ body {
   mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask-composite: exclude;
   pointer-events: none;
+}
+
+/* The panel keeps to the side of the pill that has room, so a pill
+   parked against a screen edge never pushes its own menu off it. */
+.pill[data-align="end"] .pill-panel {
+  align-self: flex-end;
+}
+
+.pill[data-align="start"] .pill-panel {
+  align-self: flex-start;
 }
 
 .pill-popover-item {
@@ -385,32 +454,196 @@ body {
   background: rgba(244, 63, 94, 0.20);
 }
 
-/* Optional compact live transcript preview above the pill */
-.pill-transcript-card {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
-  right: 0;
-  z-index: 8;
-  padding: 6px 12px;
-  border-radius: 12px;
-  background: linear-gradient(180deg, rgba(22, 24, 42, 0.84) 0%, rgba(10, 11, 22, 0.90) 100%);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+/* The Last Take card: header, words, and the two things worth doing
+   with the words. Same material as the pill, so it reads as part of it
+   rather than as a window that happened to open above. */
+.last-take-card {
+  position: relative;
+  box-sizing: border-box;
+  width: 380px;
+  max-width: 100%;
+  min-height: 148px;
+  max-height: 210px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  border-radius: 22px;
+  background: var(--droplet-surface-bg);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
   box-shadow:
-    0 10px 24px -6px rgba(0, 0, 0, 0.65),
-    inset 0 1px 1px 0 rgba(255, 255, 255, 0.50);
-  border: 1px solid rgba(255, 255, 255, 0.14);
+    0 18px 40px -10px rgba(0, 0, 0, 0.75),
+    inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 6px 14px -2px rgba(255, 255, 255, 0.25),
+    inset 0 -3px 8px 0 rgba(139, 92, 246, 0.40),
+    inset 0 -1px 1px 0 rgba(255, 255, 255, 0.30);
+  transform-origin: top center;
+  animation: pill-open 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.pill-transcript-text {
+.pill[data-panel="up"] .last-take-card {
+  transform-origin: bottom center;
+}
+
+/* The specular rim, same cut as the pill's own. */
+.last-take-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  padding: 1.25px;
+  background: var(--glass-rim-idle);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.card-header {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.card-header-left,
+.card-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.card-icon {
   display: block;
-  font-size: 11.5px;
-  line-height: 15px;
-  color: rgba(242, 242, 247, 0.92);
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.card-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+/* The language the next take uses, which is the one honest thing the
+   card can offer: a take already taken cannot be re-done in another
+   language. */
+
+.card-language {
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 15px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--motion-smooth-fade);
+}
+
+.card-language:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.card-icon-button {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  cursor: pointer;
+  transition: background var(--motion-smooth-fade), opacity var(--motion-smooth-fade);
+}
+
+.card-icon-button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.card-icon-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* The words, behind the same accent rule the settings window uses for a
+   transcript so the two surfaces read as one thing. */
+.card-body {
+  position: relative;
+  z-index: 3;
+  max-height: 84px;
+  overflow-y: auto;
+  padding-left: 12px;
+  border-left: 2px solid rgba(255, 255, 255, 0.75);
+}
+
+.card-text {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.95);
+  overflow-wrap: anywhere;
+}
+
+.card-empty {
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.card-footer {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.card-chip {
+  height: 28px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--motion-smooth-fade), opacity var(--motion-smooth-fade);
+}
+
+.card-chip:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.card-chip:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.card-chip-primary {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+@keyframes pill-open {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 /* The cancel is contextual during recording. */
@@ -507,7 +740,9 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .pill-cancel,
   .pill-control,
-  .pill-orb-spinner {
+  .pill-orb-spinner,
+  .pill-popover,
+  .last-take-card {
     animation: none !important;
   }
 

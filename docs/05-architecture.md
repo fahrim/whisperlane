@@ -124,11 +124,11 @@ field exposure. What transfers, in priority order:
   alongside the Whisper family for machines where accelerated inference
   misbehaves.
 - Overlay discipline that matches the pill vision. A borderless,
-  non-focusable, always-on-top pill in two sizes — compact for recording
-  states and larger for live transcription — with throttled loudness
-  updates, stale-hide protection so a delayed hide never kills a new
-  session, and a documented fallback to no overlay where the overlay would
-  steal focus from the destination.
+  non-focusable, always-on-top pill that carries every state, with panels
+  opened out of it toward whichever side of the screen has room rather
+  than on a fixed side, throttled loudness updates, stale-hide protection
+  so a delayed hide never kills a new session, and a documented fallback
+  to no overlay where the overlay would steal focus from the destination.
 - Insertion honesty. Clipboard-assisted delivery with delayed restoration
   of the previous clipboard, configurable timing for fragile targets, and
   per-display-server tooling where native synthesis is weak — plus remote

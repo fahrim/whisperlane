@@ -26,6 +26,18 @@
     rgb(255 255 255 / 5%) 50%,
     rgb(15 15 25 / 30%) 100%
   );
+  --droplet-surface-bg:
+    radial-gradient(
+      120% 80% at 50% -10%,
+      rgba(255, 255, 255, 0.26) 0%,
+      rgba(255, 255, 255, 0.04) 45%,
+      transparent 70%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(22, 24, 42, 0.70) 0%,
+      rgba(10, 11, 22, 0.85) 100%
+    );
 
   /* Refraction first, then the blur. Saturating and lifting the light
      behind the glass is what makes it read as material rather than as

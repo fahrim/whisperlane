@@ -11,32 +11,24 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { deliveryNote } from "./delivery";
 import { LiquidWaveform, type WaveState } from "./LiquidWaveform";
-import type { MainAction, PipelineStatus } from "./types";
+import type {
+  LanguageChoice,
+  MainAction,
+  Phase,
+  PipelineStatus,
+  Settings,
+} from "./types";
 import "./pill.css";
 
 type TakeCommand = "control" | "discard";
 
 /** What the main control offers in each of the core's meanings. */
 const CONTROL_LABEL: Record<MainAction, string> = {
-  start: "Start dictation",
+  start: "Start recording",
   stop: "Stop and insert",
-  dismiss: "Back to quiet",
-  unavailable: "Nothing to do right now",
+  dismiss: "Start recording",
+  unavailable: "Processing...",
 };
-
-/** What the control looks like in each of the core's meanings. */
-const CONTROL_GLYPH: Record<MainAction, string> = {
-  start: "pill-mic",
-  stop: "pill-stop",
-  dismiss: "pill-close",
-  unavailable: "pill-mic",
-};
-
-/** Whether the pill is showing a live take, which is also when the
- *  cancel appears. One rule, read from the phase the core reports. */
-function isLive(phase: PipelineStatus["phase"]): boolean {
-  return phase === "listening" || phase === "thinking";
-}
 
 /** The one word the signal bar turns on, so a glance is enough. */
 function signalFor(status: PipelineStatus | null): string {
@@ -51,9 +43,80 @@ function signalFor(status: PipelineStatus | null): string {
       return status.detail ?? "that did not work";
     case "cancelled":
       return "discarded, nothing was inserted";
+    case "idle":
     default:
-      return "";
+      return "Ready";
   }
+}
+
+function formatDuration(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+/**
+ * The primary orb icon: microphone at rest and after a take, square stop
+ * while recording, and a clean symmetric sparkle/spinner while processing.
+ */
+function OrbIcon({ phase }: { phase: Phase }) {
+  if (phase === "listening") {
+    return (
+      <svg
+        className="pill-orb-svg"
+        width="14"
+        height="14"
+        viewBox="0 0 14 14"
+        fill="none"
+        aria-hidden="true"
+      >
+        <rect x="1" y="1" width="12" height="12" rx="3" fill="currentColor" />
+      </svg>
+    );
+  }
+
+  if (phase === "thinking") {
+    return (
+      <svg
+        className="pill-orb-svg pill-orb-spinner"
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        aria-hidden="true"
+      >
+        <path
+          d="M12 2.5C12.4 7.2 16.8 11.6 21.5 12C16.8 12.4 12.4 16.8 12 21.5C11.6 16.8 7.2 12.4 2.5 12C7.2 11.6 11.6 7.2 12 2.5Z"
+          fill="currentColor"
+        />
+      </svg>
+    );
+  }
+
+  return (
+    <svg
+      className="pill-orb-svg"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <rect x="9" y="3" width="6" height="11" rx="3" fill="currentColor" />
+      <path
+        d="M5 11a7 7 0 0 0 14 0"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+      <path
+        d="M12 18v3M9 21h6"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
 }
 
 /**
@@ -95,9 +158,11 @@ function LiquidRefraction() {
 }
 
 /**
- * Which face the waveform shows. The pill's own phases, reduced to the
- * three the meter knows about: nothing to show, a live voice, or a take
- * being written down.
+ * Which face the waveform / equalizer shows:
+ * - "recording" (Listening): full colored Siri ribbons
+ * - "processing" (Thinking): white equalizer with left-to-right scanner wave
+ * - "muted" (Failed / Cancelled): white equalizer with right-middle bars (11 & 14)
+ * - "idle" (Idle / Done): white equalizer with left-start bars (3 & 4)
  */
 function waveStateFor(phase: PipelineStatus["phase"]): WaveState {
   switch (phase) {
@@ -105,6 +170,11 @@ function waveStateFor(phase: PipelineStatus["phase"]): WaveState {
       return "recording";
     case "thinking":
       return "processing";
+    case "failed":
+    case "cancelled":
+      return "muted";
+    case "idle":
+    case "done":
     default:
       return "idle";
   }
@@ -114,17 +184,21 @@ export function Pill() {
   const [status, setStatus] = useState<PipelineStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [audioLevel, setAudioLevel] = useState(0);
+  const [elapsedSec, setElapsedSec] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [liveTranscriptOpen, setLiveTranscriptOpen] = useState(false);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [languages, setLanguages] = useState<LanguageChoice[]>([]);
+
+  const phase: Phase = status?.phase ?? "idle";
+  const isRecording = phase === "listening";
+  const isProcessing = phase === "thinking";
 
   useEffect(() => {
     let alive = true;
-    // The core publishes every phase change, so the pill follows the
-    // pipeline rather than guessing from a timer.
     const unlisten = listen<PipelineStatus>("pipeline-state", (event) => {
       if (alive) setStatus(event.payload);
     });
-    // Loudness comes from the capture buffer itself, throttled hard by
-    // the core. It ends at zero when the take does, so the meter never
-    // shows a level for audio that has stopped.
     const unlistenLevel = listen<number>("audio-level", (event) => {
       if (alive) setAudioLevel(event.payload);
     });
@@ -133,12 +207,40 @@ export function Pill() {
         if (alive) setStatus(state);
       })
       .catch((e) => setError(String(e)));
+    invoke<Settings>("get_settings")
+      .then((s) => {
+        if (alive) setSettings(s);
+      })
+      .catch(() => {});
+    invoke<LanguageChoice[]>("list_languages")
+      .then((langs) => {
+        if (alive) setLanguages(langs);
+      })
+      .catch(() => {});
     return () => {
       alive = false;
       void unlisten.then((off) => off());
       void unlistenLevel.then((off) => off());
     };
   }, []);
+
+  useEffect(() => {
+    if (!isRecording) {
+      setElapsedSec(0);
+      return;
+    }
+    setMenuOpen(false);
+    setElapsedSec(0);
+    const started = Date.now();
+    const timer = window.setInterval(() => {
+      setElapsedSec(Math.floor((Date.now() - started) / 1000));
+    }, 250);
+    return () => window.clearInterval(timer);
+  }, [isRecording]);
+
+  useEffect(() => {
+    void invoke("set_popover_open", { open: menuOpen || liveTranscriptOpen }).catch(() => {});
+  }, [menuOpen, liveTranscriptOpen]);
 
   async function press(command: TakeCommand) {
     try {
@@ -148,91 +250,182 @@ export function Pill() {
     }
   }
 
-  async function dismiss() {
+  async function cycleLanguage() {
+    if (languages.length === 0) return;
+    const currentIdx = languages.findIndex((l) => l.code === settings?.language);
+    const next = languages[(currentIdx + 1) % languages.length];
     try {
-      // A finished take goes back to a quiet idle in one action, from
-      // here rather than from the settings window (ADR-007).
-      await invoke<PipelineStatus>("reset_pipeline");
+      const updated = await invoke<Settings>("set_language", {
+        language: next.code,
+      });
+      setSettings(updated);
     } catch (e) {
       setError(String(e));
     }
   }
 
-  const live = status !== null && isLive(status.phase);
   const action: MainAction = status?.main_action ?? "start";
-  const waveState = waveStateFor(status?.phase ?? "idle");
+  const waveState = waveStateFor(phase);
   const signal = signalFor(status);
+  const currentLangLabel =
+    settings?.language === "auto" || !settings?.language
+      ? "Auto"
+      : (languages.find((l) => l.code === settings.language)?.label ??
+          settings.language.toUpperCase());
 
   return (
-    <div className="pill" data-phase={status?.phase ?? "idle"}>
+    <div className="pill" data-phase={phase}>
       <LiquidRefraction />
-      {/* The light the glass is made of. Inside the document on
-          purpose: a backdrop-filter can only bend DOM content, never
-          the desktop behind the window. */}
-      <div className="pill-aura" aria-hidden="true" />
 
-      <div className="liquid-pill">
-        {/* The waveform. Fixed size in every state so nothing shifts
-            as the pill moves between faces; processing only fades it. */}
-        <LiquidWaveform state={waveState} audioLevel={audioLevel} />
+      {/* Dynamic wrapper: binds the neon glow spheres and popover directly
+          to the pill's own dynamic width so the glow never detaches or
+          spills far outside the capsule. */}
+      <div className="pill-shell">
+        <div className="pill-aura" aria-hidden="true" />
 
-        {/* The written line doubles as the drag handle, so the pill can
-            be moved without a setting. The controls sit outside it, so
-            dragging can never swallow a click. */}
-        <p
-          className="pill-state"
-          role="status"
-          aria-live="polite"
-          data-tauri-drag-region
-        >
-          {signal || status?.label || ""}
-        </p>
-
-        <button
-          type="button"
-          className="pill-control"
-          aria-label={CONTROL_LABEL[action]}
-          title={CONTROL_LABEL[action]}
-          disabled={action === "unavailable"}
-          onClick={() =>
-            action === "dismiss" ? void dismiss() : void press("control")
-          }
-          onContextMenu={(e) => {
-            // Right-click is the same discard as the hover cancel, so
-            // the gesture stays reachable when the pointer never hovers
-            // the control itself.
-            e.preventDefault();
-            void press("discard");
-          }}
-        >
-          <span className={`pill-glyph ${CONTROL_GLYPH[action]}`} />
-        </button>
-
-        {live && (
-          <button
-            type="button"
-            className="pill-cancel"
-            aria-label="Discard this take"
-            title="Discard this take (Esc)"
-            onClick={() => press("discard")}
-          >
-            <span className="pill-glyph pill-close" />
-          </button>
+        {liveTranscriptOpen && status?.last_text && (
+          <div className="pill-transcript-card" role="region" aria-label="Live Transcript">
+            <span className="pill-transcript-text">{status.last_text}</span>
+          </div>
         )}
 
-        <button
-          type="button"
-          className="pill-options"
-          aria-label="Settings"
-          title="Settings"
-          onClick={() =>
-            invoke("toggle_settings").catch((e) => setError(String(e)))
-          }
-        >
-          <span className="pill-glyph pill-dots" />
-        </button>
+        {menuOpen && !isRecording && !isProcessing && (
+          <div className="pill-popover" role="menu" aria-label="Quick Options">
+            <button
+              type="button"
+              className="pill-popover-item"
+              role="menuitem"
+              onClick={() => {
+                setLiveTranscriptOpen((v) => !v);
+                setMenuOpen(false);
+              }}
+            >
+              <span>Live Transcript</span>
+              <span className="pill-popover-badge">
+                {liveTranscriptOpen ? "On" : "Off"}
+              </span>
+            </button>
+            <button
+              type="button"
+              className="pill-popover-item"
+              role="menuitem"
+              onClick={() => void cycleLanguage()}
+            >
+              <span>Language</span>
+              <span className="pill-popover-badge">{currentLangLabel}</span>
+            </button>
+            <button
+              type="button"
+              className="pill-popover-item"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                void invoke("toggle_settings").catch((e) => setError(String(e)));
+              }}
+            >
+              <span>Settings...</span>
+            </button>
+            <div className="pill-popover-divider" />
+            <button
+              type="button"
+              className="pill-popover-item pill-popover-quit"
+              role="menuitem"
+              onClick={() => {
+                setMenuOpen(false);
+                void invoke("quit_app").catch((e) => setError(String(e)));
+              }}
+            >
+              <span>Quit</span>
+            </button>
+          </div>
+        )}
 
-        {error && <span role="alert">{error}</span>}
+        <div className="liquid-pill">
+          {/* 1. LEFT — Primary Orb Button (40px x 40px)
+              Always starts a new recording from Idle/Done/Failed/Cancelled,
+              and stops+delivers while Recording. Never quits the app. */}
+          <button
+            type="button"
+            className="pill-control"
+            aria-label={CONTROL_LABEL[action]}
+            title={CONTROL_LABEL[action]}
+            disabled={action === "unavailable"}
+            onClick={() => {
+              setMenuOpen(false);
+              void press("control");
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              void press("discard");
+            }}
+          >
+            <OrbIcon phase={phase} />
+          </button>
+
+          {/* 2. CENTER — Waveform / State-Aware White Equalizer + Status Text */}
+          <div className="pill-center" data-tauri-drag-region>
+            {isRecording ? (
+              <LiquidWaveform
+                state="recording"
+                audioLevel={audioLevel}
+                width={165}
+                height={44}
+              />
+            ) : (
+              <div className="pill-status-row" data-tauri-drag-region>
+                <LiquidWaveform
+                  state={waveState}
+                  audioLevel={0}
+                  width={90}
+                  height={22}
+                />
+                <p
+                  className="pill-state"
+                  role="status"
+                  aria-live="polite"
+                  data-tauri-drag-region
+                >
+                  {signal || status?.label || ""}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* 3. RIGHT — Secondary Controls (Timer, Cancel, Popover Trigger) */}
+          <div className="pill-actions">
+            {isRecording && (
+              <>
+                <span className="pill-timer" aria-label="Recording duration">
+                  {formatDuration(elapsedSec)}
+                </span>
+                <button
+                  type="button"
+                  className="pill-cancel"
+                  aria-label="Discard this take"
+                  title="Discard this take (Esc)"
+                  onClick={() => void press("discard")}
+                >
+                  <span className="pill-glyph pill-close" />
+                </button>
+              </>
+            )}
+
+            {!isRecording && !isProcessing && (
+              <button
+                type="button"
+                className="pill-options"
+                aria-label="More options"
+                aria-expanded={menuOpen}
+                title="Options"
+                onClick={() => setMenuOpen((prev) => !prev)}
+              >
+                <span className="pill-glyph pill-dots" />
+              </button>
+            )}
+          </div>
+
+          {error && <span role="alert">{error}</span>}
+        </div>
       </div>
     </div>
   );

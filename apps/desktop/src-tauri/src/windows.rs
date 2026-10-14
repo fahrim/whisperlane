@@ -54,13 +54,15 @@ const HALF_HEIGHT: f64 = glow_reach(AURA_MAIN_DIAMETER) * 1.7;
 
 /// Empty room around the pill inside the window.
 ///
-/// The material is painted outside the pill — its glow and its shadow —
-/// and a window clips whatever reaches its own edge, so the window is
-/// sized from the glow rather than picked by eye. The extra room costs
-/// nothing to whatever sits underneath: the empty part of the window
-/// passes the pointer straight through.
+/// The material is painted outside the pill — its glow, its shadow, and
+/// its upward popover — and a window clips whatever reaches its own
+/// edge, so the window is sized with headroom above the pill rather than
+/// picked by eye. The extra room costs nothing to whatever sits
+/// underneath: the empty part of the window passes the pointer straight
+/// through.
+const POPOVER_HEADROOM: f64 = 110.0;
 const BLEED_X: f64 = 52.0;
-const BLEED_TOP: f64 = HALF_HEIGHT - PILL_HEIGHT / 2.0;
+const BLEED_TOP: f64 = HALF_HEIGHT - PILL_HEIGHT / 2.0 + POPOVER_HEADROOM;
 const BLEED_BOTTOM: f64 = HALF_HEIGHT + 4.0 - PILL_HEIGHT / 2.0;
 
 /// The window is the pill plus its room. Named so this geometry and the
@@ -75,8 +77,8 @@ const _: () = {
     assert!(WINDOW_WIDTH > PILL_WIDTH, "no room at the sides");
     assert!(WINDOW_HEIGHT > PILL_HEIGHT, "no room above or below");
     assert!(
-        BLEED_BOTTOM > BLEED_TOP,
-        "the shadow reaches further down than up"
+        BLEED_TOP > HALF_HEIGHT,
+        "the top room has to fit both the glow and the upward popover"
     );
     // Slack, not a fit: cutting the window to the exact reach of the
     // glow is what draws a line across the light.
@@ -127,6 +129,19 @@ pub fn pointer_over_pill(cursor: (f64, f64), window_at: (f64, f64)) -> bool {
         && (top..=top + PILL_HEIGHT + HOVER_PAD * 2.0).contains(&cy)
 }
 
+/// Whether the pill's popover menu is currently open, expanding the
+/// click-receiving area into the upper bleed room while open.
+pub struct PopoverOpen(pub std::sync::atomic::AtomicBool);
+
+/// Sets whether the pill's popover menu is open so click-through can
+/// allow pointer interaction with the popover above the pill.
+#[tauri::command]
+pub fn set_popover_open(app: AppHandle, open: bool) {
+    if let Some(state) = app.try_state::<PopoverOpen>() {
+        state.0.store(open, Ordering::Relaxed);
+    }
+}
+
 /// Whether the pill is currently taking the cursor, so the next poll
 /// knows whether the platform flag has to change at all.
 pub struct CursorPassthrough(pub std::sync::atomic::AtomicBool);
@@ -149,11 +164,22 @@ pub fn spawn_click_through(app: &AppHandle) {
             let visible = window.is_visible().unwrap_or(false);
             if !visible {
                 continue;
-            }
+            };
             let (Some((cx, cy)), Ok(at)) = (cursor_on_screen(), window.outer_position()) else {
                 continue;
             };
-            let over_pill = pointer_over_pill((cx, cy), (at.x as f64, at.y as f64));
+            let popover_open = worker
+                .try_state::<PopoverOpen>()
+                .is_some_and(|state| state.0.load(Ordering::Relaxed));
+            let over_pill = if popover_open {
+                let (wx, wy) = (at.x as f64, at.y as f64);
+                let left = wx + BLEED_X - HOVER_PAD;
+                let top = wy;
+                (left..=left + PILL_WIDTH + HOVER_PAD * 2.0).contains(&cx)
+                    && (top..=wy + BLEED_TOP + PILL_HEIGHT + HOVER_PAD).contains(&cy)
+            } else {
+                pointer_over_pill((cx, cy), (at.x as f64, at.y as f64))
+            };
             let already = worker
                 .try_state::<CursorPassthrough>()
                 .is_some_and(|state| state.0.load(Ordering::Relaxed));
@@ -192,7 +218,7 @@ pub fn pill_origin(screen: (f64, f64)) -> (f64, f64) {
     let (width, height) = screen;
     (
         ((width - WINDOW_WIDTH) / 2.0).max(0.0),
-        (height - PILL_HEIGHT - PILL_BOTTOM_MARGIN - BLEED_BOTTOM).max(0.0),
+        (height - PILL_HEIGHT - PILL_BOTTOM_MARGIN - BLEED_TOP).max(0.0),
     )
 }
 
@@ -288,6 +314,13 @@ pub fn toggle_settings(app: AppHandle) {
     let _ = main.set_focus();
 }
 
+/// Exits the application cleanly from the pill's popover menu, matching
+/// the tray's quit item.
+#[tauri::command]
+pub fn quit_app(app: AppHandle) {
+    app.exit(0);
+}
+
 #[cfg(test)]
 mod tests {
     use super::settings_toggle_closes;
@@ -378,8 +411,14 @@ mod tests {
         // the offsets are measured from the window, never from the
         // screen. Getting this wrong makes the pill unclickable exactly
         // where it sits — centred, as it always is.
-        assert!(pointer_over_pill((1280.0, 1360.0), (998.0, 1235.0)));
-        assert!(!pointer_over_pill((1280.0, 1300.0), (998.0, 1235.0)));
+        assert!(pointer_over_pill(
+            (1280.0, 1235.0 + BLEED_TOP + 25.0),
+            (998.0, 1235.0)
+        ));
+        assert!(!pointer_over_pill(
+            (1280.0, 1235.0 + BLEED_TOP - 35.0),
+            (998.0, 1235.0)
+        ));
     }
 
     #[test]
@@ -392,13 +431,13 @@ mod tests {
         // has faded to nothing, and the screen's own edge is the
         // boundary the eye already expects.
         assert_eq!(
-            y + BLEED_BOTTOM + PILL_HEIGHT,
+            y + BLEED_TOP + PILL_HEIGHT,
             height - PILL_BOTTOM_MARGIN,
             "the pill keeps its resting margin"
         );
         assert!(y >= 0.0 && y + BLEED_TOP + PILL_HEIGHT <= height);
         let past = (y + WINDOW_HEIGHT - height).max(0.0);
-        assert!(past < BLEED_TOP, "the room runs off by {past}px");
+        assert!(past < BLEED_BOTTOM, "the room runs off by {past}px");
     }
 
     #[test]
@@ -414,7 +453,7 @@ mod tests {
         // pill, so nothing clamps and the resting margin is kept.
         let (_, y) = pill_origin((WINDOW_WIDTH, WINDOW_HEIGHT));
         assert_eq!(
-            y + BLEED_BOTTOM + PILL_HEIGHT,
+            y + BLEED_TOP + PILL_HEIGHT,
             WINDOW_HEIGHT - PILL_BOTTOM_MARGIN
         );
     }
@@ -423,7 +462,7 @@ mod tests {
     fn a_screen_with_room_keeps_the_resting_margin_above_the_bottom() {
         let (x, y) = pill_origin((900.0, 400.0));
         assert_eq!(x, (900.0 - WINDOW_WIDTH) / 2.0);
-        assert_eq!(y + BLEED_BOTTOM + PILL_HEIGHT, 400.0 - PILL_BOTTOM_MARGIN);
+        assert_eq!(y + BLEED_TOP + PILL_HEIGHT, 400.0 - PILL_BOTTOM_MARGIN);
     }
 
     #[test]

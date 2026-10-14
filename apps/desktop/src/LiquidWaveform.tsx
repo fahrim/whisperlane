@@ -10,7 +10,7 @@
 
 import { useEffect, useRef } from "react";
 
-export type WaveState = "idle" | "recording" | "processing";
+export type WaveState = "idle" | "recording" | "processing" | "muted";
 
 interface LiquidWaveformProps {
   state: WaveState;
@@ -37,36 +37,36 @@ interface WaveRibbon {
  */
 const RIBBONS: WaveRibbon[] = [
   {
-    colorStart: "rgba(244, 63, 94, 0.85)",
-    colorEnd: "rgba(168, 85, 247, 0.85)",
+    colorStart: "rgba(244, 63, 94, 0.90)",
+    colorEnd: "rgba(168, 85, 247, 0.90)",
     freq: 1.8,
     speed: 0.065,
     phase: 0,
     ampMultiplier: 1.0,
   },
   {
-    colorStart: "rgba(56, 189, 248, 0.85)",
-    colorEnd: "rgba(99, 102, 241, 0.85)",
+    colorStart: "rgba(56, 189, 248, 0.90)",
+    colorEnd: "rgba(99, 102, 241, 0.90)",
     freq: 2.4,
     speed: -0.05,
     phase: 1.5,
-    ampMultiplier: 0.85,
+    ampMultiplier: 0.9,
   },
   {
-    colorStart: "rgba(192, 132, 252, 0.75)",
-    colorEnd: "rgba(45, 212, 191, 0.75)",
+    colorStart: "rgba(192, 132, 252, 0.80)",
+    colorEnd: "rgba(45, 212, 191, 0.80)",
     freq: 3.1,
     speed: 0.08,
     phase: 3.1,
-    ampMultiplier: 0.7,
+    ampMultiplier: 0.78,
   },
   {
-    colorStart: "rgba(251, 191, 36, 0.55)",
-    colorEnd: "rgba(244, 63, 94, 0.55)",
+    colorStart: "rgba(251, 191, 36, 0.65)",
+    colorEnd: "rgba(244, 63, 94, 0.65)",
     freq: 1.3,
     speed: 0.04,
     phase: 4.7,
-    ampMultiplier: 0.55,
+    ampMultiplier: 0.65,
   },
 ];
 
@@ -79,19 +79,19 @@ const RIBBONS: WaveRibbon[] = [
  * token ripple to a wave that reads as speech. Raise it if the wave
  * still reads flat, lower it if it sits pinned.
  */
-const LEVEL_GAIN = 2.0;
+const LEVEL_GAIN = 2.6;
 /** Rise quickly, fall slowly. See the note at the top of the file. */
 const ATTACK = 0.35;
 const RELEASE = 0.08;
 /** The floor a live take breathes at, so silence is calm, not dead. */
-const IDLE_BREATH = 0.12;
+const IDLE_BREATH = 0.24;
 /** How much of the canvas's half-height the wave is allowed to use. */
-const SWING = 0.98;
+const SWING = 1.4;
 
 export function LiquidWaveform({
   state,
   audioLevel,
-  width = 150,
+  width = 160,
   // Tall enough that an ordinary voice visibly moves the ribbon rather
   // than rippling the centre line. The pill has no vertical padding, so
   // this still sits inside its height.
@@ -135,16 +135,13 @@ export function LiquidWaveform({
         timeRef.current += 1;
       }
 
-      if (state === "idle") {
-        drawStillSpectrum(ctx, width, centerY, timeRef.current, reducedMotion);
-      } else if (state === "recording") {
+      if (state === "recording") {
         // A live take breathes even in silence, so the pill never looks
         // switched off mid-sentence.
-        const amp =
-          state === "recording"
-            ? Math.max(IDLE_BREATH, smoothedRef.current)
-            : 0;
-        drawRibbons(ctx, width, centerY, height, amp, timeRef.current);
+        const effectiveAmp = Math.max(IDLE_BREATH, smoothedRef.current);
+        drawRibbons(ctx, width, centerY, height, effectiveAmp, timeRef.current);
+      } else {
+        drawEqualizer(ctx, width, centerY, state, timeRef.current, reducedMotion);
       }
 
       frame = requestAnimationFrame(render);
@@ -158,40 +155,76 @@ export function LiquidWaveform({
     <canvas
       ref={canvasRef}
       aria-hidden="true"
+      className="pill-waveform"
       style={{
         width: `${width}px`,
         height: `${height}px`,
+        display: "block",
         filter:
           state === "recording"
             ? "drop-shadow(0 0 8px rgba(168, 85, 247, 0.55)) drop-shadow(0 0 16px rgba(56, 189, 248, 0.35))"
             : "none",
         transition: "filter 220ms ease, opacity 220ms ease",
-        opacity: state === "processing" ? 0 : 1,
         pointerEvents: "none",
       }}
     />
   );
 }
 
-/** The resting face: a quiet row of dots with two marks of accent. */
-function drawStillSpectrum(
+/**
+ * State-aware white dotted equalizer indicator for non-recording states:
+ * - "idle" (Idle / Success): accent bars at left-start (bars 3 & 4), calm breath
+ * - "muted" (Discarded / Failed): accent bars at right-middle (bars 11 & 14), steadier
+ * - "processing" (Thinking): traveling scanner wave moving left-to-right
+ */
+function drawEqualizer(
   ctx: CanvasRenderingContext2D,
   width: number,
   centerY: number,
-  time: number,
+  state: Exclude<WaveState, "recording">,
+  phaseTime: number,
   reducedMotion: boolean,
 ) {
-  const count = 21;
-  const gap = width / (count + 1);
-  ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
-  for (let i = 1; i <= count; i++) {
+  const barCount = 18;
+  const gap = width / (barCount + 1);
+
+  for (let i = 1; i <= barCount; i++) {
     const x = i * gap;
-    const accent = i === 3 || i === 4;
-    // Reduced motion gets a still row rather than a frozen wave, which
-    // would read as a bug rather than as a preference.
-    const height = accent ? (reducedMotion ? 8 : 8 + Math.sin(time * 0.05 + i) * 2) : 2.5;
+    let barH = 2.5;
+    let alpha = 0.38;
+
+    if (state === "processing") {
+      if (reducedMotion) {
+        const accent = i === 8 || i === 9 || i === 10;
+        barH = accent ? 9 : 2.5;
+        alpha = accent ? 0.85 : 0.35;
+      } else {
+        const wavePos = (phaseTime * 0.18) % (barCount + 1);
+        const dist = Math.abs(i - wavePos);
+        if (dist < 2.5) {
+          const factor = Math.cos((dist / 2.5) * (Math.PI / 2));
+          barH = 2.5 + factor * 9;
+          alpha = 0.4 + factor * 0.55;
+        }
+      }
+    } else if (state === "muted") {
+      const accent = i === 11 || i === 14;
+      if (accent) {
+        barH = reducedMotion ? 6.5 : 6.5 + Math.sin(phaseTime * 0.025 + i) * 0.8;
+        alpha = 0.72;
+      }
+    } else {
+      // "idle" (Idle & Done/Success): 3rd and 4th bars high on the left
+      const accent = i === 3 || i === 4;
+      if (accent) {
+        barH = reducedMotion ? 9 : 9 + Math.sin(phaseTime * 0.05 + i) * 2;
+        alpha = 0.85;
+      }
+    }
+
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
     ctx.beginPath();
-    ctx.roundRect(x - 1, centerY - height / 2, 2, height, 999);
+    ctx.roundRect(x - 1, centerY - barH / 2, 2, barH, 999);
     ctx.fill();
   }
 }
@@ -259,7 +292,7 @@ function offset(
   closing: boolean,
 ): number {
   const normX = x / width;
-  const envelope = Math.pow(Math.sin(normX * Math.PI), 2.2);
+  const envelope = Math.pow(Math.sin(normX * Math.PI), 1.6);
   const wave = closing
     ? Math.sin(normX * Math.PI * 2 * ribbon.freq + t + 0.6) * 0.65 +
       Math.sin(normX * Math.PI * 3 * ribbon.freq - t * 0.4) * 0.35

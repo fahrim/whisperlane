@@ -70,16 +70,15 @@ impl Phase {
     }
 
     /// What the pill's main control does while this phase is current
-    /// (ADR-007 with ADR-008): start at rest, stop and deliver while
-    /// live, settle back to a quiet idle once the take has finished.
+    /// (ADR-007 with ADR-008): start a take from any resting or finished
+    /// state, stop and deliver while live, and wait while transcribing.
     /// Decided here so no surface derives its own meaning from the
     /// phase it happens to be rendering.
     pub const fn main_action(self) -> MainAction {
         match self {
-            Phase::Idle => MainAction::Start,
+            Phase::Idle | Phase::Done | Phase::Failed | Phase::Cancelled => MainAction::Start,
             Phase::Listening => MainAction::Stop,
             Phase::Thinking => MainAction::Unavailable,
-            Phase::Done | Phase::Failed | Phase::Cancelled => MainAction::Dismiss,
         }
     }
 }
@@ -305,14 +304,14 @@ mod tests {
 
     #[test]
     fn the_control_carries_one_meaning_per_phase() {
-        // Start at rest, stop and deliver while live, settle to quiet
-        // idle once finished. Nothing to end while transcribing, because
+        // Start at rest and from any finished state, stop and deliver
+        // while live. Nothing to end while transcribing, because
         // capture is already over.
         assert_eq!(Phase::Idle.main_action(), MainAction::Start);
         assert_eq!(Phase::Listening.main_action(), MainAction::Stop);
         assert_eq!(Phase::Thinking.main_action(), MainAction::Unavailable);
         for finished in [Phase::Done, Phase::Failed, Phase::Cancelled] {
-            assert_eq!(finished.main_action(), MainAction::Dismiss);
+            assert_eq!(finished.main_action(), MainAction::Start);
         }
     }
 

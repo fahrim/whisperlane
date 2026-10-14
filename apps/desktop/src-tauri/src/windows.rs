@@ -62,16 +62,18 @@ const HALF_HEIGHT: f64 = glow_reach(AURA_MAIN_DIAMETER) * 1.7;
 
 /// Empty room around the pill inside the window.
 ///
-/// The material is painted outside the pill — its glow and its shadow —
-/// and a window clips whatever reaches its own edge, so the window is
-/// sized from the glow rather than picked by eye. Panels opened out of
-/// the pill grow the window on demand instead, so the room at rest holds
-/// no panel headroom: headroom here would be pixels the pill could never
-/// climb past when the user drags it to the top of the screen. The extra
-/// room costs nothing to whatever sits underneath: the empty part of the
-/// window passes the pointer straight through.
+/// The material is painted outside the pill — its glow, its shadow, and
+/// a panel opened out of it — and a window clips whatever reaches its own
+/// edge, so the window is sized with headroom above the pill rather than
+/// picked by eye. That headroom is room the pill cannot climb past while
+/// the window stays on screen, which is exactly why the drag below is
+/// allowed to take the window above the top edge: the pill is what has to
+/// stop at the screen, not the window. The extra room costs nothing to
+/// whatever sits underneath: the empty part of the window passes the
+/// pointer straight through.
+const POPOVER_HEADROOM: f64 = 110.0;
 const BLEED_X: f64 = 52.0;
-const BLEED_TOP: f64 = HALF_HEIGHT - PILL_HEIGHT / 2.0;
+const BLEED_TOP: f64 = HALF_HEIGHT - PILL_HEIGHT / 2.0 + POPOVER_HEADROOM;
 const BLEED_BOTTOM: f64 = HALF_HEIGHT + 4.0 - PILL_HEIGHT / 2.0;
 
 /// The window is the pill plus its room. Named so this geometry and the
@@ -86,8 +88,8 @@ const _: () = {
     assert!(WINDOW_WIDTH > PILL_WIDTH, "no room at the sides");
     assert!(WINDOW_HEIGHT > PILL_HEIGHT, "no room above or below");
     assert!(
-        BLEED_BOTTOM > BLEED_TOP,
-        "the shadow reaches further down than up"
+        BLEED_TOP > HALF_HEIGHT,
+        "the top room has to fit both the glow and an upward panel"
     );
     // Slack, not a fit: cutting the window to the exact reach of the
     // glow is what draws a line across the light.
@@ -246,26 +248,42 @@ fn work_area_at(physical: (f64, f64), scale: f64) -> (f64, f64, f64, f64) {
     }
 }
 
+/// The work area of the pill's own monitor, in logical pixels.
+///
+/// Read from the platform, because nothing in the webview can know where
+/// the taskbar is: this window is a floating overlay with no relationship
+/// to the desktop layout.
+fn monitor_work_area(window: &tauri::WebviewWindow) -> (f64, f64, f64, f64) {
+    let Some((physical, _)) = window_rect(window) else {
+        return (0.0, 0.0, 0.0, 0.0);
+    };
+    let scale = window.scale_factor().unwrap_or(1.0);
+    work_area_at(physical, scale)
+}
+
 /// How much screen the pill itself has on each side of it.
 ///
 /// Measured from the pill's own edges, not the window's: the window
-/// carries empty room that runs off the bottom of the screen on purpose,
-/// and counting that as space is how a panel gets told it fits where it
-/// does not.
+/// carries empty room that runs past the screen edges by design, and
+/// counting that as space is how a panel gets told it fits where it does
+/// not.
 fn pill_space(window: &tauri::WebviewWindow, base_y: f64) -> PillSpace {
-    let Some((physical, _)) = window_rect(window) else {
-        return PillSpace {
-            above: 0.0,
-            below: 0.0,
-            left: 0.0,
-            right: 0.0,
-        };
+    let none = PillSpace {
+        above: 0.0,
+        below: 0.0,
+        left: 0.0,
+        right: 0.0,
     };
-    let scale = window.scale_factor().unwrap_or(1.0);
-    let (work_x, work_y, work_width, work_height) = work_area_at(physical, scale);
+    let (work_x, work_y, work_width, work_height) = monitor_work_area(window);
+    if work_width <= 0.0 || work_height <= 0.0 {
+        return none;
+    }
+    let Some((physical, _)) = window_rect(window) else {
+        return none;
+    };
     let pill_top = base_y + BLEED_TOP;
     let pill_bottom = pill_top + PILL_HEIGHT;
-    let pill_left = physical.0 / scale;
+    let pill_left = physical.0 / window.scale_factor().unwrap_or(1.0);
     let pill_right = pill_left + PILL_WIDTH;
     PillSpace {
         above: pill_top - work_y,
@@ -273,6 +291,145 @@ fn pill_space(window: &tauri::WebviewWindow, base_y: f64) -> PillSpace {
         left: pill_left - work_x,
         right: (work_x + work_width) - pill_right,
     }
+}
+
+/// Where a window may be placed so the pill inside it stays on screen.
+///
+/// The window is larger than the pill on every side, and the platform will
+/// not let a dragged window's top edge cross the screen's own top. Those
+/// two facts together are why a pill carrying room above it can never be
+/// dragged to the top: the frame stops first, at a distance the user
+/// cannot see. So this clamps the *pill*, and lets the window hang off the
+/// screen by exactly the room the pill carries — the glow above it then
+/// falls outside the screen, which is where light that has nowhere to land
+/// belongs.
+///
+/// Pure, because the arithmetic is the whole decision and a screen is not
+/// something a test can provide.
+pub fn clamp_pill_origin(desired: (f64, f64), work: (f64, f64, f64, f64)) -> (f64, f64) {
+    let (work_x, work_y, work_width, work_height) = work;
+    if work_width <= 0.0 || work_height <= 0.0 {
+        return desired;
+    }
+    // Where the window's corner sits when the pill's own corner is on the
+    // work area's edge, at each end.
+    let leftmost = work_x - BLEED_X;
+    let rightmost = work_x + work_width - BLEED_X - PILL_WIDTH;
+    let topmost = work_y - BLEED_TOP;
+    let bottommost = work_y + work_height - BLEED_TOP - PILL_HEIGHT;
+    (
+        desired
+            .0
+            .clamp(leftmost.min(rightmost), leftmost.max(rightmost)),
+        desired
+            .1
+            .clamp(topmost.min(bottommost), topmost.max(bottommost)),
+    )
+}
+
+/// A drag in progress: where the window was, where the cursor was when the
+/// pointer went down, and when it last moved.
+///
+/// The whole drag is kept here rather than in the webview because the
+/// webview cannot express it cleanly: its `await`ed reads of the window's
+/// own position arrive on a later turn, by which time the pointer event
+/// they belong to has been released, and a window that follows a moving
+/// cursor needs both read at the same instant.
+pub struct DragState {
+    pub window: (f64, f64),
+    pub grab: (f64, f64),
+    /// The last time the pointer moved while the button was down.
+    pub touched: std::time::Instant,
+}
+
+/// How long a drag survives without a pointer move before it is treated as
+/// over.
+///
+/// The interface ends a drag explicitly, but a drag that never ends — a
+/// pointer event lost to a window that moved out from under it — would
+/// leave the pill unable to take the pointer at all. Time makes the state
+/// heal itself instead of trusting one message to arrive.
+const DRAG_STALE: std::time::Duration = std::time::Duration::from_millis(400);
+
+/// The drag in flight, if any. See `DragState`.
+pub struct PillDrag(pub Mutex<Option<DragState>>);
+
+/// Begins a drag from wherever the pointer is now.
+#[tauri::command]
+pub fn begin_pill_drag(app: AppHandle) {
+    let Some(window) = app.get_webview_window(PILL) else {
+        return;
+    };
+    let (Some((_, (x, y, _, _))), Some(cursor)) = (window_rect(&window), cursor_on_screen())
+    else {
+        return;
+    };
+    if let Some(state) = app.try_state::<PillDrag>() {
+        *state.0.lock().expect("pill drag poisoned") = Some(DragState {
+            window: (x, y),
+            grab: cursor,
+            touched: std::time::Instant::now(),
+        });
+    }
+}
+
+/// Moves the pill to wherever the pointer has taken it.
+///
+/// The cursor is read here rather than passed in from the interface, so
+/// the position that gets clamped and the position that was measured are
+/// the same reading. Returns where the window ended up.
+#[tauri::command]
+pub fn continue_pill_drag(app: AppHandle) -> Option<(f64, f64)> {
+    let window = app.get_webview_window(PILL)?;
+    let cursor = cursor_on_screen()?;
+    let state = app.try_state::<PillDrag>()?;
+    let (origin, grab) = {
+        let mut drag = state.0.lock().expect("pill drag poisoned");
+        let drag = drag.as_mut()?;
+        drag.touched = std::time::Instant::now();
+        (drag.window, drag.grab)
+    };
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let desired = (
+        origin.0 + (cursor.0 - grab.0) / scale,
+        origin.1 + (cursor.1 - grab.1) / scale,
+    );
+    // Carrying an open panel would mean re-deriving the whole hit box on
+    // every frame. A drag is the user taking the pill somewhere, so the
+    // panel closes instead.
+    if let Some(expansion) = app.try_state::<PanelExpansion>() {
+        *expansion.0.lock().expect("panel expansion poisoned") = None;
+    }
+    let (x, y) = clamp_pill_origin(desired, monitor_work_area(&window));
+    place_window(&window, x, y, WINDOW_WIDTH, WINDOW_HEIGHT);
+    Some((x, y))
+}
+
+/// Ends a drag. The pill stays where the last move put it.
+#[tauri::command]
+pub fn end_pill_drag(app: AppHandle) {
+    if let Some(state) = app.try_state::<PillDrag>() {
+        *state.0.lock().expect("pill drag poisoned") = None;
+    }
+}
+
+/// Whether the pill is being dragged right now.
+///
+/// While it is, the click-through poller has to leave the pointer alone.
+/// Moving the window under a stationary cursor makes the pill's own box
+/// lag the pointer for a frame or two, and a poller that read that as the
+/// cursor leaving would turn the window's pointer handling off in the
+/// middle of a drag — which is exactly how a drag stops dead.
+fn drag_in_flight(app: &AppHandle) -> bool {
+    app.try_state::<PillDrag>()
+        .is_some_and(|state| {
+            state
+                .0
+                .lock()
+                .expect("pill drag poisoned")
+                .as_ref()
+                .is_some_and(|drag| drag.touched.elapsed() < DRAG_STALE)
+        })
 }
 
 /// Which way a panel opened out of the pill, and how much room it took.
@@ -458,6 +615,12 @@ pub fn spawn_click_through(app: &AppHandle) {
             if !visible {
                 continue;
             };
+            // A drag is in flight: the window is being moved under the
+            // cursor by our own code, so the pointer is the pill's by
+            // definition and no poll should second-guess it.
+            if drag_in_flight(&worker) {
+                continue;
+            }
             let Some((cx, cy)) = cursor_on_screen() else {
                 continue;
             };
@@ -867,15 +1030,56 @@ mod tests {
         // The whole zero-jump contract is that the pill lands on the same
         // pixels whichever way a panel opens, and half of that lives in a
         // stylesheet this file cannot see. Read it and pin the one number
-        // that has to match: the room above the pill when a panel opens
-        // downward, which is this module's top bleed rounded for the
-        // pixel grid.
+        // that has to match: the room above the pill, which is this
+        // module's top bleed rounded for the pixel grid.
         let stylesheet = include_str!("../../src/pill.css");
         assert!(
             stylesheet.contains(&format!("padding-top: {}px;", BLEED_TOP.round() as i64)),
-            "the pill's downward room in pill.css no longer matches BLEED_TOP ({BLEED_TOP}), \
-             so a downward panel would move the pill"
+            "the pill's top room in pill.css no longer matches BLEED_TOP ({BLEED_TOP}), \
+             so the pill's place on screen would depend on the window's height"
         );
+    }
+
+    #[test]
+    fn the_pill_can_be_dragged_to_every_edge_of_the_screen() {
+        // The window is taller than the pill by its glow, and the platform
+        // will not let a dragged window cross the top of the screen. So
+        // the clamp is written against the pill: at the extreme the window
+        // is off-screen and the pill is exactly on the work area's edge.
+        let work = (0.0, 0.0, 1920.0, 1040.0);
+        let (x, y) = clamp_pill_origin((-9999.0, -9999.0), work);
+        assert_eq!(x + BLEED_X, work.0, "the pill's left edge reaches the left");
+        assert_eq!(y + BLEED_TOP, work.1, "the pill's top edge reaches the top");
+        assert!(y < 0.0, "the window itself has to hang off the top");
+
+        let (x, y) = clamp_pill_origin((9999.0, 9999.0), work);
+        assert_eq!(x + BLEED_X + PILL_WIDTH, work.0 + work.2);
+        assert_eq!(
+            y + BLEED_TOP + PILL_HEIGHT,
+            work.1 + work.3,
+            "the pill's bottom edge reaches the bottom"
+        );
+    }
+
+    #[test]
+    fn a_drag_inside_the_screen_is_left_exactly_where_it_was_asked_for() {
+        // The clamp must not nudge a pill the user placed somewhere it
+        // fits: a position that is legal is legal.
+        let work = (0.0, 0.0, 1920.0, 1040.0);
+        let wanted = (700.0, 400.0);
+        assert_eq!(clamp_pill_origin(wanted, work), wanted);
+        // A second monitor to the left owns negative coordinates, and a
+        // pill parked there is not off-screen — it is on that screen.
+        let left_hand_screen = (-1920.0, 0.0, 1920.0, 1040.0);
+        let wanted = (-1200.0, 300.0);
+        assert_eq!(clamp_pill_origin(wanted, left_hand_screen), wanted);
+    }
+
+    #[test]
+    fn a_screen_with_no_room_leaves_the_position_alone() {
+        // The platform refusing to report a work area must not collapse
+        // the pill to the origin: no measurement means no clamp.
+        assert_eq!(clamp_pill_origin((700.0, 400.0), (0.0, 0.0, 0.0, 0.0)), (700.0, 400.0));
     }
 
     #[test]

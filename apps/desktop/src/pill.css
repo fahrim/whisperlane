@@ -21,32 +21,23 @@ body {
 .pill {
   box-sizing: border-box;
   height: 100vh;
-  /* The room the window carries for the glow, the shadow, and a panel
-     opened out of the pill. Anchored to the window's bottom edge with
-     the exact bottom bleed, so the pill rests at its margin whether or
-     not a panel is open. */
+  /* The pill hangs from the window's TOP edge, always, with the top
+     bleed and nothing else. Bottom-anchoring used to look equivalent and
+     was not: the pill's own place then depended on the viewport's height,
+     and the webview reflows a resize a frame or two after the window
+     moves. For those frames the pill was positioned against the old
+     height and visibly jumped, then snapped back. Hanging from the top
+     means the offset is a constant, so no later reflow can move it. */
   padding: 0 52px 101px;
+  padding-top: 207px;
   position: relative;
   display: flex;
-  justify-content: center;
-  align-items: flex-end;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
   font-family: inherit;
   color: #f2f2f7;
   user-select: none;
-}
-
-/* A panel that opens downward pins the pill to the window's top edge
-   instead, so the window can grow below it without carrying the pill
-   down with it. The top bleed is the same room the upward case needs,
-   so the pill lands on the same screen pixels either way. */
-/* The room above the pill when a panel opens downward. This is the same
-   number as BLEED_TOP in windows.rs, rounded for the pixel grid: the two
-   have to agree or the pill lands on different pixels in the two
-   directions, and a stylesheet cannot be checked against a Rust
-   constant by eye. windows.rs holds that check. */
-.pill[data-panel="down"] {
-  padding-top: 97px;
-  align-items: flex-start;
 }
 
 /* Dynamic wrapper that binds the neon glow spheres and the panel to the

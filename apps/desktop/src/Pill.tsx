@@ -32,6 +32,15 @@ type Panel = "menu" | "take" | null;
 /** How long the copy confirmation stays up. */
 const COPIED_MS = 1500;
 
+/**
+ * How far the pointer has to travel before a press on the pill counts as
+ * taking it somewhere rather than as a click on it.
+ *
+ * Without a threshold every click is a one-pixel drag, and the pill's own
+ * drag region sits behind the controls the user is trying to press.
+ */
+const DRAG_SLOP = 4;
+
 /** What the main control offers in each of the core's meanings. */
 const CONTROL_LABEL: Record<MainAction, string> = {
   start: "Start recording",
@@ -208,6 +217,89 @@ export function Pill() {
   const isProcessing = phase === "thinking";
   const panelRef = useRef<HTMLDivElement | null>(null);
   const copiedTimer = useRef<number | null>(null);
+  const dragRef = useRef<{
+    /** Where the pointer was when the drag began, in window coordinates. */
+    pointer: { x: number; y: number };
+    /** Whether the pointer has travelled far enough to be a drag. */
+    taken: boolean;
+  } | null>(null);
+  const dragBusy = useRef(false);
+
+  /**
+   * Takes the pointer's movement and lets the core move the window.
+   *
+   * The drag is ours rather than the platform's: `data-tauri-drag-region`
+   * hands the gesture to the system, and the system measures the window
+   * rather than the pill. The window is larger than the pill by its own
+   * glow, so the system stops the pill short of the screen edge by an
+   * amount set in padding — a wall with no visible cause.
+   *
+   * Nothing here reads the window's own position, and every step is
+   * synchronous: reading it needs an `await`, and by the time that
+   * resolves the pointer event it belongs to is spent. The core reads the
+   * window and the cursor together instead, and this only says when.
+   */
+  function beginDrag(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    // Recorded before anything can fail: a drag that cannot capture the
+    // pointer is still a drag, and the move handler is what actually
+    // moves the pill.
+    dragRef.current = {
+      pointer: { x: event.clientX, y: event.clientY },
+      taken: false,
+    };
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Capture keeps the moves coming once the window starts sliding out
+      // from under the pointer. Without it the drag still works, just less
+      // forgivingly, so a refusal is not worth abandoning the gesture for.
+    }
+    void invoke("begin_pill_drag").catch(() => {});
+  }
+
+  function continueDrag(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    if (!drag) return;
+    if (!drag.taken) {
+      // Below the slop this is still a click on the pill, not a grip on
+      // it: the drag region sits behind the controls the user aims at.
+      const movedX = Math.abs(event.clientX - drag.pointer.x);
+      const movedY = Math.abs(event.clientY - drag.pointer.y);
+      if (movedX < DRAG_SLOP && movedY < DRAG_SLOP) return;
+      drag.taken = true;
+      // An open panel belongs to where the pill was, so taking the pill
+      // somewhere puts it away. The core closes it too, for the frames
+      // this side has not rendered yet.
+      setPanel(null);
+    }
+    // Coalesced by the round trip rather than by a frame callback: a
+    // window that never takes focus does not get animation frames, so a
+    // `requestAnimationFrame` throttle here would simply never fire and
+    // the drag would never move anything. One move in flight is also the
+    // most the window manager can use, and it keeps the last request the
+    // newest one instead of replaying stale positions after the hand has
+    // stopped.
+    if (dragBusy.current) return;
+    dragBusy.current = true;
+    void invoke("continue_pill_drag")
+      .catch(() => {})
+      .finally(() => {
+        dragBusy.current = false;
+      });
+  }
+
+  function endDrag(event: React.PointerEvent<HTMLDivElement>) {
+    dragRef.current = null;
+    try {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    } catch {
+      // Releasing a capture that is already gone is not a failure.
+    }
+    void invoke("end_pill_drag").catch(() => {});
+  }
 
   // The copy confirmation is on a timer; leaving it running past the end
   // of the surface would set state on a card that is no longer there.
@@ -405,8 +497,17 @@ export function Pill() {
             <OrbIcon phase={phase} />
           </button>
 
-          {/* 2. CENTER — Waveform / State-Aware White Equalizer + Status Text */}
-          <div className="pill-center" data-tauri-drag-region>
+          {/* 2. CENTER — Waveform / State-Aware White Equalizer + Status Text.
+              The center doubles as the grip: pressing it and moving takes
+              the pill somewhere, while a press that never moves is left
+              alone so it stays a click. */}
+          <div
+            className="pill-center"
+            onPointerDown={beginDrag}
+            onPointerMove={continueDrag}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+          >
             {isRecording ? (
               <LiquidWaveform
                 state="recording"
@@ -415,19 +516,14 @@ export function Pill() {
                 height={44}
               />
             ) : (
-              <div className="pill-status-row" data-tauri-drag-region>
+              <div className="pill-status-row">
                 <LiquidWaveform
                   state={waveState}
                   audioLevel={0}
                   width={90}
                   height={22}
                 />
-                <p
-                  className="pill-state"
-                  role="status"
-                  aria-live="polite"
-                  data-tauri-drag-region
-                >
+                <p className="pill-state" role="status" aria-live="polite">
                   {signal || status?.label || ""}
                 </p>
               </div>

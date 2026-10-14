@@ -25,7 +25,7 @@ use settings::{
     set_microphone, set_model, SettingsState,
 };
 use stt::{get_stt_status, sweep_idle, SttState};
-use windows::{quit_app, set_pill_panel, toggle_settings};
+use windows::{begin_pill_drag, continue_pill_drag, end_pill_drag, quit_app, set_pill_panel, toggle_settings};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -63,6 +63,9 @@ pub fn run() {
             take_control,
             toggle_settings,
             set_pill_panel,
+            begin_pill_drag,
+            continue_pill_drag,
+            end_pill_drag,
             quit_app,
             complete_onboarding
         ])
@@ -92,6 +95,7 @@ pub fn run() {
             windows::build_pill(app.handle())?;
             app.manage(windows::CursorPassthrough(Default::default()));
             app.manage(windows::PanelExpansion(Default::default()));
+            app.manage(windows::PillDrag(Default::default()));
             windows::spawn_click_through(app.handle());
             
             // The take worker exists before the hook, so no chord edge

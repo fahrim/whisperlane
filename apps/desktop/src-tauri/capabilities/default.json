@@ -5,7 +5,6 @@
   "windows": ["main", "pill"],
   "permissions": [
     "core:default",
-    "core:window:allow-start-dragging",
     "opener:default"
   ]
 }

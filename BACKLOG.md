@@ -116,6 +116,13 @@ Closed during M2:
   doing with words. It is named for what it holds rather than for live
   transcription, which v1 does not do — streaming is still the open
   question in the decisions document.
+- Dragging the pill needs its own capability. Tauri v2 keeps
+  `window.start_dragging` behind `core:window:allow-start-dragging`,
+  which `core:default` does not include, so the pill's drag region was
+  rejected and the pill could not be moved at all. The capability file
+  now grants it. A `dev` that fails with the script exiting non-zero is
+  worth one look at the port first: Vite holds 1420 with `strictPort`,
+  so a leftover instance fails every later run the same way.
 - Bundle identifier moved off `com.whisperlane.app`, which Tauri warns
   collides with the macOS bundle extension. Resolved ahead of item 6.
   The app data folder moved with it: `%APPDATA%\com.whisperlane.desktop`

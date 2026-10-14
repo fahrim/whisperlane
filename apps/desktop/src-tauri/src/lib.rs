@@ -72,6 +72,8 @@ pub fn run() {
             hotkey::apply_binding(saved.hotkey);
             tray::build(app.handle())?;
             windows::build_pill(app.handle())?;
+            app.manage(windows::CursorPassthrough(Default::default()));
+            windows::spawn_click_through(app.handle());
             // The take worker exists before the hook, so no chord edge
             // can arrive before there is a thread that owns the live
             // capture stream.

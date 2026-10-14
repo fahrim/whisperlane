@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::hotkey::{resolve_action, ChordAction, HookEvent};
 use crate::pipeline::{current_phase, get_pipeline_state_inner, set_phase, Phase, PipelineStatus};
@@ -20,6 +20,37 @@ use crate::settings::Microphone;
 pub const PREFERRED_SAMPLE_RATE: u32 = 16_000;
 pub const MIN_TAKE_MS: u64 = 250;
 pub const SILENCE_PEAK: f32 = 0.01;
+
+/// How often the live loudness reading is published, in milliseconds.
+///
+/// Hard-throttled on purpose: this drives a visual hint, and one value
+/// per audio buffer would flood the event channel for no visible gain.
+pub const LEVEL_TICK_MS: u64 = 40;
+
+/// A reading per audio buffer would be hundreds of events a second for a
+/// visual hint nobody can read that fast. Checked where the constant
+/// lives rather than only when the tests run.
+const _: () = assert!(LEVEL_TICK_MS >= 30, "the meter would flood the channel");
+
+/// Loudness that counts as a full meter for ordinary speech.
+///
+/// Chosen so a normal voice sits around the middle of the range and only
+/// a raised voice reaches the top, which is what makes the meter
+/// readable rather than pinned at one end.
+pub const LEVEL_LOUD: f32 = 0.25;
+
+/// Loudness of a slice of samples, normalised to `0.0..=1.0`.
+///
+/// Root mean square rather than peak, because peak jumps on a single
+/// click and collapses just as fast — which reads as noise rather than
+/// as a voice. Silent input reads as silence rather than as an error.
+pub fn rms_level(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let mean = samples.iter().map(|s| s * s).sum::<f32>() / samples.len() as f32;
+    (mean.sqrt() / LEVEL_LOUD).clamp(0.0, 1.0)
+}
 
 #[derive(Debug)]
 pub struct TakeStats {
@@ -367,6 +398,35 @@ pub fn take_control(app: AppHandle, command: TakeCommand) -> PipelineStatus {
     get_pipeline_state_inner(&app)
 }
 
+/// Publishes a live loudness reading while the take is capturing.
+///
+/// Derived from the samples already being captured, so it costs one
+/// pass over the new audio and nothing else. The reading stops by itself
+/// when the take ends, and ends at zero rather than freezing mid-wave,
+/// so the meter never shows a level for audio no longer being heard.
+pub fn spawn_level_ticker(app: &AppHandle, samples: Arc<Mutex<Vec<f32>>>) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let mut read_up_to = 0usize;
+        while current_phase(&app) == Some(Phase::Listening) {
+            std::thread::sleep(std::time::Duration::from_millis(LEVEL_TICK_MS));
+            // try_lock, not lock: the capture thread appends to the same
+            // buffer, and a visual hint is never worth waiting for.
+            let Ok(guard) = samples.try_lock() else {
+                continue;
+            };
+            if guard.len() <= read_up_to {
+                continue;
+            }
+            let level = rms_level(&guard[read_up_to..]);
+            read_up_to = guard.len();
+            drop(guard);
+            let _ = app.emit("audio-level", level);
+        }
+        let _ = app.emit("audio-level", 0.0f32);
+    });
+}
+
 /// Hotkey pressed: open the microphone and start the take.
 /// A missing or unusable microphone fails loudly, never silently deaf.
 pub fn begin_take(app: &AppHandle) {
@@ -402,7 +462,11 @@ pub fn begin_take(app: &AppHandle) {
     })();
     match take {
         Ok(active) => {
+            let samples = Arc::clone(&active.samples);
             ACTIVE_TAKE.with(|slot| *slot.borrow_mut() = Some(active));
+            // The meter reads the very buffer the take will transcribe,
+            // so it cannot drift from what is actually being heard.
+            spawn_level_ticker(app, samples);
             crate::hotkey::debug_log("begin_take: stream live\n".to_string());
             set_phase(app, Phase::Listening, None);
         }
@@ -516,6 +580,45 @@ mod tests {
     use super::*;
 
     #[test]
+    fn silence_reads_as_silence_and_never_above_full() {
+        assert_eq!(rms_level(&[]), 0.0, "no audio is no level");
+        assert_eq!(rms_level(&[0.0; 640]), 0.0);
+        // A level the meter cannot show is reported as full rather than
+        // clipped into nonsense downstream.
+        let loud: Vec<f32> = vec![1.0; 640];
+        assert_eq!(rms_level(&loud), 1.0);
+        assert!(rms_level(&[LEVEL_LOUD; 640]) <= 1.0);
+    }
+
+    #[test]
+    fn ordinary_speech_sits_midway_rather_than_pinned() {
+        // Half of the loud level reads as roughly half the meter, so a
+        // normal voice moves the needle across the middle instead of
+        // slamming to either end.
+        let level = rms_level(&[LEVEL_LOUD / 2.0; 640]);
+        assert!(
+            (0.4..0.6).contains(&level),
+            "half-loud speech read as {level}"
+        );
+    }
+
+    #[test]
+    fn one_loud_click_does_not_read_as_a_loud_voice() {
+        // Why this is root mean square and not peak: a single click in a
+        // quiet stretch would peg the meter, which reads as noise. Peak
+        // reports a full meter there; spreading the same energy across
+        // the window keeps it well under ordinary speech.
+        let mut samples = vec![0.0f32; 639];
+        samples.push(1.0);
+        let with_click = rms_level(&samples);
+        let speech = rms_level(&[LEVEL_LOUD / 2.0; 640]);
+        assert!(
+            with_click < speech / 2.0,
+            "a lone click read as {with_click}, against speech at {speech}"
+        );
+    }
+
+    #[test]
     fn silence_fails_with_plain_message() {
         let samples = vec![0.0f32; 16_000];
         let err = validate_take(samples.len(), 16_000, 0.0).unwrap_err();
@@ -606,10 +709,7 @@ mod tests {
         // resolves through the same table, so each one maps to the edge
         // that would have meant the same thing.
         assert_eq!(HookEvent::from(TakeCommand::Control), HookEvent::Pressed);
-        assert_eq!(
-            HookEvent::from(TakeCommand::Discard),
-            HookEvent::Cancelled
-        );
+        assert_eq!(HookEvent::from(TakeCommand::Discard), HookEvent::Cancelled);
     }
 
     #[test]

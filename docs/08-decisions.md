@@ -359,6 +359,26 @@ later decision.
 Recommendation: approve direction now, lock values at M2 kickoff; record
 the locked set in an ADR.
 
+Direction: maintainer supplied the token values and the technique as a
+set rather than as loose numbers, and directed the material explicitly:
+standard blur glassmorphism is out. The glass refracts before it blurs,
+its edge is a specular rim rather than a border, its volume comes from
+layered shadows, and its accent light is drawn inside the document
+because a CSS backdrop filter can only bend DOM content. The window
+itself becomes transparent and frameless and carries empty room around
+the pill, so the glow is not clipped at the window border.
+
+Decision: the token set is locked as one unit, held in the interface's
+token file rather than as prose, and the pill is built as an accent
+layer under a glass layer. Glow stays dimmer at idle than while
+recording: the states the user waits on are the ones that earn it.
+Opaque fallback and reduced-motion handling are part of the set rather
+than afterthoughts. Native desktop blur behind the pill is not included
+and belongs to its own decision, because the platform's acrylic differs
+across Windows versions.
+
+Status: approved — see `adr/009-liquid-glass-tokens.md`.
+
 ## 10. What the pill's single control does
 
 Context: the experience document gives the pill exactly three elements —
@@ -437,7 +457,8 @@ Status: approved — see `adr/008-pill-control.md`, which amends
 ADR index: `adr/001-default-hotkey.md` (item 7), `adr/002-engine-hosting.md` (item 1),
 `adr/003-device-event-filter.md` (item 7), `adr/004-cancel-gesture.md` (item 8),
 `adr/005-text-insertion-windows.md` (item 3), `adr/006-model-default-and-download.md` (item 4),
-`adr/007-chord-from-terminal-state.md` (item 9), `adr/008-pill-control.md` (item 10).
+`adr/007-chord-from-terminal-state.md` (item 9), `adr/008-pill-control.md` (item 10),
+`adr/009-liquid-glass-tokens.md` (item 8).
 
 ## Related
 

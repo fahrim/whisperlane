@@ -73,7 +73,7 @@ Closed decisions this milestone:
 | 1 | First run is one screen | done |
 | 2 | The pill carries every state | done |
 | 3 | Advanced concerns folded away | done |
-| 4 | Premium pass: tokens, motion, spacing, wording | blocked on decision item 8 |
+| 4 | Premium pass: tokens, motion, spacing, wording | done |
 | 5 | Windows packaging: install, offline, clean uninstall | blocked on decision item 6 |
 | 6 | Delivery routed through the target abstraction | next |
 
@@ -92,6 +92,11 @@ Closed during M2:
 - ADR-008 pill control and chord timing (item 10): stop delivers, cancel
   discards, on mouse and keyboard alike; amends ADR-004. Maintainer
   rejected hold-to-talk on the pill as uncomfortable on a desk.
+- ADR-009 liquid glass token set (item 8): refraction before blur, a
+  specular rim instead of a border, layered shadows for volume, and the
+  accent drawn inside the window because a backdrop filter can only bend
+  DOM content. The window is transparent and carries room for the glow,
+  and that room passes the pointer through so it swallows no clicks.
 - Bundle identifier moved off `com.whisperlane.app`, which Tauri warns
   collides with the macOS bundle extension. Resolved ahead of item 6.
   The app data folder moved with it: `%APPDATA%\com.whisperlane.desktop`

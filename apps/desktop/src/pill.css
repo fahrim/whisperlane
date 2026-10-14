@@ -1,83 +1,149 @@
-/* The pill's shape and its motion. Structure and state only: the exact
-   colours, glow and easing are the token set, which is still an open
-   decision (docs/08-decisions.md item 8). Nothing here invents one. */
+/* The pill's material (docs/08-decisions.md item 8, adr/009).
+ *
+ * Three layers, in order: the window's own empty room, the aura that
+ * carries the accent, and the glass that sits on top and refracts it.
+ * The aura is inside the DOM on purpose — a CSS backdrop-filter can
+ * only bend what is inside the document, never the desktop behind the
+ * window, so the light it bends has to be ours.
+ */
+
+@import "./tokens.css";
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+}
 
 .pill {
   box-sizing: border-box;
   height: 100vh;
-  padding: 0 14px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border-radius: 38px;
-  background: #1c1c1e;
-  color: #f2f2f7;
+  /* The room the window carries for the glow and the shadow. These four
+     numbers and the ones in windows.rs are the same four numbers, sized
+     from the aura's reach with slack: a window cut exactly to where the
+     light stops still draws a line across it. */
+  padding: 97px 52px 101px;
+  position: relative;
   font-family: inherit;
-  /* Never selectable: the pill is a status surface, not a text field. */
+  color: #f2f2f7;
   user-select: none;
-  overflow: hidden;
 }
 
-.pill-bar {
+/* Layer 0 — the accent, as light rather than as paint. Idle rests
+   dim; recording and processing are where the glow earns its keep,
+   because those are the states the user is waiting on. */
+.pill-aura {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.35;
+  filter: blur(28px);
+  transition: opacity var(--motion-smooth-fade);
+}
+
+.pill-aura::before,
+.pill-aura::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+}
+
+/* Sized against the window's room, not against the pill: a circle much
+   wider than the room above it would have its blur clipped flat at the
+   window border, which reads as a cut-off light rather than as glass. */
+.pill-aura::before {
+  width: 130px;
+  height: 130px;
+  left: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: radial-gradient(
+    circle,
+    rgb(var(--aura-primary) / 90%) 0%,
+    transparent 70%
+  );
+}
+
+.pill-aura::after {
+  width: 110px;
+  height: 110px;
+  right: 28px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: radial-gradient(
+    circle,
+    rgb(var(--aura-secondary) / 75%) 0%,
+    transparent 70%
+  );
+}
+
+.pill[data-phase="idle"] { --aura-primary: var(--accent-idle); --aura-secondary: var(--accent-processing); }
+.pill[data-phase="listening"] { --aura-primary: var(--accent-recording); --aura-secondary: var(--accent-idle); --aura-strength: 1; }
+.pill[data-phase="thinking"] { --aura-primary: var(--accent-processing); --aura-secondary: var(--accent-idle); --aura-strength: 0.7; }
+.pill[data-phase="done"] { --aura-primary: var(--accent-success); --aura-secondary: var(--accent-processing); --aura-strength: 0.6; }
+.pill[data-phase="failed"],
+.pill[data-phase="cancelled"] { --aura-primary: var(--accent-idle); --aura-secondary: var(--accent-idle); --aura-strength: 0.25; }
+
+.pill-aura { opacity: var(--aura-strength, 0.35); }
+
+/* Layer 1 — the glass. Everything the user actually touches is here,
+   and everything here is above the light it is made of. */
+.liquid-pill {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  height: var(--pill-height);
+  padding: 0 var(--pill-padding-x);
   display: flex;
   align-items: center;
-  gap: 3px;
-  height: 22px;
+  gap: var(--pill-gap);
+  border-radius: var(--pill-radius);
+  background: var(--glass-surface-bg);
+  backdrop-filter: var(--glass-backdrop);
+  -webkit-backdrop-filter: var(--glass-backdrop);
+  box-shadow: var(--glass-elevation-shadow);
+  transition: box-shadow var(--motion-smooth-fade);
 }
 
-.pill-bar span {
-  width: 3px;
-  height: 6px;
-  border-radius: 2px;
-  background: currentColor;
-  opacity: 0.35;
+/* The specular rim. A flat border is the tell of cheap glass: light
+   lands on the top left and is thrown back off the bottom right, so
+   this is a gradient cut to the edge by a mask rather than a rule. */
+.liquid-pill::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  padding: 1.25px;
+  background: var(--glass-rim-idle);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  transition: background var(--motion-smooth-fade);
 }
 
-/* A calm waiting presence while transcribing: nothing moves, because
-   nothing is being heard. */
-.pill[data-phase="thinking"] .pill-bar span {
-  animation: pill-breathe 1.6s ease-in-out infinite;
+.pill[data-phase="listening"] .liquid-pill::before {
+  background: var(--glass-rim-recording);
 }
 
-.pill[data-phase="thinking"] .pill-bar span:nth-child(2) { animation-delay: 0.12s; }
-.pill[data-phase="thinking"] .pill-bar span:nth-child(3) { animation-delay: 0.24s; }
-.pill[data-phase="thinking"] .pill-bar span:nth-child(4) { animation-delay: 0.36s; }
-.pill[data-phase="thinking"] .pill-bar span:nth-child(5) { animation-delay: 0.48s; }
-
-/* Speech being heard: the bars move while the microphone is open. */
-.pill[data-phase="listening"] .pill-bar span {
-  background: #ff453a;
-  opacity: 1;
-  animation: pill-listen 900ms ease-in-out infinite alternate;
+.pill[data-phase="thinking"] .liquid-pill::before {
+  background: var(--glass-rim-processing);
 }
 
-.pill[data-phase="listening"] .pill-bar span:nth-child(1) { animation-delay: 0s; }
-.pill[data-phase="listening"] .pill-bar span:nth-child(2) { animation-delay: 110ms; }
-.pill[data-phase="listening"] .pill-bar span:nth-child(3) { animation-delay: 220ms; }
-.pill[data-phase="listening"] .pill-bar span:nth-child(4) { animation-delay: 330ms; }
-.pill[data-phase="listening"] .pill-bar span:nth-child(5) { animation-delay: 440ms; }
-
-/* A brief confirm on done, then a settled bar. */
-.pill[data-phase="done"] .pill-bar span {
-  background: #32d74b;
-  opacity: 1;
+/* The waveform's own box. Fixed, so nothing in the pill moves when the
+   state changes; processing only fades the canvas out. */
+.liquid-pill > canvas {
+  flex: none;
 }
 
-.pill[data-phase="cancelled"] .pill-bar,
-.pill[data-phase="failed"] .pill-bar {
-  opacity: 0.5;
-}
-
-@keyframes pill-listen {
-  from { height: 5px; }
-  to { height: 20px; }
-}
-
-@keyframes pill-breathe {
-  0%, 100% { opacity: 0.2; }
-  50% { opacity: 0.6; }
-}
-
+/* The state line doubles as the drag handle, so the pill can be moved
+   out of the way without a setting. */
 .pill-state {
   flex: 1;
   margin: 0;
@@ -91,30 +157,90 @@
 .pill-control,
 .pill-cancel,
 .pill-options {
+  position: relative;
+  z-index: 3;
   flex: none;
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
   padding: 0;
   border: none;
   border-radius: 50%;
-  background: #2c2c2e;
+  background: transparent;
   color: inherit;
   cursor: pointer;
 }
 
-.pill-control { background: #f2f2f7; color: #1c1c1e; }
-.pill-cancel { background: #45332f; color: #ff9f94; }
+/* The main control is its own sphere of glass, not a flat disc: the
+   same inner light catch, a smaller version of the pill's own. */
+.pill-control {
+  width: 38px;
+  height: 38px;
+  background: rgb(255 255 255 / 10%);
+  box-shadow:
+    inset 0 1px 1px rgb(255 255 255 / 50%),
+    inset 0 -3px 8px 0 rgb(0 0 0 / 30%);
+  color: #f2f2f7;
+  transition: background var(--motion-smooth-fade), color var(--motion-smooth-fade);
+}
 
-/* The cancel is contextual: it is absent until a take is live, and on
-   hover it settles into the row so the pill keeps its three elements. */
+.pill[data-phase="listening"] .pill-control {
+  background: radial-gradient(circle at 35% 30%, rgb(var(--accent-recording) / 85%), rgb(var(--accent-recording) / 45%));
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 1px rgb(255 255 255 / 60%),
+    0 0 18px rgb(var(--accent-recording) / 55%);
+}
+
+.pill[data-phase="thinking"] .pill-control {
+  background: radial-gradient(circle at 35% 30%, rgb(var(--accent-processing) / 80%), rgb(139 92 246 / 45%));
+  box-shadow:
+    inset 0 1px 1px rgb(255 255 255 / 60%),
+    0 0 16px rgb(var(--accent-processing) / 45%);
+  animation: pill-turn 2.4s linear infinite;
+}
+
+.pill[data-phase="done"] .pill-control,
+.pill[data-phase="failed"] .pill-control,
+.pill[data-phase="cancelled"] .pill-control {
+  background: radial-gradient(circle at 35% 30%, rgb(255 255 255 / 22%), rgb(255 255 255 / 8%));
+}
+
+.pill-control:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+@keyframes pill-turn {
+  to { transform: rotate(360deg); }
+}
+
+/* The cancel is contextual. It rests half-visible and only comes
+   forward when the pointer is on the pill, so the pill keeps its three
+   elements instead of spending a permanent slot on a discard. */
 .pill-cancel {
-  animation: pill-appear 120ms ease-out;
+  width: 22px;
+  height: 22px;
+  opacity: 0.45;
+  background: rgb(255 255 255 / 8%);
+  box-shadow: inset 0 1px 1px rgb(255 255 255 / 30%);
+  color: rgb(255 255 255 / 80%);
+  animation: pill-appear var(--motion-smooth-fade);
+  transition: opacity var(--motion-smooth-fade);
+}
+
+.liquid-pill:hover .pill-cancel {
+  opacity: 1;
 }
 
 .pill-options {
-  background: transparent;
+  width: 38px;
+  height: 38px;
+  opacity: 0.6;
+  transition: opacity var(--motion-smooth-fade);
+}
+
+.liquid-pill:hover .pill-options {
+  opacity: 1;
 }
 
 .pill-glyph {
@@ -128,13 +254,7 @@
   height: 15px;
   border-radius: 5px;
   background: currentColor;
-  /* The open bottom reads as a microphone capsule at this size. */
-  box-shadow: inset 0 -3px 0 0 #f2f2f7;
-}
-
-.pill-dots {
-  width: 18px;
-  height: 4px;
+  box-shadow: inset 0 -3px 0 0 rgb(255 255 255 / 12%);
 }
 
 .pill-stop {
@@ -145,8 +265,8 @@
 }
 
 .pill-close {
-  width: 13px;
-  height: 13px;
+  width: 11px;
+  height: 11px;
   background: currentColor;
   /* A cross cut from one box: no icon font to load, so it cannot fail
      to render on a bare machine. */
@@ -157,16 +277,60 @@
   );
 }
 
+.pill-dots {
+  width: 18px;
+  height: 4px;
+  background-image: radial-gradient(
+    circle at center,
+    currentColor 1.5px,
+    transparent 1.6px
+  );
+  background-size: 7px 4px;
+  background-repeat: repeat-x;
+}
+
 @keyframes pill-appear {
   from { opacity: 0; transform: scale(0.9); }
   to { opacity: 1; transform: scale(1); }
 }
 
-/* Reduced motion is respected everywhere: the states stay legible
-   through colour and the text, never through movement alone. */
+/* The opaque fallback. Two ways to lose the material: a system that
+   turns transparency effects off, and a renderer without
+   backdrop-filter at all. In both cases the pill stays readable, which
+   is the only requirement the fallback has to meet. */
+@media (prefers-reduced-transparency: reduce) {
+  .liquid-pill {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgb(28 28 30 / 96%);
+  }
+
+  .pill-aura {
+    display: none;
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .liquid-pill {
+    background: rgb(28 28 30 / 96%);
+  }
+
+  .pill-aura {
+    display: none;
+  }
+}
+
+/* Reduced motion drops the refraction and the springs. The states stay
+   legible through colour and the written line, never through movement
+   alone. */
 @media (prefers-reduced-motion: reduce) {
-  .pill-bar span,
-  .pill-cancel {
+  .pill-cancel,
+  .pill-control {
     animation: none !important;
+  }
+
+  .liquid-pill {
+    backdrop-filter: blur(24px) saturate(190%) contrast(105%) brightness(110%);
+    -webkit-backdrop-filter: blur(24px) saturate(190%) contrast(105%) brightness(110%);
   }
 }

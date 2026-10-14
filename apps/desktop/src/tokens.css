@@ -1,0 +1,73 @@
+/* The locked v1 token set (docs/08-decisions.md item 8, adr/009).
+ *
+ * One source for both surfaces: the pill's material and the settings
+ * window's spacing read the same numbers, so the product cannot drift
+ * into two visual languages. Exact values were approved as a set —
+ * changing one here is changing the decision, not tuning a preference.
+ */
+
+:root {
+  /* Geometry and spacing */
+  --pill-radius: 9999px;
+  --pill-height: 56px;
+  --pill-padding-x: 10px;
+  --pill-gap: 14px;
+
+  /* The single accent. One hue, chosen by state — never decoration. */
+  --accent-idle: 168 85 247;
+  --accent-recording: 244 63 94;
+  --accent-processing: 56 189 248;
+  --accent-success: 52 215 75;
+
+  /* Liquid glass surface: a faint angled wash, never a flat fill. */
+  --glass-surface-bg: linear-gradient(
+    135deg,
+    rgb(255 255 255 / 15%) 0%,
+    rgb(255 255 255 / 5%) 50%,
+    rgb(15 15 25 / 30%) 100%
+  );
+
+  /* Refraction first, then the blur. Saturating and lifting the light
+     behind the glass is what makes it read as material rather than as
+     a grey pane. */
+  --glass-backdrop: url(#liquid-refraction) blur(24px) saturate(190%)
+    contrast(105%) brightness(110%);
+
+  /* Volume: the pill has to look thick, which means a light catch on
+     the top inner edge, a soft body highlight, a dark bottom lip and a
+     shadow that lifts it off the page. */
+  --glass-elevation-shadow:
+    0 18px 36px -8px rgb(0 0 0 / 65%),
+    inset 0 1.5px 1px 0 rgb(255 255 255 / 60%),
+    inset 4px 4px 16px 0 rgb(255 255 255 / 12%),
+    inset 0 -3px 8px 0 rgb(0 0 0 / 40%);
+
+  /* The specular rim. Light lands on the top left and is thrown back
+     off the bottom right, which is why this is a gradient and not a
+     border: a flat border is the tell of cheap glass. */
+  --glass-rim-idle: linear-gradient(
+    135deg,
+    rgb(255 255 255 / 75%) 0%,
+    rgb(168 85 247 / 35%) 35%,
+    rgb(255 255 255 / 6%) 65%,
+    rgb(56 189 248 / 45%) 100%
+  );
+  --glass-rim-recording: linear-gradient(
+    135deg,
+    rgb(255 255 255 / 85%) 0%,
+    rgb(244 63 94 / 55%) 35%,
+    rgb(168 85 247 / 20%) 65%,
+    rgb(56 189 248 / 50%) 100%
+  );
+  --glass-rim-processing: linear-gradient(
+    135deg,
+    rgb(255 255 255 / 80%) 0%,
+    rgb(139 92 246 / 55%) 40%,
+    rgb(56 189 248 / 45%) 100%
+  );
+
+  /* Motion. The spring settles rather than stopping; the fade is for
+     state changes that must not draw the eye. */
+  --motion-spring-expand: 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-smooth-fade: 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}

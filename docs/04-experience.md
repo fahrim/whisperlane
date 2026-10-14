@@ -100,14 +100,30 @@ set is small — closer to a platform utility than to a feature showcase.
 
 ## Visual direction
 
-Liquid glass: translucent dark surfaces, restrained blur, a subtle edge
-light, and a soft shadow. The single accent carries state — during
-recording, processing, and success it radiates a soft neon glow that
-diffuses across the glass, and it rests everywhere else. Glow is state
-feedback, never decoration: idle chrome stays quiet, and no control
-glows just for looking premium. An opaque high-readability fallback
-covers transparency-off, and reduced motion is respected throughout.
-Exact token values remain a proposal until approved.
+Liquid glass: a translucent surface, a restrained blur, a specular edge
+rather than a border, and layered shadow for volume. The glass bends
+what is behind it rather than only blurring it, and it saturates and
+lifts that light on the way through, which is what separates a
+material from a grey pane.
+
+The single accent carries state: during recording, processing and
+success it radiates a soft glow that diffuses across the glass, and it
+rests everywhere else. Glow is state feedback, never decoration. The
+states the user waits on are the ones that earn it, so the resting
+accent is the quietest thing on screen.
+
+Two rules make the material possible at all. The overlay's window is
+transparent and frameless and carries empty room around the pill,
+because the glow is painted outside the pill's own edge and a window
+clips whatever reaches it. And the accent light is drawn inside the
+window rather than taken from the desktop behind it, because a
+backdrop filter can only bend what is inside the document.
+
+An opaque high-readability fallback covers transparency-off and any
+renderer without a backdrop filter, and reduced motion is respected
+throughout: every state stays legible through colour and the written
+line, never through movement alone. The exact token values are locked
+and recorded in the decision record.
 
 ## Related
 
@@ -117,5 +133,6 @@ Exact token values remain a proposal until approved.
 - Agent destination behavior (phase two): `06-agent-integration.md`
 - When polish lands: `07-roadmap.md`
 - Decisions behind these flows: `08-decisions.md` items 8 and 10,
-  `adr/004-cancel-gesture.md`, `adr/008-pill-control.md`
+  `adr/004-cancel-gesture.md`, `adr/008-pill-control.md`,
+  `adr/009-liquid-glass-tokens.md`
 - External input merged here: `reference/external-ui-ux-brief.md`, triage in `reference/ui-brief-triage.md`

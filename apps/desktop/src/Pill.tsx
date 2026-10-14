@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { deliveryNote } from "./delivery";
+import { LiquidWaveform, type WaveState } from "./LiquidWaveform";
 import type { MainAction, PipelineStatus } from "./types";
 import "./pill.css";
 
@@ -55,9 +56,64 @@ function signalFor(status: PipelineStatus | null): string {
   }
 }
 
+/**
+ * The optical refraction the glass is made of. Invisible, mounted once
+ * per document, and named by the `--glass-backdrop` token.
+ *
+ * It bends what is behind the glass rather than only blurring it: a
+ * soft noise field becomes a lens gradient, and the displacement map
+ * bends the backdrop along it. `scale` is the strength of the bend —
+ * past about ten it stops reading as glass and starts reading as a
+ * wobble.
+ */
+function LiquidRefraction() {
+  return (
+    <svg
+      aria-hidden="true"
+      style={{ position: "absolute", width: 0, height: 0, pointerEvents: "none" }}
+    >
+      <defs>
+        <filter id="liquid-refraction" x="-20%" y="-20%" width="140%" height="140%">
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency="0.015"
+            numOctaves={2}
+            result="noise"
+          />
+          <feGaussianBlur in="noise" stdDeviation={3} result="smoothNoise" />
+          <feDisplacementMap
+            in="SourceGraphic"
+            in2="smoothNoise"
+            scale={6}
+            xChannelSelector="R"
+            yChannelSelector="G"
+          />
+        </filter>
+      </defs>
+    </svg>
+  );
+}
+
+/**
+ * Which face the waveform shows. The pill's own phases, reduced to the
+ * three the meter knows about: nothing to show, a live voice, or a take
+ * being written down.
+ */
+function waveStateFor(phase: PipelineStatus["phase"]): WaveState {
+  switch (phase) {
+    case "listening":
+      return "recording";
+    case "thinking":
+      return "processing";
+    default:
+      return "idle";
+  }
+}
+
 export function Pill() {
   const [status, setStatus] = useState<PipelineStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [audioLevel, setAudioLevel] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -65,6 +121,12 @@ export function Pill() {
     // pipeline rather than guessing from a timer.
     const unlisten = listen<PipelineStatus>("pipeline-state", (event) => {
       if (alive) setStatus(event.payload);
+    });
+    // Loudness comes from the capture buffer itself, throttled hard by
+    // the core. It ends at zero when the take does, so the meter never
+    // shows a level for audio that has stopped.
+    const unlistenLevel = listen<number>("audio-level", (event) => {
+      if (alive) setAudioLevel(event.payload);
     });
     invoke<PipelineStatus>("get_pipeline_state")
       .then((state) => {
@@ -74,6 +136,7 @@ export function Pill() {
     return () => {
       alive = false;
       void unlisten.then((off) => off());
+      void unlistenLevel.then((off) => off());
     };
   }, []);
 
@@ -97,67 +160,80 @@ export function Pill() {
 
   const live = status !== null && isLive(status.phase);
   const action: MainAction = status?.main_action ?? "start";
+  const waveState = waveStateFor(status?.phase ?? "idle");
   const signal = signalFor(status);
 
   return (
     <div className="pill" data-phase={status?.phase ?? "idle"}>
-      <div className="pill-bar" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-        <span />
-        <span />
-      </div>
+      <LiquidRefraction />
+      {/* The light the glass is made of. Inside the document on
+          purpose: a backdrop-filter can only bend DOM content, never
+          the desktop behind the window. */}
+      <div className="pill-aura" aria-hidden="true" />
 
-      <p className="pill-state" role="status" aria-live="polite">
-        {signal || status?.label || ""}
-      </p>
+      <div className="liquid-pill">
+        {/* The waveform. Fixed size in every state so nothing shifts
+            as the pill moves between faces; processing only fades it. */}
+        <LiquidWaveform state={waveState} audioLevel={audioLevel} />
 
-      <button
-        type="button"
-        className="pill-control"
-        aria-label={CONTROL_LABEL[action]}
-        title={CONTROL_LABEL[action]}
-        disabled={action === "unavailable"}
-        onClick={() =>
-          action === "dismiss" ? void dismiss() : void press("control")
-        }
-        onContextMenu={(e) => {
-          // Right-click is the same discard as the hover cancel, so the
-          // gesture stays reachable when the pointer never hovers the
-          // control itself.
-          e.preventDefault();
-          void press("discard");
-        }}
-      >
-        <span className={`pill-glyph ${CONTROL_GLYPH[action]}`} />
-      </button>
+        {/* The written line doubles as the drag handle, so the pill can
+            be moved without a setting. The controls sit outside it, so
+            dragging can never swallow a click. */}
+        <p
+          className="pill-state"
+          role="status"
+          aria-live="polite"
+          data-tauri-drag-region
+        >
+          {signal || status?.label || ""}
+        </p>
 
-      {live && (
         <button
           type="button"
-          className="pill-cancel"
-          aria-label="Discard this take"
-          title="Discard this take (Esc)"
-          onClick={() => press("discard")}
+          className="pill-control"
+          aria-label={CONTROL_LABEL[action]}
+          title={CONTROL_LABEL[action]}
+          disabled={action === "unavailable"}
+          onClick={() =>
+            action === "dismiss" ? void dismiss() : void press("control")
+          }
+          onContextMenu={(e) => {
+            // Right-click is the same discard as the hover cancel, so
+            // the gesture stays reachable when the pointer never hovers
+            // the control itself.
+            e.preventDefault();
+            void press("discard");
+          }}
         >
-          <span className="pill-glyph pill-close" />
+          <span className={`pill-glyph ${CONTROL_GLYPH[action]}`} />
         </button>
-      )}
 
-      <button
-        type="button"
-        className="pill-options"
-        aria-label="Settings"
-        title="Settings"
-        onClick={() =>
-          invoke("open_settings").catch((e) => setError(String(e)))
-        }
-      >
-        <span className="pill-glyph pill-dots" />
-      </button>
+        {live && (
+          <button
+            type="button"
+            className="pill-cancel"
+            aria-label="Discard this take"
+            title="Discard this take (Esc)"
+            onClick={() => press("discard")}
+          >
+            <span className="pill-glyph pill-close" />
+          </button>
+        )}
 
-      {error && <span role="alert">{error}</span>}
+        <button
+          type="button"
+          className="pill-options"
+          aria-label="Settings"
+          title="Settings"
+          onClick={() =>
+            invoke("open_settings").catch((e) => setError(String(e)))
+          }
+        >
+          <span className="pill-glyph pill-dots" />
+        </button>
+
+        {error && <span role="alert">{error}</span>}
+      </div>
     </div>
   );
 }

@@ -45,7 +45,7 @@ body {
    directions, and a stylesheet cannot be checked against a Rust
    constant by eye. windows.rs holds that check. */
 .pill[data-panel="down"] {
-  padding-top: 207px;
+  padding-top: 97px;
   align-items: flex-start;
 }
 

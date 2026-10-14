@@ -125,12 +125,15 @@ height, and the single accent are unchanged; the horizontal padding and
 the gap between elements are re-derived, and the capsule's width bounds
 move with them.
 
-The window's room is sized for the tallest thing the pill shows
-beside itself. The menu and the last take's card open out of the pill,
-and a window cut to the glow alone cut them off at its own edge. The
-room is no longer a fixed number: the window grows toward whichever side
-a panel opens on, and the pill is re-anchored to the window's opposite
-edge so it lands on the same screen pixels either way. Room is also
+The window's room is sized for the glow alone, and nothing else. It
+held headroom for the menu for a while, and that headroom was pixels
+the pill could never climb past when dragged to the top of the screen,
+so it is gone: the room at rest covers the material and the pointer,
+and a panel grows the window toward whichever side it opens on while
+the pill is re-anchored to the window's opposite edge. The growth is one
+system call carrying the new size and position together, because two
+separate calls let the compositor paint between them and the pill
+visibly jumped and snapped back on every open and close. Room is also
 spent on the sides for the pointer and below for the shadow, unchanged.
 
 The accent light follows the capsule rather than the window. Painted in

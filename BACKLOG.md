@@ -109,9 +109,16 @@ Closed during M2:
 - Panels open toward the room, and the pill never moves. The window
   grows toward whichever side a panel opens on and the pill is
   re-anchored to the window's opposite edge, so the same pixels are
-  under the pill whichever way a panel goes. Measuring the room against
-  the monitor's work area rather than its bounds is why a docked taskbar
-  does not count as space.
+  under the pill whichever way a panel goes. The growth is a single
+  system call: separate size and position calls painted an intermediate
+  frame and the pill flickered on every open and close. Measuring the
+  room against the monitor's work area rather than its bounds is why a
+  docked taskbar does not count as space.
+- The resting window holds no panel headroom. It did for a while, and
+  those pixels were a dead zone the pill could never be dragged past at
+  the top of the screen. The pill now reaches within its own glow of the
+  top edge; the operating system keeps the window itself at or below
+  zero, and that is where the remaining room comes from.
 - The last take has a card: header, words, and the two things worth
   doing with words. It is named for what it holds rather than for live
   transcription, which v1 does not do — streaming is still the open

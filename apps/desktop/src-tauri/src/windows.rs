@@ -9,12 +9,13 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
-use windows::Win32::Foundation::{POINT, RECT};
+use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
     GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetCursorPos, GetSystemMetrics, SYSTEM_METRICS_INDEX, SM_CXSCREEN, SM_CYSCREEN,
+    GetCursorPos, GetSystemMetrics, SetWindowPos, SYSTEM_METRICS_INDEX, SM_CXSCREEN,
+    SM_CYSCREEN, SWP_NOACTIVATE, SWP_NOZORDER,
 };
 
 use crate::pipeline::Phase;
@@ -61,15 +62,16 @@ const HALF_HEIGHT: f64 = glow_reach(AURA_MAIN_DIAMETER) * 1.7;
 
 /// Empty room around the pill inside the window.
 ///
-/// The material is painted outside the pill — its glow, its shadow, and
-/// its upward popover — and a window clips whatever reaches its own
-/// edge, so the window is sized with headroom above the pill rather than
-/// picked by eye. The extra room costs nothing to whatever sits
-/// underneath: the empty part of the window passes the pointer straight
-/// through.
-const POPOVER_HEADROOM: f64 = 110.0;
+/// The material is painted outside the pill — its glow and its shadow —
+/// and a window clips whatever reaches its own edge, so the window is
+/// sized from the glow rather than picked by eye. Panels opened out of
+/// the pill grow the window on demand instead, so the room at rest holds
+/// no panel headroom: headroom here would be pixels the pill could never
+/// climb past when the user drags it to the top of the screen. The extra
+/// room costs nothing to whatever sits underneath: the empty part of the
+/// window passes the pointer straight through.
 const BLEED_X: f64 = 52.0;
-const BLEED_TOP: f64 = HALF_HEIGHT - PILL_HEIGHT / 2.0 + POPOVER_HEADROOM;
+const BLEED_TOP: f64 = HALF_HEIGHT - PILL_HEIGHT / 2.0;
 const BLEED_BOTTOM: f64 = HALF_HEIGHT + 4.0 - PILL_HEIGHT / 2.0;
 
 /// The window is the pill plus its room. Named so this geometry and the
@@ -84,8 +86,8 @@ const _: () = {
     assert!(WINDOW_WIDTH > PILL_WIDTH, "no room at the sides");
     assert!(WINDOW_HEIGHT > PILL_HEIGHT, "no room above or below");
     assert!(
-        BLEED_TOP > HALF_HEIGHT,
-        "the top room has to fit both the glow and the upward popover"
+        BLEED_BOTTOM > BLEED_TOP,
+        "the shadow reaches further down than up"
     );
     // Slack, not a fit: cutting the window to the exact reach of the
     // glow is what draws a line across the light.
@@ -337,6 +339,50 @@ pub fn pointer_over_pill_expanded(
     (left..=left + width).contains(&cx) && (top..=top + height).contains(&cy)
 }
 
+/// Moves and resizes the pill window in a single system call.
+///
+/// Tauri's own setters arrive as two separate calls, and the compositor
+/// can paint between them: the window is already taller while still
+/// sitting at its old origin, so the pill visibly jumps and snaps back
+/// every time a panel opens or closes. One SetWindowPos applies the new
+/// rectangle all at once, so there is no intermediate frame to paint.
+/// Activation and stacking are left exactly as they are — the pill must
+/// never steal focus or rise above itself just because a menu opened.
+fn place_window(window: &tauri::WebviewWindow, x: f64, y: f64, width: f64, height: f64) {
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let (x, y, width, height) = (
+        (x * scale).round() as i32,
+        (y * scale).round() as i32,
+        (width * scale).round().max(1.0) as i32,
+        (height * scale).round().max(1.0) as i32,
+    );
+    // SAFETY: the handle belongs to our own window, the rectangle is the
+    // one the caller computed, and neither flag changes activation order.
+    //
+    // The handle crosses crate versions as a raw pointer rather than as
+    // a typed HWND, because the shell's windows crate is not the same
+    // version as the toolkit's: the two HWND types are layout-identical
+    // but the compiler treats them as strangers.
+    let placed = window.hwnd().map(|hwnd| {
+        let raw: *mut std::ffi::c_void = hwnd.0 as *mut std::ffi::c_void;
+        unsafe {
+            SetWindowPos(
+                HWND(raw),
+                HWND(std::ptr::null_mut()),
+                x,
+                y,
+                width,
+                height,
+                SWP_NOZORDER | SWP_NOACTIVATE,
+            )
+        }
+    });
+    if placed.is_err() {
+        let _ = window.set_size(LogicalSize::new(width as f64 / scale, height as f64 / scale));
+        let _ = window.set_position(LogicalPosition::new(x as f64 / scale, y as f64 / scale));
+    }
+}
+
 /// Opens a panel out of the pill, or puts the window back when asked for
 /// no panel at all.
 ///
@@ -371,8 +417,7 @@ pub fn set_pill_panel(app: AppHandle, required_height: f64) -> Option<PanelPlace
     };
 
     if extra <= 0.0 {
-        let _ = window.set_size(LogicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT));
-        let _ = window.set_position(LogicalPosition::new(x, base_y));
+        place_window(&window, x, base_y, WINDOW_WIDTH, WINDOW_HEIGHT);
         *state.0.lock().expect("panel expansion poisoned") = None;
         return None;
     }
@@ -382,11 +427,11 @@ pub fn set_pill_panel(app: AppHandle, required_height: f64) -> Option<PanelPlace
         Expansion::Up => base_y - extra,
         Expansion::Down => base_y,
     };
-    // Straight to the target. Collapsing first would put the window back
-    // on screen for a frame every time the panel changes, which reads as
-    // the pill flinching.
-    let _ = window.set_size(LogicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT + extra));
-    let _ = window.set_position(LogicalPosition::new(x, shifted));
+    // Straight to the target in one system call. Collapsing first, or
+    // sizing before shifting, would put the window back on screen for a
+    // frame every time the panel changes, which reads as the pill
+    // flinching.
+    place_window(&window, x, shifted, WINDOW_WIDTH, WINDOW_HEIGHT + extra);
     *state.0.lock().expect("panel expansion poisoned") = Some((direction, extra));
     Some(PanelPlacement {
         direction,

@@ -55,8 +55,8 @@ state is a resting place, not a barrier.
   Extended, not replaced: that control later started the next take
   directly from a finished state, exactly as the chord does here, so the
   two input paths agree. Settling a finished take back to quiet without
-  beginning another one stayed available from the pill's menu instead of
-  from the control itself. See `008-pill-control.md`.
+  beginning another one lost its click along with it and is parked in the
+  idea bank. See `008-pill-control.md`.
 
 ## Related
 

@@ -574,8 +574,9 @@ pub fn cancel_take(app: &AppHandle) {
 /// The pill's main control deliberately does not carry this: it starts
 /// the next take from a finished state, exactly as the chord does
 /// (ADR-007). Settling to quiet without beginning another one is the
-/// rarer intent, so it lives one step away in the pill's menu. It touches
-/// no capture stream, so it does not queue for the take worker.
+/// rarer intent, so it has no surface yet and waits in IDEAS.md rather
+/// than costing the pill's menu a row. It touches no capture stream, so
+/// it does not queue for the take worker.
 #[tauri::command]
 pub fn reset_pipeline(app: AppHandle) -> PipelineStatus {
     let phase = current_phase(&app);

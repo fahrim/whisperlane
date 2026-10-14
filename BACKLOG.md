@@ -101,8 +101,8 @@ Closed during M2:
   from a finished state instead of settling back to idle, extending
   ADR-007 to the mouse, and the cancel is visible for the whole live
   take instead of revealed on hover. Quitting moved into the three-dot
-  menu, and settling back to quiet joined it. Both corrections and their
-  reasoning are recorded in `docs/adr/008-pill-control.md`.
+  menu. Both corrections and their reasoning are recorded in
+  `docs/adr/008-pill-control.md`.
 - ADR-009 amended in polish: the capsule is read as a droplet rather
   than a plate, takes its width from its own content so a status line is
   never cut mid-word, and the window's room now also covers the menu the

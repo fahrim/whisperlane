@@ -72,8 +72,8 @@ decision table in the core, so neither path can drift from the other.
 - Back-to-back dictation no longer costs a detour on either input path:
   the chord and the control agree that a finished take is a resting
   place, not a barrier. Settling back to quiet without starting another
-  take moved to the pill's menu, which is where the rarely wanted
-  choices belong.
+  take lost its click along with this and has no surface for now; it is
+  parked in the idea bank rather than spending a row on the pill's menu.
 - The tap threshold is one named constant with an exclusive upper bound,
   so a press of exactly 250 milliseconds counts as a hold.
 - Every input path is the same decision table in the core: a new gesture

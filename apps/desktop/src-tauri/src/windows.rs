@@ -20,11 +20,11 @@ pub const MAIN: &str = "main";
 
 /// The pill's own size, matching `--pill-height` in the token set.
 ///
-/// The width is the widest the capsule can ever grow to, not a fixed box:
-/// the pill sizes itself to its content and never past this. Claiming more
-/// than the pill can reach would make the click-through pad swallow clicks
-/// on an empty band beside it.
-const PILL_WIDTH: f64 = 430.0;
+/// Wide enough for the waveform, the written line and the controls
+/// without any of them being squeezed. The wave is the primary thing
+/// the user watches, and the line beside it still has to read in full
+/// rather than truncate to an initial.
+const PILL_WIDTH: f64 = 460.0;
 const PILL_HEIGHT: f64 = 56.0;
 
 /// The accent circles, matching the pill's stylesheet: each one's

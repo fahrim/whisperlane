@@ -101,11 +101,8 @@
   presence so the user knows to wait briefly.
 - Done: text has landed or is ready; the pill confirms briefly and settles.
 - Failed or cancelled: the cause is stated plainly in place, nothing
-  half-inserted remains, and the path back to quiet is one action from
-  the pill's menu.
-- Settled: whatever came next from a finished take — a new one, or
-  settling back to quiet — is the same action the keyboard takes, so
-  neither path can hold a capability the other withholds.
+  half-inserted remains, and the pill keeps the reason readable until the
+  next take replaces it.
 
 Every state is legible from the pill alone without opening settings.
 Errors never leave the user guessing whether text was inserted.

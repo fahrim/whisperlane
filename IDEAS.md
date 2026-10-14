@@ -51,6 +51,20 @@ non-goal; a floating pill cannot behave identically under mobile
 permissions and background limits. Re-evaluate only as a dedicated
 milestone, never as an extension of the desktop work.
 
+## Settling the pill back to quiet
+
+Source: M2 polish. A finished take can be put away without beginning
+another one — the pill hides and the tray becomes the home again.
+
+Parked: the pill's main control now starts the next take from a finished
+state, exactly as the chord has always done, so the back-to-back case
+costs nothing on either input path. Settling to quiet is the rarer
+intent and has no surface; it was briefly a row in the pill's menu and
+was removed because the menu should hold the doors out of the
+application, not the ones back. Re-evaluate if the transcript panel
+lands, since settling and reviewing are then the same gesture rather
+than two.
+
 ## Custom words and translate-to-English
 
 Source: architecture reference candidates. Parked with the rest of the

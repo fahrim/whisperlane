@@ -97,6 +97,16 @@ Closed during M2:
   accent drawn inside the window because a backdrop filter can only bend
   DOM content. The window is transparent and carries room for the glow,
   and that room passes the pointer through so it swallows no clicks.
+- ADR-008 amended in polish: the pill's control starts the next take
+  from a finished state instead of settling back to idle, extending
+  ADR-007 to the mouse, and the cancel is visible for the whole live
+  take instead of revealed on hover. Quitting moved into the three-dot
+  menu, and settling back to quiet joined it. Both corrections and their
+  reasoning are recorded in `docs/adr/008-pill-control.md`.
+- ADR-009 amended in polish: the capsule is read as a droplet rather
+  than a plate, takes its width from its own content so a status line is
+  never cut mid-word, and the window's room now also covers the menu the
+  pill opens above itself while the pill keeps its resting place.
 - Bundle identifier moved off `com.whisperlane.app`, which Tauri warns
   collides with the macOS bundle extension. Resolved ahead of item 6.
   The app data folder moved with it: `%APPDATA%\com.whisperlane.desktop`

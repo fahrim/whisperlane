@@ -1,6 +1,10 @@
 # ADR-009: Liquid Glass Token Set
 
-Status: approved.
+Status: approved. Amended during M2 polish: the capsule is now read as a
+droplet rather than a plate, its width follows its own content instead of
+a fixed box, and the window's room is sized for the menu the pill opens
+above itself. The refraction-before-blur rule, the specular rim, the
+single accent, and the opaque fallback are unchanged.
 
 ## Context
 
@@ -32,18 +36,23 @@ The token set is locked as one unit, recorded in the interface's token
 file rather than as prose, and the material is built from four layers
 rather than one blur.
 
-Geometry: a 9999px radius, a 56px pill, 10px of horizontal padding and
-a 14px gap between elements.
+Geometry: a 9999px radius and a 56px pill. The capsule's width is not
+fixed — it follows its own content, bounded at both ends, so a status
+line is never cut mid-word. The horizontal padding and the gap between
+elements are derived per surface rather than locked as one pair, since
+they no longer have to absorb a fixed width. See the amendment below.
 
-The surface is an angled wash rather than a flat fill, and the
-backdrop filter refracts before it blurs, then saturates, contrasts and
-lifts what is behind the glass. Saturating is what separates material
-from a grey pane.
+The surface is read as a droplet rather than a plate: a bright catch
+where light lands on the top of a curved body, a thick inner wall, and
+a lit lower edge where the glass bends light back up, over a vertical
+body gradient. The backdrop filter refracts before it blurs, then
+saturates, contrasts and lifts what is behind the glass. Saturating is
+what separates material from a grey pane.
 
-Volume comes from four shadows at once: an outer shadow that lifts the
+Volume comes from shadows at once: an outer shadow that lifts the
 pill off the page, a sharp inner highlight on the top edge where light
-lands, a soft inner body highlight, and a dark inner lip along the
-bottom where the glass is thickest.
+lands, a soft inner body highlight, and a lit lower lip where the glass
+is thickest.
 
 The edge is a specular rim, not a border. A flat one-pixel rule is the
 tell of cheap glass, so the rim is a gradient cut to a 1.25px edge by a
@@ -92,6 +101,42 @@ alone.
   slower machines, lowering the displacement scale is the first lever,
   because the material survives a weaker bend far better than it
   survives a missing one.
+
+## Amendment: the capsule became a droplet
+
+Three findings from the built pill changed the set, and they are
+recorded together because they are one correction rather than three
+tunings.
+
+The body is read as a droplet, not a plate. An angled wash over a fixed
+box looked like a dark rectangle with a highlight on it. The surface is
+now a bright catch where light lands on the top of a curved body, a
+thick inner wall, and a lit lower edge where the glass bends light back
+up, with the body gradient behind it. Volume stays carried by shadows;
+what changed is that the surface itself now describes a form.
+
+The capsule sizes to its content instead of holding a fixed width, and
+that decision forced the geometry numbers. A fixed box with a flexible
+middle column is what truncated a status line mid-word; letting the pill
+grow removes the truncation by construction rather than by tuning a
+maximum until the longest sentence happens to fit. The radius, the pill
+height, and the single accent are unchanged; the horizontal padding and
+the gap between elements are re-derived, and the capsule's width bounds
+move with them.
+
+The window's room is sized for the tallest thing the pill shows above
+itself. The menu opens upward, and a window cut to the glow alone cut
+the menu off at its own edge. The room above the pill now includes the
+menu's height as well as the glow's reach, and the pill is anchored to
+the bottom of that room, so its resting margin on the screen is exactly
+what it was. Room is also spent on the sides for the pointer and below
+for the shadow, unchanged.
+
+The accent light follows the capsule rather than the window. Painted in
+the fixed window room, the glow stayed put while the pill grew and
+shrank inside it, and a pill that resizes with its content cannot be
+painted against a fixed box. The light is now bound to the same element
+the pill is drawn in, and moves and scales with it.
 
 ## Related
 

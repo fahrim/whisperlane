@@ -382,11 +382,11 @@ Status: approved — see `adr/009-liquid-glass-tokens.md`.
 ## 10. What the pill's single control does
 
 Context: the experience document gives the pill exactly three elements —
-a live signal bar, "a single start and stop control for mouse-driven
-use", and a three-dot options control. ADR-004 closes the discard
-gesture as Escape, "with the same action available from the pill's stop
-control so mouse-only use is covered", and states plainly that stop
-delivers while Escape always throws away.
+a live signal, "a single start and stop control for mouse-driven use",
+and a three-dot options control. ADR-004 closes the discard gesture as
+Escape, "with the same action available from the pill's stop control so
+mouse-only use is covered", and states plainly that stop delivers while
+Escape always throws away.
 
 Read together, the two leave one case undefined. If the pill's stop
 control delivers, ADR-004's requirement that the discard path be
@@ -431,10 +431,15 @@ uncomfortable on a desk, and directed the established Windows dictation
 standard instead. Stop delivers and cancel discards on every input
 path: the pill's main control starts a take and becomes stop, clicking
 it ends the take and delivers it, and discarding is a contextual cancel
-action revealed on hover during a live take or reached by right-clicking
-the main control. The chord is a press measured at 250 milliseconds:
-under it starts a take a second press stops, at or over it stops on
-release, and Escape always discards.
+action present during a live take or reached by right-clicking the main
+control. The chord is a press measured at 250 milliseconds: under it
+starts a take a second press stops, at or over it stops on release, and
+Escape always discards.
+
+Direction, during M2 polish: the control was given the chord's rule from
+a finished state and the cancel was made visible for the whole live take.
+The reasoning for both is in `adr/008-pill-control.md`; neither changes
+what stop, discard, or deliver mean.
 
 Decision: the pill keeps its three elements and gains no permanent
 fourth; the cancel is contextual and only present while a take is live.
@@ -442,7 +447,7 @@ The mouse and the keyboard express the same three intents through the
 same decision table in the core, so neither can drift from the other.
 
 Status: approved — see `adr/008-pill-control.md`, which amends
-`adr/004-cancel-gesture.md`.
+`adr/004-cancel-gesture.md` and extends `adr/007-chord-from-terminal-state.md`.
 
 ## ADR process
 

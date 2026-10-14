@@ -1,6 +1,8 @@
 # ADR-007: The Chord From a Finished State
 
-Status: approved.
+Status: approved. Extended by `008-pill-control.md`, which gave the
+pill's control the same rule so the mouse no longer needs a reset step
+the chord does not. The chord behavior decided here is unchanged.
 
 ## Context
 
@@ -50,10 +52,16 @@ state is a resting place, not a barrier.
   quiet idle. It is the seed of the pill's single start and stop
   control: one control that starts, stops, and cancels depending on the
   phase, rather than one control per state.
+  Extended, not replaced: that control later started the next take
+  directly from a finished state, exactly as the chord does here, so the
+  two input paths agree. Settling a finished take back to quiet without
+  beginning another one stayed available from the pill's menu instead of
+  from the control itself. See `008-pill-control.md`.
 
 ## Related
 
 - Proposal: `../08-decisions.md` item 9
+- Extended by: `008-pill-control.md`
 - Behavior: `../04-experience.md`
 - Binding: `001-default-hotkey.md`
 - Delivery: `../07-roadmap.md`

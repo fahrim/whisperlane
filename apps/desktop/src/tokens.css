@@ -7,11 +7,11 @@
  */
 
 :root {
-  /* Geometry and spacing */
+  /* Geometry and spacing. The capsule takes its own width from its
+     content, so only its radius and height are locked here; the spacing
+     that varies per surface lives beside that surface. */
   --pill-radius: 9999px;
   --pill-height: 56px;
-  --pill-padding-x: 10px;
-  --pill-gap: 14px;
 
   /* The single accent. One hue, chosen by state — never decoration. */
   --accent-idle: 168 85 247;

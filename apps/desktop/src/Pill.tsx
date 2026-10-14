@@ -325,7 +325,24 @@ export function Pill() {
             >
               <span>Settings...</span>
             </button>
-            <div className="pill-popover-divider" />
+            {phase !== "idle" && (
+              <>
+                <button
+                  type="button"
+                  className="pill-popover-item"
+                  role="menuitem"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    void invoke<PipelineStatus>("reset_pipeline").catch((e) =>
+                      setError(String(e)),
+                    );
+                  }}
+                >
+                  <span>Settle to quiet</span>
+                </button>
+                <div className="pill-popover-divider" />
+              </>
+            )}
             <button
               type="button"
               className="pill-popover-item pill-popover-quit"

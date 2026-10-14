@@ -570,8 +570,11 @@ pub fn cancel_take(app: &AppHandle) {
 }
 
 /// Terminal phases (done, failed, cancelled) return to idle in one action.
-/// This is also the pill's dismiss (ADR-007), so the path back to a
-/// quiet idle never has to go through the settings window. It touches
+///
+/// The pill's main control deliberately does not carry this: it starts
+/// the next take from a finished state, exactly as the chord does
+/// (ADR-007). Settling to quiet without beginning another one is the
+/// rarer intent, so it lives one step away in the pill's menu. It touches
 /// no capture stream, so it does not queue for the take worker.
 #[tauri::command]
 pub fn reset_pipeline(app: AppHandle) -> PipelineStatus {

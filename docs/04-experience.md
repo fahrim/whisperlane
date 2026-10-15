@@ -124,11 +124,13 @@ set is small — closer to a platform utility than to a feature showcase.
 ## Visual direction
 
 Liquid glass: a translucent surface, a restrained blur, a specular edge
-rather than a border, and layered shadow for volume. The glass bends
-what is behind it rather than only blurring it, and it saturates and
-lifts that light on the way through, which is what separates a
-material from a grey pane. The body of the pill is read as a droplet
-rather than a plate: a bright catch where light lands on the top
+rather than a border, and layered shadow for volume — the surface built
+as named optical layers (shadow, body, volume, bevel, specular, spill,
+contour) rather than as one fill carrying shadows. The glass bends what
+is behind it inside the document rather than only blurring it, and it
+saturates and lifts that light on the way through, which is what
+separates a material from a grey pane. The body of the pill is read as a
+droplet rather than a plate: a bright catch where light lands on the top
 surface, a thick curved inner wall, and a lit lower edge where the glass
 bends light back up.
 
@@ -147,13 +149,13 @@ accent is the quietest thing on screen.
 Two rules make the material possible at all. The overlay's window is
 transparent and frameless and carries empty room around the pill,
 because the glow is painted outside the pill's own edge and a window
-clips whatever reaches it. That room is not a fixed size: the window
-grows toward whichever side a panel opens on and the pill is anchored to
-the window's opposite edge, so the pill keeps its resting margin and the
-same pixels whether or not anything is open beside it. And the accent
-light is drawn inside the window rather than taken from the desktop
-behind it, because a backdrop filter can only bend what is inside the
-document.
+clips whatever reaches it. That room is not a fixed size: an upward
+panel is drawn inside the room the window already carries above the pill
+and a downward one grows the window below it, so the window's own origin
+never changes and the pill keeps its resting margin and the same pixels
+whether or not anything is open beside it. And the accent light is drawn
+inside the window rather than taken from the desktop behind it, because
+a backdrop filter can only bend what is inside the document.
 
 An opaque high-readability fallback covers transparency-off and any
 renderer without a backdrop filter, and reduced motion is respected

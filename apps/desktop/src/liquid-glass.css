@@ -1,0 +1,481 @@
+/* LiquidGlassSurface — the pill's optical material (docs/adr/009,
+ * amendment three).
+ *
+ * Nine named layers, each its own element and its own numbers, in paint
+ * order — not a pile of inset shadows, and nothing here has to be tuned
+ * by untangling another layer:
+ *
+ *   1. shadow    the wide soft dark that lifts the surface off the ground
+ *   2. body      the translucent navy-indigo body; blur + saturation over
+ *                what is behind it inside the window
+ *   3. tint      the orb's state colour (the capsule carries none)
+ *   4. volume    asymmetric inner gradients: dark centre, lifted top,
+ *                a lit curve along the lower edge
+ *   5. lens      the one true refraction, OFF until the probe proves it
+ *   6. bevel     the thin sharp rim line; the bottom edge's controlled
+ *                violet-blue density lives in its gradient
+ *   7. specular  curved, variable-width highlights, bright top-left
+ *   8. spill     the violet-blue wash hugging the inner edge, blurred so
+ *                it bleeds into the outer shadow too
+ *   9. contour   the thin white-lilac outer contour, tinted by state
+ *
+ * Every layer is cut to the geometry by a mask or a gradient, so the long
+ * capsule and the orb come from the same component with different
+ * numbers — never different code.
+ */
+
+@import "./tokens.css";
+
+:root {
+  /* The material's optical constants. A layer reads the numbers it owns
+     from here, so one knob moves one layer and nothing else. */
+  --lgs-deep: 6 7 16; /* the near-black indigo the centre pools to */
+  --lgs-body-high: 32 35 66; /* navy where light passes through the top */
+  --lgs-body-low: 10 11 22; /* the deep floor under the content */
+  --lgs-rim: 238 238 255; /* white-lilac contour */
+  --lgs-violet: 139 92 246;
+  --lgs-blue: 56 189 248;
+
+  /* The contour's own gradient, brightest at the top edge and ending in
+     the cool blue of the lower rim. */
+  --lgs-contour: linear-gradient(
+    180deg,
+    rgb(var(--lgs-rim) / 55%) 0%,
+    rgb(var(--lgs-rim) / 14%) 30%,
+    rgb(216 196 255 / 10%) 55%,
+    rgb(var(--lgs-violet) / 22%) 76%,
+    rgb(var(--lgs-blue) / 30%) 100%
+  );
+}
+
+/* The surface host: cut to whatever silhouette its parent gives it, and
+   never a pointer target — the content above it keeps every click. */
+.lgs {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.lgs > div {
+  position: absolute;
+  inset: 0;
+  box-sizing: border-box;
+  border-radius: inherit;
+}
+
+/* 1 — Ambient shadow. Wide and soft rather than deep: the surface is
+   lifted off the ground, not nailed to it. */
+.lgs-shadow {
+  box-shadow:
+    0 24px 48px -16px rgb(3 4 12 / 55%),
+    0 8px 20px -8px rgb(3 4 12 / 40%);
+}
+
+/* 2 — Translucent body. A dark navy-indigo veil, more open at the top
+   where light passes and deeper at the floor. The backdrop filter is
+   what turns the aura's light behind the rim into something seen
+   through glass rather than paint. */
+.lgs-body {
+  background:
+    radial-gradient(
+      160% 220% at 50% -34%,
+      rgb(64 58 120 / 20%) 0%,
+      transparent 55%
+    ),
+    linear-gradient(
+      180deg,
+      rgb(var(--lgs-body-high) / 60%) 0%,
+      rgb(19 20 40 / 78%) 55%,
+      rgb(var(--lgs-body-low) / 88%) 100%
+    );
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+}
+
+/* 4 — Inner volume. The centre pools darker than the edges, the top
+   catches a soft lift under its rim, light leans in from the left, and
+   a wide faint curve runs along the floor — the four together give the
+   surface its thickness. */
+.lgs-volume {
+  background:
+    radial-gradient(
+      100% 170% at 50% 62%,
+      rgb(var(--lgs-deep) / 55%) 0%,
+      transparent 58%
+    ),
+    linear-gradient(
+      180deg,
+      rgb(255 255 255 / 9%) 0%,
+      rgb(255 255 255 / 2%) 28%,
+      transparent 45%
+    ),
+    radial-gradient(52% 120% at 0% 26%, rgb(255 255 255 / 5%) 0%, transparent 62%),
+    radial-gradient(
+      70% 130% at 50% 132%,
+      rgb(147 124 255 / 9%) 0%,
+      transparent 58%
+    );
+}
+
+/* 5 — The lens. Written here but never shown until the refraction probe
+   proves that `backdrop-filter: url(#...)` really bends what is behind
+   the glass in this webview — parsing as valid is not the same as
+   rendering (see LiquidLensDefs for the map and the scales). The probe
+   runs it at triple strength over raw lines; the product, once
+   confirmed, would run the gentle scale and keep blur with it:
+
+     .lgs-lens { display: block;
+                 backdrop-filter: url(#lgs-lens-capsule) blur(20px) saturate(150%); }
+     .lgs-orb .lgs-lens { ... url(#lgs-lens-orb) ... }
+
+   and drop the url() under prefers-reduced-motion, as the old
+   refraction was dropped. Until that confirmation, the surface stands
+   on the six painted layers alone. */
+.lgs-lens {
+  display: none;
+}
+
+/* The rings. One mask cuts a band of the chosen thickness out of the
+   geometry's own curve, so every ring follows the capsule — and the
+   orb — rather than floating flat across it. */
+.lgs-bevel,
+.lgs-spill,
+.lgs-contour {
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+/* 6 — Optical bevel: the thin, sharp line where the surface's top edge
+   catches the light, falling away down the sides and ending in the
+   controlled violet-blue density of the lower edge, where thick glass
+   bends light back up. */
+.lgs-bevel {
+  padding: 2.5px;
+  background: linear-gradient(
+    180deg,
+    rgb(255 255 255 / 82%) 0%,
+    rgb(255 255 255 / 26%) 20%,
+    rgb(255 255 255 / 8%) 44%,
+    rgb(var(--lgs-violet) / 26%) 72%,
+    rgb(var(--lgs-blue) / 30%) 100%
+  );
+}
+
+/* 7 — Specular. Curved, variable-width highlights rather than a white
+   strip: a broad soft catch arcing over the top left where the light
+   lands, and a faint counter-glint low on the right where a lit
+   environment throws something back. Clipped to the silhouette so the
+   arcs end at the glass's own edge. */
+.lgs-specular {
+  overflow: hidden;
+}
+
+.lgs-specular::before {
+  content: "";
+  position: absolute;
+  left: 12%;
+  top: -168%;
+  width: 46%;
+  height: 236%;
+  border-radius: 50%;
+  transform: rotate(-7deg);
+  background: radial-gradient(
+    50% 50% at 50% 60%,
+    rgb(255 255 255 / 30%) 0%,
+    rgb(255 255 255 / 8%) 46%,
+    transparent 72%
+  );
+}
+
+.lgs-specular::after {
+  content: "";
+  position: absolute;
+  right: 5%;
+  bottom: -150%;
+  width: 36%;
+  height: 168%;
+  border-radius: 50%;
+  background: radial-gradient(
+    50% 50% at 50% 34%,
+    rgb(196 206 255 / 13%) 0%,
+    transparent 66%
+  );
+}
+
+/* 8 — Ambient spill. A violet-blue wash hugging the inner edge,
+   weighted to the bottom, blurred so its inner step softens and its
+   outer side bleeds into the shadow — colour that belongs to the room,
+   not a neon outline. */
+.lgs-spill {
+  padding: 12px;
+  filter: blur(7px);
+  background: linear-gradient(
+    180deg,
+    rgb(var(--lgs-rim) / 6%) 0%,
+    transparent 38%,
+    rgb(var(--lgs-violet) / 14%) 72%,
+    rgb(var(--lgs-blue) / 12%) 100%
+  );
+}
+
+/* 9 — Contour. The thin white-lilac line the eye reads as the glass's
+   outermost edge: brightest at the top, quiet through the middle, a
+   cool blue lift at the bottom. Tinted by state, because the edge is
+   where the state's light lands. */
+.lgs-contour {
+  padding: 1.25px;
+  background: var(--lgs-contour);
+  transition: background var(--motion-smooth-fade);
+}
+
+.pill[data-phase="listening"] .lgs-contour {
+  background: var(--glass-rim-recording);
+}
+
+.pill[data-phase="thinking"] .lgs-contour {
+  background: var(--glass-rim-processing);
+}
+
+/* The orb: the same nine layers at sphere scale, plus the tint that
+   carries its state colour over the glass. */
+.lgs-orb .lgs-shadow {
+  box-shadow: 0 4px 12px rgb(0 0 0 / 45%);
+}
+
+.lgs-orb .lgs-body {
+  background:
+    radial-gradient(
+      circle at 50% 34%,
+      rgb(var(--lgs-body-high) / 60%) 0%,
+      transparent 64%
+    ),
+    linear-gradient(
+      180deg,
+      rgb(24 26 50 / 72%) 0%,
+      rgb(var(--lgs-body-low) / 88%) 100%
+    );
+}
+
+/* 3 — Tint. The state colour as a sphere of light over the dark body,
+   the same gradients the orb always wore — now one layer among the
+   glass layers rather than the whole button. */
+.lgs-orb .lgs-tint {
+  transition: background var(--motion-smooth-fade),
+    box-shadow var(--motion-smooth-fade);
+}
+
+.lgs-capsule .lgs-tint {
+  display: none;
+}
+
+.lgs-orb .lgs-tint {
+  background: radial-gradient(
+    110% 90% at 35% 15%,
+    rgb(255 255 255 / 34%) 0%,
+    rgb(255 255 255 / 8%) 50%,
+    rgb(18 20 36 / 65%) 100%
+  );
+}
+
+.pill[data-phase="listening"] .lgs-orb .lgs-tint {
+  background: radial-gradient(
+    circle at 35% 25%,
+    rgb(255 130 150 / 95%) 0%,
+    rgb(var(--accent-recording) / 90%) 55%,
+    rgb(190 18 60 / 85%) 100%
+  );
+  box-shadow: 0 0 20px rgb(var(--accent-recording) / 65%);
+}
+
+.pill[data-phase="thinking"] .lgs-orb .lgs-tint {
+  background: radial-gradient(
+    circle at 35% 25%,
+    rgb(125 211 252 / 90%) 0%,
+    rgb(var(--accent-processing) / 85%) 50%,
+    rgb(139 92 246 / 75%) 100%
+  );
+  box-shadow: 0 0 18px rgb(var(--accent-processing) / 55%);
+}
+
+.pill[data-phase="done"] .lgs-orb .lgs-tint {
+  background: radial-gradient(
+    circle at 35% 25%,
+    rgb(255 255 255 / 32%) 0%,
+    rgb(52 215 75 / 24%) 55%,
+    rgb(16 24 28 / 70%) 100%
+  );
+}
+
+.pill[data-phase="failed"] .lgs-orb .lgs-tint,
+.pill[data-phase="cancelled"] .lgs-orb .lgs-tint {
+  background: radial-gradient(
+    circle at 35% 25%,
+    rgb(255 255 255 / 30%) 0%,
+    rgb(168 85 247 / 24%) 55%,
+    rgb(20 16 32 / 70%) 100%
+  );
+}
+
+.lgs-orb .lgs-volume {
+  background:
+    radial-gradient(
+      90% 130% at 50% 66%,
+      rgb(var(--lgs-deep) / 42%) 0%,
+      transparent 62%
+    ),
+    linear-gradient(180deg, rgb(255 255 255 / 8%) 0%, transparent 42%);
+}
+
+.lgs-orb .lgs-bevel {
+  padding: 2px;
+}
+
+.lgs-orb .lgs-contour {
+  padding: 1px;
+}
+
+.lgs-orb .lgs-specular {
+  background:
+    radial-gradient(
+      circle at 32% 22%,
+      rgb(255 255 255 / 32%) 0%,
+      transparent 54%
+    ),
+    radial-gradient(
+      circle at 74% 84%,
+      rgb(186 196 255 / 12%) 0%,
+      transparent 42%
+    );
+}
+
+.lgs-orb .lgs-specular::before,
+.lgs-orb .lgs-specular::after {
+  content: none;
+}
+
+.lgs-orb .lgs-spill {
+  padding: 8px;
+}
+
+/* The refraction probe. Dev tooling: the pill loads with
+   `?glass-probe=1` (WHISPERLANE_GLASS_PROBE=1) and draws a
+   high-contrast pattern behind itself — thin lines, solid shapes — so
+   the lens's bend can be judged by eye at the curved rim. The body
+   drops its own blur in probe mode so the pattern reaches the lens raw,
+   and the lens runs at probe strength with almost no blur. */
+.glass-probe {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.glass-probe-lines {
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgb(255 255 255 / 85%) 0 1px,
+      transparent 1px 13px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgb(56 189 248 / 45%) 0 1px,
+      transparent 1px 26px
+    );
+}
+
+.glass-probe-diagonal {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 300px;
+  height: 60px;
+  background: repeating-linear-gradient(
+    45deg,
+    rgb(250 204 21 / 80%) 0 1.5px,
+    transparent 1.5px 9px
+  );
+}
+
+.glass-probe-dot {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px rgb(255 255 255 / 85%);
+}
+
+.glass-probe-dot-left {
+  left: 44px;
+  top: 262px;
+  background: #f43f5e;
+}
+
+.glass-probe-dot-right {
+  right: 40px;
+  top: 258px;
+  background: #22c55e;
+}
+
+.glass-probe-dot-top {
+  left: 50%;
+  top: 214px;
+  margin-left: -12px;
+  background: #38bdf8;
+}
+
+.glass-probe-tri {
+  position: absolute;
+  left: 250px;
+  top: 150px;
+}
+
+.pill[data-glass-probe] .lgs-body {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.pill[data-glass-probe] .lgs-capsule .lgs-lens {
+  display: block;
+  backdrop-filter: url(#lgs-probe-lens) blur(2px) saturate(120%);
+  -webkit-backdrop-filter: url(#lgs-probe-lens) blur(2px) saturate(120%);
+}
+
+/* The opaque fallback. A system with transparency effects off, or a
+   renderer without backdrop-filter, gets the readable solid pill: the
+   body goes solid and the light layers stand down, while the state
+   colour the orb carries survives — state feedback is not decoration. */
+@media (prefers-reduced-transparency: reduce) {
+  .lgs-body {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgb(28 28 30 / 96%);
+  }
+
+  .lgs-volume,
+  .lgs-bevel,
+  .lgs-specular,
+  .lgs-spill,
+  .lgs-contour {
+    display: none;
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .lgs-body {
+    background: rgb(28 28 30 / 96%);
+  }
+
+  .lgs-volume,
+  .lgs-bevel,
+  .lgs-specular,
+  .lgs-spill,
+  .lgs-contour {
+    display: none;
+  }
+}

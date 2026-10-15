@@ -11,6 +11,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { deliveryNote } from "./delivery";
 import { LastTakeCard } from "./LastTakeCard";
+import {
+  GlassProbeBackdrop,
+  LiquidGlassSurface,
+  LiquidLensDefs,
+} from "./LiquidGlassSurface";
 import { LiquidWaveform, type WaveState } from "./LiquidWaveform";
 import type {
   LanguageChoice,
@@ -31,6 +36,20 @@ type Panel = "menu" | "take" | null;
 
 /** How long the copy confirmation stays up. */
 const COPIED_MS = 1500;
+
+/**
+ * The refraction probe, and how it is turned on.
+ *
+ * The pill loads with `?glass-probe=1` in its URL — which only
+ * `WHISPERLANE_GLASS_PROBE=1` produces (see the core's `pill_url`) — and
+ * then draws a high-contrast pattern behind itself and runs the lens at
+ * probe strength. The point is to judge the bend by eye: whether the
+ * lines really curve at the glass's rim decides whether the lens ever
+ * becomes part of the product. It is dev tooling, and a normal launch
+ * never sees it.
+ */
+const GLASS_PROBE =
+  new URLSearchParams(window.location.search).get("glass-probe") === "1";
 
 /**
  * How far the pointer has to travel before a press on the pill counts as
@@ -460,8 +479,15 @@ export function Pill() {
       data-phase={phase}
       data-panel={placement ?? undefined}
       data-align={alignEnd ? "end" : "start"}
+      data-glass-probe={GLASS_PROBE ? "" : undefined}
     >
       <LiquidRefraction />
+      <LiquidLensDefs />
+
+      {/* The probe's pattern sits under everything, so the glass and the
+          lens both read it: straight lines outside the pill, and — if
+          the refraction works — bent ones inside it. */}
+      {GLASS_PROBE && <GlassProbeBackdrop />}
 
       {/* The shell carries the pill and one panel. Which end the pill
           sits on is the placement's job, so the pill lands on the same
@@ -476,6 +502,10 @@ export function Pill() {
           <div className="pill-aura" aria-hidden="true" />
 
           <div className="liquid-pill">
+            {/* The glass the content sits on: nine optical layers, cut
+                to the capsule. */}
+            <LiquidGlassSurface geometry="capsule" />
+
             {/* 1. LEFT — Primary Orb Button (40px x 40px)
               Always starts a new recording from Idle/Done/Failed/Cancelled,
               and stops+delivers while Recording. Never quits the app. */}
@@ -494,6 +524,7 @@ export function Pill() {
               void press("discard");
             }}
           >
+            <LiquidGlassSurface geometry="orb" />
             <OrbIcon phase={phase} />
           </button>
 

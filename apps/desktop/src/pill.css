@@ -1,13 +1,15 @@
 /* The pill's material (docs/08-decisions.md item 8, adr/009).
  *
- * Three layers, in order: the window's own empty room, the aura that
- * carries the accent, and the glass that sits on top and refracts it.
- * The aura is inside the DOM on purpose — a CSS backdrop-filter can
- * only bend what is inside the document, never the desktop behind the
- * window, so the light it bends has to be ours.
+ * The stack, in order: the window's own empty room, the aura that
+ * carries the accent, and the optical layers of LiquidGlassSurface on
+ * top of it — shadow, body, tint, volume, lens, bevel, specular, spill,
+ * contour (liquid-glass.css). The aura is inside the DOM on purpose — a
+ * CSS backdrop-filter can only bend what is inside the document, never
+ * the desktop behind the window, so the light it bends has to be ours.
  */
 
 @import "./tokens.css";
+@import "./liquid-glass.css";
 
 html,
 body {
@@ -113,7 +115,9 @@ body {
 .pill[data-phase="failed"],
 .pill[data-phase="cancelled"] { --aura-primary: var(--accent-idle); --aura-secondary: var(--accent-idle); --aura-strength: 0.65; }
 
-/* Layer 1 — 3D Droplet Meniscus Glass. */
+/* Layer 1 — the capsule's box. The material lives in LiquidGlassSurface
+   (liquid-glass.css); this element owns the geometry and the flow of the
+   content that sits on the glass, nothing more. */
 .liquid-pill {
   position: relative;
   z-index: 1;
@@ -128,55 +132,26 @@ body {
   align-items: center;
   gap: 10px;
   border-radius: var(--pill-radius);
-  background: var(--droplet-surface-bg);
-  backdrop-filter: var(--glass-backdrop);
-  -webkit-backdrop-filter: var(--glass-backdrop);
-  box-shadow:
-    0 18px 40px -10px rgba(0, 0, 0, 0.75),
-    /* En üst keskin su yüzeyi yansıması */
-    inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.85),
-    /* Kalın bombeli iç mercek duvarı (Su damlası kalınlığı) */
-    inset 0 6px 14px -2px rgba(255, 255, 255, 0.25),
-    /* Alt taban kostik (caustic) ışık kırılması */
-    inset 0 -3px 8px 0 rgba(139, 92, 246, 0.40),
-    inset 0 -1px 1px 0 rgba(255, 255, 255, 0.30);
-  transition: box-shadow var(--motion-smooth-fade), width var(--motion-spring-expand);
-}
-
-/* The specular rim. A flat border is the tell of cheap glass: light
-   lands on the top left and is thrown back off the bottom right, so
-   this is a gradient cut to the edge by a mask rather than a rule. */
-.liquid-pill::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  border-radius: inherit;
-  padding: 1.25px;
-  background: var(--glass-rim-idle);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  pointer-events: none;
-  transition: background var(--motion-smooth-fade);
-}
-
-.pill[data-phase="listening"] .liquid-pill::before {
-  background: var(--glass-rim-recording);
-}
-
-.pill[data-phase="thinking"] .liquid-pill::before {
-  background: var(--glass-rim-processing);
+  transition: width var(--motion-spring-expand);
 }
 
 /* Center content area: waveform during recording, or state-aware white
-   equalizer + status text in all other states. */
+   equalizer + status text in all other states. It sits above the glass
+   layers, which are positioned siblings and would otherwise paint over
+   the words. */
 .pill-center {
+  position: relative;
+  z-index: 3;
   flex: 1 1 auto;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* Same for the error line: above the glass, never under it. */
+.liquid-pill > [role="alert"] {
+  position: relative;
+  z-index: 3;
 }
 
 .pill-status-row {
@@ -234,63 +209,24 @@ body {
   cursor: pointer;
 }
 
-/* The main control is its own 3D droplet sphere of glass. */
+/* The main control is its own sphere of the same glass — LiquidGlassSurface
+   carries the material; the state colour lives in the surface's tint
+   layer, so the button itself only owns geometry and interaction. */
 .pill-control {
   width: 40px;
   height: 40px;
   margin-left: 4px;
-  background:
-    radial-gradient(110% 90% at 35% 15%, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.08) 50%, rgba(18, 20, 36, 0.65) 100%);
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.45),
-    inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.80),
-    inset 0 4px 10px -1px rgba(255, 255, 255, 0.22),
-    inset 0 -3px 7px 0 rgba(139, 92, 246, 0.35);
   color: #f2f2f7;
-  transition: background var(--motion-smooth-fade), box-shadow var(--motion-smooth-fade), transform 140ms ease;
+  transition: transform 140ms ease;
 }
 
 .pill-control:hover:not(:disabled) {
   transform: scale(1.04);
 }
 
-.pill[data-phase="listening"] .pill-control {
-  background: radial-gradient(circle at 35% 25%, rgb(255 130 150 / 95%) 0%, rgb(var(--accent-recording) / 90%) 55%, rgb(190 18 60 / 85%) 100%);
-  color: #ffffff;
-  box-shadow:
-    inset 0 1.5px 1.5px rgb(255 255 255 / 85%),
-    inset 0 4px 10px rgb(255 255 255 / 30%),
-    inset 0 -3px 8px rgb(136 19 55 / 60%),
-    0 0 20px rgb(var(--accent-recording) / 65%);
-}
-
+.pill[data-phase="listening"] .pill-control,
 .pill[data-phase="thinking"] .pill-control {
-  background: radial-gradient(circle at 35% 25%, rgb(125 211 252 / 90%) 0%, rgb(var(--accent-processing) / 85%) 50%, rgb(139 92 246 / 75%) 100%);
   color: #ffffff;
-  box-shadow:
-    inset 0 1.5px 1.5px rgb(255 255 255 / 85%),
-    inset 0 4px 10px rgb(255 255 255 / 28%),
-    inset 0 -3px 8px rgb(88 28 135 / 55%),
-    0 0 18px rgb(var(--accent-processing) / 55%);
-}
-
-.pill[data-phase="done"] .pill-control {
-  background: radial-gradient(circle at 35% 25%, rgb(255 255 255 / 32%) 0%, rgb(52 215 75 / 24%) 55%, rgb(16 24 28 / 70%) 100%);
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.45),
-    inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.85),
-    inset 0 4px 10px -1px rgba(255, 255, 255, 0.25),
-    inset 0 -3px 7px 0 rgba(52, 215, 75, 0.38);
-}
-
-.pill[data-phase="failed"] .pill-control,
-.pill[data-phase="cancelled"] .pill-control {
-  background: radial-gradient(circle at 35% 25%, rgb(255 255 255 / 30%) 0%, rgb(168 85 247 / 24%) 55%, rgb(20 16 32 / 70%) 100%);
-  box-shadow:
-    0 4px 12px rgba(0, 0, 0, 0.45),
-    inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.82),
-    inset 0 4px 10px -1px rgba(255, 255, 255, 0.22),
-    inset 0 -3px 7px 0 rgba(168, 85, 247, 0.42);
 }
 
 .pill-control:disabled {
@@ -298,6 +234,8 @@ body {
 }
 
 .pill-orb-svg {
+  position: relative;
+  z-index: 3;
   display: block;
 }
 
@@ -696,32 +634,24 @@ body {
 /* The opaque fallback. Two ways to lose the material: a system that
    turns transparency effects off, and a renderer without
    backdrop-filter at all. In both cases the pill stays readable, which
-   is the only requirement the fallback has to meet. */
+   is the only requirement the fallback has to meet — the surface's own
+   layers stand down in liquid-glass.css; here the aura goes with them. */
 @media (prefers-reduced-transparency: reduce) {
-  .liquid-pill {
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    background: rgb(28 28 30 / 96%);
-  }
-
   .pill-aura {
     display: none;
   }
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .liquid-pill {
-    background: rgb(28 28 30 / 96%);
-  }
-
   .pill-aura {
     display: none;
   }
 }
 
-/* Reduced motion drops the refraction and the springs. The states stay
-   legible through colour and the written line, never through movement
-   alone. */
+/* Reduced motion drops the springs. The states stay legible through
+   colour and the written line, never through movement alone. When the
+   lens is ever turned on in the product, it drops with the motion too —
+   the flip note beside it in liquid-glass.css carries that condition. */
 @media (prefers-reduced-motion: reduce) {
   .pill-cancel,
   .pill-control,
@@ -729,10 +659,5 @@ body {
   .pill-popover,
   .last-take-card {
     animation: none !important;
-  }
-
-  .liquid-pill {
-    backdrop-filter: blur(24px) saturate(190%) contrast(105%) brightness(110%);
-    -webkit-backdrop-filter: blur(24px) saturate(190%) contrast(105%) brightness(110%);
   }
 }

@@ -702,6 +702,21 @@ pub fn pill_origin(screen: (f64, f64)) -> (f64, f64) {
     )
 }
 
+/// The URL the pill loads.
+///
+/// `WHISPERLANE_GLASS_PROBE=1` loads the pill with the refraction probe
+/// in the query string: the surface then draws a high-contrast pattern
+/// behind itself and runs the lens at probe strength, so refraction can
+/// be judged by eye. Dev tooling only — a normal launch never carries
+/// the flag, and this function is the whole of the plumbing.
+fn pill_url(glass_probe: bool) -> WebviewUrl {
+    if glass_probe {
+        WebviewUrl::App("index.html?glass-probe=1".into())
+    } else {
+        WebviewUrl::default()
+    }
+}
+
 /// Creates the pill overlay.
 ///
 /// Borderless, above everything, and never focusable: an overlay that
@@ -724,8 +739,12 @@ pub fn build_pill(app: &AppHandle) -> tauri::Result<()> {
             pill_origin((size.width, size.height))
         })
         .unwrap_or((0.0, 0.0));
-    WebviewWindowBuilder::new(app, PILL, WebviewUrl::default())
-        .title("whisperlane")
+    WebviewWindowBuilder::new(
+        app,
+        PILL,
+        pill_url(std::env::var("WHISPERLANE_GLASS_PROBE").as_deref() == Ok("1")),
+    )
+    .title("whisperlane")
         .inner_size(WINDOW_WIDTH, WINDOW_HEIGHT)
         .position(origin.0, origin.1)
         .decorations(false)
@@ -1068,6 +1087,22 @@ mod tests {
             "the pill's top room in pill.css no longer matches BLEED_TOP ({BLEED_TOP}), \
              so the pill's place on screen would depend on the window's height"
         );
+    }
+
+    #[test]
+    fn the_glass_probe_never_reaches_a_normal_launch() {
+        // The probe is dev tooling: only the environment variable puts it
+        // in the pill's URL, and the default stays the plain page. The
+        // query rides the URL because the pill's window is the one place
+        // the pattern has to be — under the glass it is meant to bend.
+        assert!(matches!(
+            pill_url(false),
+            WebviewUrl::App(path) if path.to_str() == Some("index.html")
+        ));
+        assert!(matches!(
+            pill_url(true),
+            WebviewUrl::App(path) if path.to_str().unwrap_or("").contains("glass-probe=1")
+        ));
     }
 
     #[test]

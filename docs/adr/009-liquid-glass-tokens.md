@@ -1,11 +1,12 @@
 # ADR-009: Liquid Glass Token Set
 
-Status: approved. Amended twice during M2 polish: the capsule is now read
-as a droplet rather than a plate, its width follows its own content
-instead of a fixed box, and the window's room is no longer a fixed size —
-it grows toward whichever side a panel opens on while the pill stays on
-its own pixels. The refraction-before-blur rule, the specular rim, the
-single accent, and the opaque fallback are unchanged.
+Status: approved. Amended three times during M2 polish: the capsule is
+now read as a droplet rather than a plate, its width follows its own
+content instead of a fixed box, the window's room grows toward whichever
+side a panel opens on while the pill stays on its own pixels, and the
+material is now built as named optical layers behind a verification gate
+for real refraction. The refraction-before-blur rule, the specular rim,
+the single accent, and the opaque fallback are unchanged.
 
 ## Context
 
@@ -140,6 +141,43 @@ the fixed window room, the glow stayed put while the pill grew and
 shrank inside it, and a pill that resizes with its content cannot be
 painted against a fixed box. The light is now bound to the same element
 the pill is drawn in, and moves and scales with it.
+
+## Amendment: the surface became named optical layers
+
+The droplet was still one fill, one shadow stack, and one rim; the stack
+read as a flat glassmorphism plate. The material is now built by a
+`LiquidGlassSurface` component as nine named layers, each its own element
+with its own numbers, painted in order: shadow, body, tint, volume,
+lens, bevel, specular, spill, contour. A layer is a gradient or a mask
+cut to the geometry, not one more inset shadow, and any one of them can
+be tuned or deleted without untangling the rest. The long capsule and
+the orb are two geometries of the same component — the same layers at
+different numbers, never different code — and the centre pools darker
+than the edges, which is where the depth the rim alone could not give
+now comes from.
+
+The same amendment closes a claim the material had been making since it
+was first built. The backdrop filter carried
+`url(#liquid-refraction)` — a turbulence noise displacement — written
+and never verified, and writing the reference is not the bend: a
+renderer that parses the reference as valid can still refuse to render
+it, and a filter chain with a reference it cannot apply drops the whole
+chain, the blur included. The lens therefore ships behind a probe. A
+normal launch runs the six painted layers and the body's plain blur;
+`WHISPERLANE_GLASS_PROBE=1` loads the pill with `?glass-probe=1`, the
+surface draws a high-contrast pattern of thin lines and solid shapes
+behind itself, and the lens runs at triple strength over them. The bend
+is judged by eye at the curved rim: only a confirmed bend turns the lens
+on in the product, and a failed probe leaves the clean CSS surface that
+already ships.
+
+Two things the amendment also fixes in passing. The lens can only ever
+bend light that is inside the document — the aura, never the desktop
+behind the window — and that limit is now stated where the lens is
+built, not implied. And the displacement map is one stretched sphere,
+generated once as a static data URI and shared by the capsule's, the
+orb's, and the probe's filters at three scales, so nothing expensive is
+rebuilt per frame.
 
 ## Related
 

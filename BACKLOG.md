@@ -140,6 +140,17 @@ Closed during M2:
   This is the first feature closed by the verification split in
   LOOP.md — the agent built and tested the logic, the maintainer judged
   the product.
+- The pill's material was rebuilt as named optical layers
+  (`LiquidGlassSurface`: shadow, body, tint, volume, lens, bevel,
+  specular, spill, contour — each its own element, capsule and orb the
+  same component at different numbers) because the previous material
+  read as a flat plate. The lens — real refraction behind the glass —
+  ships behind a probe, not a claim: `WHISPERLANE_GLASS_PROBE=1` loads
+  the pill with a high-contrast pattern behind itself and the lens at
+  triple strength, and only a confirmed bend by the maintainer turns the
+  lens on in the product. What the lens can bend is the light inside the
+  document (the aura), never the desktop behind the window; that limit
+  is the material's condition, not an implementation gap.
 - Bundle identifier moved off `com.whisperlane.app`, which Tauri warns
   collides with the macOS bundle extension. Resolved ahead of item 6.
   The app data folder moved with it: `%APPDATA%\com.whisperlane.desktop`

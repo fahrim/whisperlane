@@ -132,6 +132,14 @@ Closed during M2:
   now grants it. A `dev` that fails with the script exiting non-zero is
   worth one look at the port first: Vite holds 1420 with `strictPort`,
   so a leftover instance fails every later run the same way.
+- The pill's panel work is verified live by the maintainer on a
+  three-monitor setup: panels open toward the room with no flicker from
+  any position, the pill rests at every edge of the screen and spans two
+  monitors and comes back, dragging carries the pointer the way any
+  window does, and the pill's own controls behave through all of it.
+  This is the first feature closed by the verification split in
+  LOOP.md — the agent built and tested the logic, the maintainer judged
+  the product.
 - Bundle identifier moved off `com.whisperlane.app`, which Tauri warns
   collides with the macOS bundle extension. Resolved ahead of item 6.
   The app data folder moved with it: `%APPDATA%\com.whisperlane.desktop`

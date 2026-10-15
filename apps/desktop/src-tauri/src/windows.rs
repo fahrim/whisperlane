@@ -141,6 +141,9 @@ const PILL_BOTTOM_MARGIN: f64 = 48.0;
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct PanelPlacement {
     pub direction: Expansion,
+    /// Whether the pill had more room to its right than to its left: the
+    /// side with more room is the side a panel can hang off.
+    pub align_end: bool,
 }
 
 /// The gap a panel leaves between itself and the pill, named once here so
@@ -177,15 +180,19 @@ pub fn expand_toward(above: f64, below: f64, required: f64) -> Expansion {
     }
 }
 
-/// How much screen the pill itself has above and below it.
+/// How much screen the pill itself has around it.
 ///
-/// The pill's place inside the window is a constant, so the room it has is
-/// just the room between its own edges and the screen's edges: an upward
-/// panel needs to know the first, a downward one the second.
+/// Measured from the pill's own edges rather than the window's: the window
+/// carries empty room that runs past the screen edges by design, and
+/// counting that as space is how a panel gets told it fits where it does
+/// not. Left and right answer where a panel may hang off the pill; above
+/// and below answer which way one may open.
 #[derive(Debug, Clone, Copy)]
 pub struct PillSpace {
     pub above: f64,
     pub below: f64,
+    pub left: f64,
+    pub right: f64,
 }
 
 /// The window's rectangle in logical pixels, and its top-left corner in
@@ -298,20 +305,26 @@ fn pill_space(window: &tauri::WebviewWindow) -> PillSpace {
     let none = PillSpace {
         above: 0.0,
         below: 0.0,
+        left: 0.0,
+        right: 0.0,
     };
     let scale = window.scale_factor().unwrap_or(1.0);
-    let (_, work_y, work_width, work_height) = work_area(scale);
+    let (work_x, work_y, work_width, work_height) = work_area(scale);
     if work_width <= 0.0 || work_height <= 0.0 {
         return none;
     }
-    let Some((_, (_, y, _, _))) = window_rect(window) else {
+    let Some((_, (x, y, _, _))) = window_rect(window) else {
         return none;
     };
     let pill_top = y + BLEED_TOP;
     let pill_bottom = pill_top + PILL_HEIGHT;
+    let pill_left = x + BLEED_X;
+    let pill_right = pill_left + PILL_WIDTH;
     PillSpace {
         above: pill_top - work_y,
         below: (work_y + work_height) - pill_bottom,
+        left: pill_left - work_x,
+        right: (work_x + work_width) - pill_right,
     }
 }
 
@@ -599,7 +612,10 @@ pub fn set_pill_panel(app: AppHandle, required_height: f64) -> Option<PanelPlace
     };
     place_window(&window, x, y, WINDOW_WIDTH, height);
     *state.0.lock().expect("panel expansion poisoned") = Some((direction, extra));
-    Some(PanelPlacement { direction })
+    Some(PanelPlacement {
+        direction,
+        align_end: space.right >= space.left,
+    })
 }
 
 /// Keeps the empty room transparent to the mouse and the pill opaque to

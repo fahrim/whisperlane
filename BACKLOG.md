@@ -106,19 +106,21 @@ Closed during M2:
 - ADR-009 amended in polish: the capsule is read as a droplet rather
   than a plate, and it takes its width from its own content so a status
   line is never cut mid-word.
-- Panels open toward the room, and the pill never moves. The window
-  grows toward whichever side a panel opens on and the pill is
-  re-anchored to the window's opposite edge, so the same pixels are
-  under the pill whichever way a panel goes. The growth is a single
-  system call: separate size and position calls painted an intermediate
-  frame and the pill flickered on every open and close. Measuring the
-  room against the monitor's work area rather than its bounds is why a
-  docked taskbar does not count as space.
-- The resting window holds no panel headroom. It did for a while, and
-  those pixels were a dead zone the pill could never be dragged past at
-  the top of the screen. The pill now reaches within its own glow of the
-  top edge; the operating system keeps the window itself at or below
-  zero, and that is where the remaining room comes from.
+- Panels open toward the room, and the pill never moves. An upward
+  panel is drawn inside the room the window already carries above the
+  pill, a downward one grows the window below it, and in neither case
+  does the window's origin change — so the pill's place on screen is a
+  constant of the window's origin, and no state, reflow, or direction can
+  move it. A panel hangs off the side of the pill with more room, so a
+  pill parked at a screen edge opens its menu away from the edge.
+  Measuring the room against the union of every monitor's work area,
+  rather than one monitor, is why the pill can rest spanning two screens
+  and be carried back.
+- The top-of-screen report and the flicker report were one disease. Both
+  rounds of chasing them by shrinking the window's top room were hiding
+  the symptom lower down; the room is what the material and the tallest
+  panel need, and the pill reaches the screen's top because the drag
+  clamps the pill rather than the frame.
 - The last take has a card: header, words, and the two things worth
   doing with words. It is named for what it holds rather than for live
   transcription, which v1 does not do — streaming is still the open

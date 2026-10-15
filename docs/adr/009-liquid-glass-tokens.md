@@ -125,16 +125,15 @@ height, and the single accent are unchanged; the horizontal padding and
 the gap between elements are re-derived, and the capsule's width bounds
 move with them.
 
-The window's room is sized for the glow alone, and nothing else. It
-held headroom for the menu for a while, and that headroom was pixels
-the pill could never climb past when dragged to the top of the screen,
-so it is gone: the room at rest covers the material and the pointer,
-and a panel grows the window toward whichever side it opens on while
-the pill is re-anchored to the window's opposite edge. The growth is one
-system call carrying the new size and position together, because two
-separate calls let the compositor paint between them and the pill
-visibly jumped and snapped back on every open and close. Room is also
-spent on the sides for the pointer and below for the shadow, unchanged.
+The window's room is sized for the glow and the tallest panel the pill
+may open above itself, because an upward panel is drawn inside the room
+the window already carries: moving the window up to make space for it
+would move the pill, and the pill's place on screen must not depend on
+what is open beside it. A downward panel grows the window below the pill
+instead. In neither direction does the window's own origin change, so
+there is no moment in which the window has moved and the pill has not —
+that moment is the flicker this replaced. Room is also spent on the
+sides for the pointer and below for the shadow, unchanged.
 
 The accent light follows the capsule rather than the window. Painted in
 the fixed window room, the glow stayed put while the pill grew and

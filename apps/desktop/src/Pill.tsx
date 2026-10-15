@@ -565,69 +565,72 @@ export function Pill() {
 
           {error && <span role="alert">{error}</span>}
           </div>
-        </div>
 
-        {panel && (
-          <div className="pill-panel" ref={panelRef}>
-            {panel === "take" ? (
-              <LastTakeCard
-                text={lastText}
-                languageLabel={currentLangLabel}
-                onCycleLanguage={() => void cycleLanguage()}
-                onCopy={() => void copyTake()}
-                onClose={() => setPanel(null)}
-                onClear={() => setCleared(true)}
-                copied={copied}
-                cleared={cleared}
-              />
-            ) : (
-              <div className="pill-popover" role="menu" aria-label="Quick options">
-                <button
-                  type="button"
-                  className="pill-popover-item"
-                  role="menuitem"
-                  onClick={() => setPanel("take")}
-                >
-                  <span>Last take</span>
-                </button>
-                <button
-                  type="button"
-                  className="pill-popover-item"
-                  role="menuitem"
-                  onClick={() => void cycleLanguage()}
-                >
-                  <span>Language</span>
-                  <span className="pill-popover-badge">{currentLangLabel}</span>
-                </button>
-                <button
-                  type="button"
-                  className="pill-popover-item"
-                  role="menuitem"
-                  onClick={() => {
-                    setPanel(null);
-                    void invoke("toggle_settings").catch((e) =>
-                      setError(String(e)),
-                    );
-                  }}
-                >
-                  <span>Settings...</span>
-                </button>
-                <div className="pill-popover-divider" />
-                <button
-                  type="button"
-                  className="pill-popover-item pill-popover-quit"
-                  role="menuitem"
-                  onClick={() => {
-                    setPanel(null);
-                    void invoke("quit_app").catch((e) => setError(String(e)));
-                  }}
-                >
-                  <span>Quit</span>
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+          {/* The panel anchors against the dock, out of flow: it can
+              neither push the pill nor wait on a reflow. Which way it
+              opens was decided by the core before this element existed. */}
+          {panel && (
+            <div className="pill-panel" ref={panelRef}>
+              {panel === "take" ? (
+                <LastTakeCard
+                  text={lastText}
+                  languageLabel={currentLangLabel}
+                  onCycleLanguage={() => void cycleLanguage()}
+                  onCopy={() => void copyTake()}
+                  onClose={() => setPanel(null)}
+                  onClear={() => setCleared(true)}
+                  copied={copied}
+                  cleared={cleared}
+                />
+              ) : (
+                <div className="pill-popover" role="menu" aria-label="Quick options">
+                  <button
+                    type="button"
+                    className="pill-popover-item"
+                    role="menuitem"
+                    onClick={() => setPanel("take")}
+                  >
+                    <span>Last take</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="pill-popover-item"
+                    role="menuitem"
+                    onClick={() => void cycleLanguage()}
+                  >
+                    <span>Language</span>
+                    <span className="pill-popover-badge">{currentLangLabel}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="pill-popover-item"
+                    role="menuitem"
+                    onClick={() => {
+                      setPanel(null);
+                      void invoke("toggle_settings").catch((e) =>
+                        setError(String(e)),
+                      );
+                    }}
+                  >
+                    <span>Settings...</span>
+                  </button>
+                  <div className="pill-popover-divider" />
+                  <button
+                    type="button"
+                    className="pill-popover-item pill-popover-quit"
+                    role="menuitem"
+                    onClick={() => {
+                      setPanel(null);
+                      void invoke("quit_app").catch((e) => setError(String(e)));
+                    }}
+                  >
+                    <span>Quit</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

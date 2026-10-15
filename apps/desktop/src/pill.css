@@ -51,14 +51,9 @@ body {
   justify-content: center;
 }
 
-/* Opened upward, the panel is rendered above the pill without the DOM
-   order changing, so the spring always grows away from the pill. */
-.pill[data-panel="up"] .pill-shell {
-  flex-direction: column-reverse;
-}
-
 /* The dock hugs the pill and nothing else, so the aura stays the pill's
-   own light even when a panel is open beside it. */
+   own light even when a panel is open beside it. The panel anchors
+   against this box too: its top edge is the pill's top edge. */
 .pill-dock {
   position: relative;
   flex: none;
@@ -314,28 +309,25 @@ body {
   to { transform: rotate(360deg); }
 }
 
-/* The panel wrapper. Taken out of flow until the core has said which way
-   it opens: a hidden-but-laid-out panel would push the pill up inside a
-   window that has not grown to hold it yet, and the pill would flinch
-   every time a panel opened. Out of flow it cannot move anything, and
-   it can still be measured. */
+/* The panel wrapper. Absolutely positioned against the pill's own box,
+   so it can neither push the pill around nor depend on the window's
+   height: an upward panel draws inside the room the window already
+   carries above the pill, a downward one inside the room grown below it.
+   In flow, an upward panel shoves the pill itself off the bottom of the
+   window — which is exactly the flicker this replaces. */
 .pill-panel {
   position: absolute;
-  flex: none;
+  top: calc(100% + 10px);
   visibility: hidden;
 }
 
-.pill[data-panel] .pill-panel {
-  position: static;
-  visibility: visible;
-}
-
-.pill[data-panel="down"] .pill-panel {
-  margin-top: 10px;
-}
-
 .pill[data-panel="up"] .pill-panel {
-  margin-bottom: 10px;
+  top: auto;
+  bottom: calc(100% + 10px);
+}
+
+.pill[data-panel] .pill-panel {
+  visibility: visible;
 }
 
 /* Compact Liquid Glass Popover menu, the quick doors out of the app */
@@ -385,11 +377,13 @@ body {
 /* The panel keeps to the side of the pill that has room, so a pill
    parked against a screen edge never pushes its own menu off it. */
 .pill[data-align="end"] .pill-panel {
-  align-self: flex-end;
+  left: auto;
+  right: 0;
 }
 
 .pill[data-align="start"] .pill-panel {
-  align-self: flex-start;
+  left: 0;
+  right: auto;
 }
 
 .pill-popover-item {

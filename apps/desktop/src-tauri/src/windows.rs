@@ -9,14 +9,11 @@ use std::sync::Mutex;
 
 use serde::Serialize;
 use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
-use windows::Win32::Foundation::{HWND, POINT, RECT};
+use windows::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
-    GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+    EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO,
 };
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetCursorPos, GetSystemMetrics, SetWindowPos, SYSTEM_METRICS_INDEX, SM_CXSCREEN,
-    SM_CYSCREEN, SWP_NOACTIVATE, SWP_NOZORDER,
-};
+use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
 
 use crate::pipeline::Phase;
 
@@ -62,18 +59,24 @@ const HALF_HEIGHT: f64 = glow_reach(AURA_MAIN_DIAMETER) * 1.7;
 
 /// Empty room around the pill inside the window.
 ///
-/// The material is painted outside the pill — its glow, its shadow, and
-/// a panel opened out of it — and a window clips whatever reaches its own
-/// edge, so the window is sized with headroom above the pill rather than
-/// picked by eye. That headroom is room the pill cannot climb past while
-/// the window stays on screen, which is exactly why the drag below is
-/// allowed to take the window above the top edge: the pill is what has to
-/// stop at the screen, not the window. The extra room costs nothing to
-/// whatever sits underneath: the empty part of the window passes the
-/// pointer straight through.
-const POPOVER_HEADROOM: f64 = 110.0;
+/// The room above is spent on the glow that spills over the pill and on
+/// the tallest panel the pill may open above itself, because an upward
+/// panel is drawn inside this room: moving the window up to make space for
+/// it would move the pill, and the pill's place on screen must not depend
+/// on what is open beside it. The room below carries the shadow. Neither
+/// costs anything to whatever sits underneath: the empty part of the window
+/// passes the pointer straight through.
+const PANEL_HEADROOM: f64 = 240.0;
 const BLEED_X: f64 = 52.0;
-const BLEED_TOP: f64 = HALF_HEIGHT - PILL_HEIGHT / 2.0 + POPOVER_HEADROOM;
+
+/// How far the glow spills above the pill on its own.
+const GLOW_ABOVE: f64 = HALF_HEIGHT - PILL_HEIGHT / 2.0;
+
+const BLEED_TOP: f64 = if PANEL_HEADROOM > GLOW_ABOVE {
+    PANEL_HEADROOM
+} else {
+    GLOW_ABOVE
+};
 const BLEED_BOTTOM: f64 = HALF_HEIGHT + 4.0 - PILL_HEIGHT / 2.0;
 
 /// The window is the pill plus its room. Named so this geometry and the
@@ -88,8 +91,12 @@ const _: () = {
     assert!(WINDOW_WIDTH > PILL_WIDTH, "no room at the sides");
     assert!(WINDOW_HEIGHT > PILL_HEIGHT, "no room above or below");
     assert!(
-        BLEED_TOP > HALF_HEIGHT,
-        "the top room has to fit both the glow and an upward panel"
+        BLEED_TOP >= PANEL_HEADROOM,
+        "the top room has to hold an upward panel"
+    );
+    assert!(
+        BLEED_TOP >= GLOW_ABOVE,
+        "the top room has to hold the glow above the pill"
     );
     // Slack, not a fit: cutting the window to the exact reach of the
     // glow is what draws a line across the light.
@@ -134,8 +141,6 @@ const PILL_BOTTOM_MARGIN: f64 = 48.0;
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct PanelPlacement {
     pub direction: Expansion,
-    /// Whether the pill had more room to its right than to its left.
-    pub align_end: bool,
 }
 
 /// The gap a panel leaves between itself and the pill, named once here so
@@ -172,19 +177,15 @@ pub fn expand_toward(above: f64, below: f64, required: f64) -> Expansion {
     }
 }
 
-/// The pill's own room on its monitor, in logical pixels.
+/// How much screen the pill itself has above and below it.
 ///
-/// Measured against the monitor's work area rather than its full bounds,
-/// because a taskbar docked to an edge is not somewhere a panel can open
-/// to. Reading it from the platform is the only way to know: the window
-/// is a floating overlay with no relationship to the desktop layout, so
-/// nothing in the webview can work it out.
+/// The pill's place inside the window is a constant, so the room it has is
+/// just the room between its own edges and the screen's edges: an upward
+/// panel needs to know the first, a downward one the second.
 #[derive(Debug, Clone, Copy)]
 pub struct PillSpace {
     pub above: f64,
     pub below: f64,
-    pub left: f64,
-    pub right: f64,
 }
 
 /// The window's rectangle in logical pixels, and its top-left corner in
@@ -213,83 +214,104 @@ fn window_rect(window: &tauri::WebviewWindow) -> Option<((f64, f64), (f64, f64, 
     ))
 }
 
-/// The work area of the monitor the given physical point sits on, in
-/// logical pixels, or the full desktop when the platform refuses to say.
-fn work_area_at(physical: (f64, f64), scale: f64) -> (f64, f64, f64, f64) {
-    // SAFETY: the point is a real screen coordinate and the handle and
-    // struct are both handed to a call that only fills them.
-    unsafe {
-        let monitor = MonitorFromPoint(
-            POINT {
-                x: physical.0 as i32,
-                y: physical.1 as i32,
-            },
-            MONITOR_DEFAULTTONEAREST,
-        );
-        let mut info = MONITORINFO {
-            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
-            ..Default::default()
-        };
-        if GetMonitorInfoW(monitor, &mut info).as_bool() {
-            let r: RECT = info.rcWork;
-            (
-                r.left as f64 / scale,
-                r.top as f64 / scale,
-                (r.right - r.left) as f64 / scale,
-                (r.bottom - r.top) as f64 / scale,
-            )
-        } else {
-            let cx: SYSTEM_METRICS_INDEX = SM_CXSCREEN;
-            let cy: SYSTEM_METRICS_INDEX = SM_CYSCREEN;
-            let width = GetSystemMetrics(cx) as f64 / scale;
-            let height = GetSystemMetrics(cy) as f64 / scale;
-            (0.0, 0.0, width, height)
-        }
+/// The union of every monitor's work area, in physical pixels.
+///
+/// The union rather than the monitor under the window, because the window
+/// is wider than the pill: at the pill's own edge the window's corner is
+/// already past it, so a clamp written against that corner's monitor
+/// reaches across to the neighbour and yanks the pill fully onto it. The
+/// union also lets the pill rest between two screens, which is where any
+/// window manager leaves a window. Empty work area when the platform
+/// refuses to enumerate.
+fn virtual_work_area() -> (f64, f64, f64, f64) {
+    let mut bounds = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
+    // SAFETY: the callback only reads what the system filled in for each
+    // monitor and folds it into `bounds`, which outlives the call.
+    let enumerated = unsafe {
+        EnumDisplayMonitors(
+            None,
+            None,
+            Some(collect_monitor),
+            LPARAM(&raw mut bounds as isize),
+        )
+    };
+    if !enumerated.as_bool() || bounds.2 <= bounds.0 || bounds.3 <= bounds.1 {
+        return (0.0, 0.0, 0.0, 0.0);
     }
+    (
+        bounds.0 as f64,
+        bounds.1 as f64,
+        (bounds.2 - bounds.0) as f64,
+        (bounds.3 - bounds.1) as f64,
+    )
 }
 
-/// The work area of the pill's own monitor, in logical pixels.
+/// Folds one monitor's work area into the running bounds.
+///
+/// A monitor whose work area the platform will not describe is left out
+/// rather than guessed at: a wrong rectangle is worse than a missing one,
+/// because the clamp would then hold the pill inside somewhere it cannot
+/// actually be.
+unsafe extern "system" fn collect_monitor(
+    monitor: HMONITOR,
+    _dc: HDC,
+    _clip: *mut RECT,
+    data: LPARAM,
+) -> BOOL {
+    // SAFETY: the pointer is the one handed to EnumDisplayMonitors above,
+    // and it is alive for the whole enumeration.
+    let bounds = unsafe { &mut *(data.0 as *mut (i32, i32, i32, i32)) };
+    let mut info = MONITORINFO {
+        cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: the handle comes from the enumeration and the struct is
+    // ours, sized as the call requires.
+    if unsafe { GetMonitorInfoW(monitor, &mut info) }.as_bool() {
+        bounds.0 = bounds.0.min(info.rcWork.left);
+        bounds.1 = bounds.1.min(info.rcWork.top);
+        bounds.2 = bounds.2.max(info.rcWork.right);
+        bounds.3 = bounds.3.max(info.rcWork.bottom);
+    }
+    true.into()
+}
+
+/// The union of every monitor's work area, in logical pixels.
 ///
 /// Read from the platform, because nothing in the webview can know where
 /// the taskbar is: this window is a floating overlay with no relationship
-/// to the desktop layout.
-fn monitor_work_area(window: &tauri::WebviewWindow) -> (f64, f64, f64, f64) {
-    let Some((physical, _)) = window_rect(window) else {
-        return (0.0, 0.0, 0.0, 0.0);
-    };
-    let scale = window.scale_factor().unwrap_or(1.0);
-    work_area_at(physical, scale)
+/// to the desktop layout. Empty when the platform refuses to say, which
+/// the clamp reads as "no measurement, no clamp".
+fn work_area(scale: f64) -> (f64, f64, f64, f64) {
+    let (x, y, width, height) = virtual_work_area();
+    (x / scale, y / scale, width / scale, height / scale)
 }
 
-/// How much screen the pill itself has on each side of it.
+/// How much screen the pill itself has above and below it.
 ///
-/// Measured from the pill's own edges, not the window's: the window
+/// Measured from the pill's own edges rather than the window's: the window
 /// carries empty room that runs past the screen edges by design, and
 /// counting that as space is how a panel gets told it fits where it does
-/// not.
-fn pill_space(window: &tauri::WebviewWindow, base_y: f64) -> PillSpace {
+/// not. The pill's place inside the window is a constant, so this needs no
+/// more than where the window was left.
+fn pill_space(window: &tauri::WebviewWindow) -> PillSpace {
     let none = PillSpace {
         above: 0.0,
         below: 0.0,
-        left: 0.0,
-        right: 0.0,
     };
-    let (work_x, work_y, work_width, work_height) = monitor_work_area(window);
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let (_, work_y, work_width, work_height) = work_area(scale);
     if work_width <= 0.0 || work_height <= 0.0 {
         return none;
     }
-    let Some((physical, _)) = window_rect(window) else {
+    let Some((_, (_, y, _, _))) = window_rect(window) else {
         return none;
     };
-    let pill_top = base_y + BLEED_TOP;
+    let pill_top = y + BLEED_TOP;
     let pill_bottom = pill_top + PILL_HEIGHT;
-    let pill_left = physical.0 / window.scale_factor().unwrap_or(1.0);
-    let pill_right = pill_left + PILL_WIDTH;
     PillSpace {
         above: pill_top - work_y,
         below: (work_y + work_height) - pill_bottom,
-        left: pill_left - work_x,
-        right: (work_x + work_width) - pill_right,
     }
 }
 
@@ -303,6 +325,10 @@ fn pill_space(window: &tauri::WebviewWindow, base_y: f64) -> PillSpace {
 /// screen by exactly the room the pill carries — the glow above it then
 /// falls outside the screen, which is where light that has nowhere to land
 /// belongs.
+///
+/// The bounds are the union of every screen's work area rather than one
+/// screen's, so the pill may rest between two monitors the way any window
+/// may, and may be taken across and back.
 ///
 /// Pure, because the arithmetic is the whole decision and a screen is not
 /// something a test can provide.
@@ -400,7 +426,7 @@ pub fn continue_pill_drag(app: AppHandle) -> Option<(f64, f64)> {
     if let Some(expansion) = app.try_state::<PanelExpansion>() {
         *expansion.0.lock().expect("panel expansion poisoned") = None;
     }
-    let (x, y) = clamp_pill_origin(desired, monitor_work_area(&window));
+    let (x, y) = clamp_pill_origin(desired, work_area(scale));
     place_window(&window, x, y, WINDOW_WIDTH, WINDOW_HEIGHT);
     Some((x, y))
 }
@@ -441,23 +467,17 @@ pub struct PanelExpansion(pub Mutex<Option<(Expansion, f64)>>);
 
 /// The pill's own box on screen, grown to cover an open panel.
 ///
-/// One rule for the collapsed and the expanded pill alike: the room
-/// around the pill is room the user cannot click through, and a panel
-/// extends that box in whichever direction it opened.
-///
-/// The pill's place on screen is derived rather than read, because the
-/// window's own top edge is not the same edge in both directions: an
-/// upward panel pushes the window up by its own height and the pill
-/// stays put inside it.
+/// One rule for the collapsed and the expanded pill alike: the room around
+/// the pill is room the user cannot click through, and a panel extends
+/// that box in whichever direction it opened. The pill's place inside the
+/// window never changes, so neither does this need to know where the window
+/// went.
 pub fn pill_hit_box(
     window_at: (f64, f64),
     expansion: Option<(Expansion, f64)>,
 ) -> (f64, f64, f64, f64) {
     let (wx, wy) = window_at;
-    let pill_top = match expansion {
-        Some((Expansion::Up, extra)) => wy + extra + BLEED_TOP,
-        _ => wy + BLEED_TOP,
-    };
+    let pill_top = wy + BLEED_TOP;
     let mut top = pill_top - HOVER_PAD;
     let mut bottom = pill_top + PILL_HEIGHT + HOVER_PAD;
     if let Some((direction, extra)) = expansion {
@@ -543,11 +563,12 @@ fn place_window(window: &tauri::WebviewWindow, x: f64, y: f64, width: f64, heigh
 /// Opens a panel out of the pill, or puts the window back when asked for
 /// no panel at all.
 ///
-/// The window grows in the direction the panel opens and is pushed the
-/// same distance in the opposite direction, so the pill lands on exactly
-/// the pixels it was already on. That is the whole point of measuring
-/// first: a panel that opens downward must not shift the pill down by its
-/// own height on the way there.
+/// The window is resized and never moved, because the pill's place on
+/// screen is derived from the window's origin alone. An upward panel draws
+/// inside the room the window already carries above the pill; a downward
+/// one grows the window below it. Both leave the origin where it was, which
+/// is the whole reason the pill cannot flinch when a panel opens: there is
+/// no moment in which the window has moved and the pill has not.
 #[tauri::command]
 pub fn set_pill_panel(app: AppHandle, required_height: f64) -> Option<PanelPlacement> {
     let Some(window) = app.get_webview_window(PILL) else {
@@ -564,36 +585,21 @@ pub fn set_pill_panel(app: AppHandle, required_height: f64) -> Option<PanelPlace
     let Some((_, (x, y, _width, _height))) = window_rect(&window) else {
         return None;
     };
-
-    // Whatever is open now, the pill's resting rectangle is the one with
-    // no panel in it: same top-left, the unexpanded height.
-    let opened = *state.0.lock().expect("panel expansion poisoned");
-    let base_y = match opened {
-        Some((Expansion::Up, previous)) => y + previous,
-        _ => y,
-    };
-
     if extra <= 0.0 {
-        place_window(&window, x, base_y, WINDOW_WIDTH, WINDOW_HEIGHT);
+        place_window(&window, x, y, WINDOW_WIDTH, WINDOW_HEIGHT);
         *state.0.lock().expect("panel expansion poisoned") = None;
         return None;
     }
-    let space = pill_space(&window, base_y);
+    let space = pill_space(&window);
     let direction = expand_toward(space.above, space.below, extra);
-    let shifted = match direction {
-        Expansion::Up => base_y - extra,
-        Expansion::Down => base_y,
+    // Only a downward panel needs room the window does not already have.
+    let height = match direction {
+        Expansion::Down => WINDOW_HEIGHT + extra,
+        Expansion::Up => WINDOW_HEIGHT,
     };
-    // Straight to the target in one system call. Collapsing first, or
-    // sizing before shifting, would put the window back on screen for a
-    // frame every time the panel changes, which reads as the pill
-    // flinching.
-    place_window(&window, x, shifted, WINDOW_WIDTH, WINDOW_HEIGHT + extra);
+    place_window(&window, x, y, WINDOW_WIDTH, height);
     *state.0.lock().expect("panel expansion poisoned") = Some((direction, extra));
-    Some(PanelPlacement {
-        direction,
-        align_end: space.right >= space.left,
-    })
+    Some(PanelPlacement { direction })
 }
 
 /// Keeps the empty room transparent to the mouse and the pill opaque to
@@ -913,22 +919,30 @@ mod tests {
             Some((Expansion::Down, panel))
         ));
 
-        // Opened above: the same box, grown the other way, from a window
-        // that was pushed up by the panel's own height.
+        // Opened above: the box grows up from the pill from the SAME
+        // window origin, because the panel is drawn inside the room the
+        // window already carries and the window does not move.
         let (u_x, u_y, u_width, u_height) =
-            pill_hit_box((origin.0, origin.1 - panel), Some((Expansion::Up, panel)));
+            pill_hit_box(origin, Some((Expansion::Up, panel)));
         assert_eq!(u_x, c_x);
         assert_eq!(u_width, c_width);
-        assert_eq!(u_y + u_height, c_bottom, "the pill's own box does not move");
-        assert_eq!(c_y - u_y, panel, "the panel is added above");
+        // The pill's own part of the box sits at the box's bottom.
+        assert_eq!(
+            u_y + u_height,
+            c_bottom,
+            "the pill's own box does not move"
+        );
+        assert_eq!(u_y, c_y - panel, "the panel is added above, in place");
+        // Inside the panel band, the pointer is ours.
         assert!(pointer_over_pill_expanded(
-            (x, u_y + panel / 2.0),
-            (origin.0, origin.1 - panel),
+            (x, c_y - panel / 2.0),
+            origin,
             Some((Expansion::Up, panel))
         ));
+        // Just past it, it is not.
         assert!(!pointer_over_pill_expanded(
             (x, u_y - 4.0),
-            (origin.0, origin.1 - panel),
+            origin,
             Some((Expansion::Up, panel))
         ));
     }
@@ -952,27 +966,27 @@ mod tests {
 
     #[test]
     fn an_open_panel_does_not_move_the_pill_a_pixel() {
-        // The property the whole expansion exists for. The pill's screen
-        // rectangle is the window's own top edge plus the top bleed in
-        // the collapsed window, and it must be that same rectangle in
-        // either direction once a panel is open: the window grows and is
-        // pushed by the same distance in the opposite direction.
+        // The property the whole design exists for. The pill's screen
+        // rectangle is the window's origin plus the top bleed, and the
+        // window's origin does not change when a panel opens: an upward
+        // panel is drawn inside the room the window already carries, a
+        // downward one grows the window below it, and neither touches the
+        // top edge.
         let origin = (600.0, 500.0);
         let resting_top = origin.1 + BLEED_TOP;
         for direction in [Expansion::Up, Expansion::Down] {
             let panel = 190.0 + PANEL_GAP;
-            let (window_y, window_height) = match direction {
-                Expansion::Up => (origin.1 - panel, WINDOW_HEIGHT + panel),
-                Expansion::Down => (origin.1, WINDOW_HEIGHT + panel),
+            // Downward grows the window; upward draws inside the room it
+            // already has. Either way the origin is the window's own.
+            let window_height = match direction {
+                Expansion::Up => WINDOW_HEIGHT,
+                Expansion::Down => WINDOW_HEIGHT + panel,
             };
-            // Both modes anchor the pill to the window's opposite edge:
-            // upward keeps it at the bottom bleed, downward at the top.
-            let pill_top = match direction {
-                Expansion::Up => {
-                    window_y + window_height - BLEED_BOTTOM - PILL_HEIGHT
-                }
-                Expansion::Down => window_y + BLEED_TOP,
-            };
+            assert!(
+                window_height <= WINDOW_HEIGHT || direction == Expansion::Down,
+                "an upward panel never needs a taller window"
+            );
+            let pill_top = origin.1 + BLEED_TOP;
             assert_eq!(
                 pill_top,
                 resting_top,

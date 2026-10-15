@@ -29,7 +29,7 @@ body {
      height and visibly jumped, then snapped back. Hanging from the top
      means the offset is a constant, so no later reflow can move it. */
   padding: 0 52px 101px;
-  padding-top: 207px;
+  padding-top: 240px;
   position: relative;
   display: flex;
   flex-direction: column;

@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "whisperlane",
+  "productName": "Whisperlane",
   "version": "0.1.0",
   "identifier": "com.whisperlane.desktop",
   "build": {
@@ -30,6 +30,9 @@
     "windows": {
       "nsis": {
         "installerHooks": "./windows/hooks.nsh"
+      },
+      "wix": {
+        "upgradeCode": "9f2c4b71-6d3e-4a58-b0c7-5e18d3a9f246"
       }
     },
     "icon": [

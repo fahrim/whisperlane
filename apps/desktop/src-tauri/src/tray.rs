@@ -21,6 +21,36 @@ use crate::pipeline::Phase;
 /// The tray icon's identifier.
 const TRAY: &str = "tray";
 
+/// The five status marks, embedded rather than read from disk.
+///
+/// The tray has to answer "what is it doing" from a glance, and an icon
+/// that has to be found on disk at the moment the phase changes is an
+/// icon that can be missing at the moment it is needed. Five small
+/// files, carried in the binary.
+mod status_art {
+    pub const IDLE: &[u8] = include_bytes!("../icons/status/tray-idle.png");
+    pub const LISTENING: &[u8] = include_bytes!("../icons/status/tray-listening-active.png");
+    pub const PROCESSING: &[u8] = include_bytes!("../icons/status/tray-processing.png");
+    pub const MUTED: &[u8] = include_bytes!("../icons/status/tray-muted.png");
+    pub const ERROR: &[u8] = include_bytes!("../icons/status/tray-error.png");
+}
+
+/// The artwork for a phase, as it stands in the tray.
+///
+/// Every phase maps to one of the five marks. What is not a phase —
+/// nothing has happened yet — reads as idle rather than as an absence,
+/// because an icon that blinks when the app has only just started looks
+/// like it has lost something.
+pub fn status_art_for(phase: Option<Phase>) -> &'static [u8] {
+    match phase {
+        Some(Phase::Listening) => status_art::LISTENING,
+        Some(Phase::Thinking) => status_art::PROCESSING,
+        Some(Phase::Failed) => status_art::ERROR,
+        Some(Phase::Cancelled) => status_art::MUTED,
+        Some(Phase::Idle) | Some(Phase::Done) | None => status_art::IDLE,
+    }
+}
+
 const START: &str = "start";
 const SETTINGS: &str = "settings";
 const QUIT: &str = "quit";
@@ -80,10 +110,11 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     // already has something to rewrite.
     let _ = ITEMS.set(TrayItems { status, start });
 
-    let icon = app
-        .default_window_icon()
-        .cloned()
-        .expect("default window icon missing");
+    // The tray opens on the idle mark rather than the window icon: the
+    // tray's whole job is to say what the app is doing, and "idle" is
+    // what it is doing when nothing has happened yet.
+    let icon = tauri::image::Image::from_bytes(status_art_for(None))
+        .expect("idle status art is not a readable image");
     TrayIconBuilder::with_id(TRAY)
         .icon(icon)
         .tooltip("whisperlane")
@@ -116,7 +147,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// Rewrites the tray's status line for the current phase.
+/// Rewrites the tray's status line and mark for the current phase.
 pub fn refresh(app: &AppHandle, phase: Option<Phase>) {
     let (Some(tray), Some(items)) = (app.tray_by_id(TRAY), ITEMS.get()) else {
         return;
@@ -126,6 +157,9 @@ pub fn refresh(app: &AppHandle, phase: Option<Phase>) {
     let _ = tray.set_tooltip(Some(format!("whisperlane — {line}")));
     let _ = items.status.set_text(line);
     let _ = items.start.set_enabled(can_start_in(phase));
+    if let Ok(image) = tauri::image::Image::from_bytes(status_art_for(phase)) {
+        let _ = tray.set_icon(Some(image));
+    }
 }
 
 #[cfg(test)]
@@ -149,6 +183,40 @@ mod tests {
         // does nothing is worse than one that is absent.
         assert!(!can_start_in(Some(Phase::Listening)));
         assert!(!can_start_in(Some(Phase::Thinking)));
+    }
+
+    #[test]
+    fn every_phase_shows_a_mark_and_nothing_is_left_out() {
+        // A phase with no artwork would leave the tray showing the
+        // previous one, which reads as a stale state rather than as a
+        // missing one.
+        let marks = [
+            status_art_for(None),
+            status_art_for(Some(Phase::Idle)),
+            status_art_for(Some(Phase::Listening)),
+            status_art_for(Some(Phase::Thinking)),
+            status_art_for(Some(Phase::Done)),
+            status_art_for(Some(Phase::Failed)),
+            status_art_for(Some(Phase::Cancelled)),
+        ];
+        assert!(
+            marks.iter().all(|m| !m.is_empty()),
+            "an embedded mark is empty"
+        );
+        assert!(tauri::image::Image::from_bytes(status_art_for(None)).is_ok());
+        // The states a user would be confused to confuse must not share
+        // a mark: recording and transcribing are both "busy" but they
+        // are not the same job.
+        assert_ne!(
+            status_art_for(Some(Phase::Listening)),
+            status_art_for(Some(Phase::Thinking))
+        );
+        assert_ne!(
+            status_art_for(Some(Phase::Failed)),
+            status_art_for(Some(Phase::Cancelled))
+        );
+        // Nothing has happened yet reads as idle, not as a gap.
+        assert_eq!(status_art_for(None), status_art_for(Some(Phase::Idle)));
     }
 
     #[test]

@@ -203,7 +203,10 @@ pub struct PillSpace {
 /// a platform call that wants physical ones. At anything but 100% scaling
 /// the two disagree, and a probe handed the wrong one can land on the
 /// wrong monitor entirely.
-fn window_rect(window: &tauri::WebviewWindow) -> Option<((f64, f64), (f64, f64, f64, f64))> {
+/// A window's top-left corner and its size, both in logical pixels.
+type WindowRect = ((f64, f64), (f64, f64, f64, f64));
+
+fn window_rect(window: &tauri::WebviewWindow) -> Option<WindowRect> {
     let scale = window.scale_factor().ok()?;
     if scale <= 0.0 {
         return None;
@@ -554,10 +557,9 @@ fn place_window(window: &tauri::WebviewWindow, x: f64, y: f64, width: f64, heigh
     // version as the toolkit's: the two HWND types are layout-identical
     // but the compiler treats them as strangers.
     let placed = window.hwnd().map(|hwnd| {
-        let raw: *mut std::ffi::c_void = hwnd.0 as *mut std::ffi::c_void;
         unsafe {
             SetWindowPos(
-                HWND(raw),
+                HWND(hwnd.0),
                 HWND(std::ptr::null_mut()),
                 x,
                 y,
@@ -584,20 +586,14 @@ fn place_window(window: &tauri::WebviewWindow, x: f64, y: f64, width: f64, heigh
 /// no moment in which the window has moved and the pill has not.
 #[tauri::command]
 pub fn set_pill_panel(app: AppHandle, required_height: f64) -> Option<PanelPlacement> {
-    let Some(window) = app.get_webview_window(PILL) else {
-        return None;
-    };
-    let Some(state) = app.try_state::<PanelExpansion>() else {
-        return None;
-    };
+    let window = app.get_webview_window(PILL)?;
+    let state = app.try_state::<PanelExpansion>()?;
     let extra = if required_height > 0.0 {
         required_height + PANEL_GAP
     } else {
         0.0
     };
-    let Some((_, (x, y, _width, _height))) = window_rect(&window) else {
-        return None;
-    };
+    let (_, (x, y, _width, _height)) = window_rect(&window)?;
     if extra <= 0.0 {
         place_window(&window, x, y, WINDOW_WIDTH, WINDOW_HEIGHT);
         *state.0.lock().expect("panel expansion poisoned") = None;
@@ -653,7 +649,7 @@ pub fn spawn_click_through(app: &AppHandle) {
             // logical pixels, so it has to be scaled before the two are
             // compared. At anything but 100% scaling they disagree.
             let scale = window.scale_factor().unwrap_or(1.0);
-            let cursor = (cx as f64 / scale, cy as f64 / scale);
+            let cursor = (cx / scale, cy / scale);
             let at = (at.x as f64 / scale, at.y as f64 / scale);
             let expansion = worker
                 .try_state::<PanelExpansion>()

@@ -97,7 +97,16 @@ pub fn run() {
             app.manage(windows::PanelExpansion(Default::default()));
             app.manage(windows::PillDrag(Default::default()));
             windows::spawn_click_through(app.handle());
-            
+
+            // The engine is installed with the app and run from the data
+            // directory, so it has to be put there before anything asks
+            // what backend it has. Failure is not fatal here: the status
+            // surface reports it, and a machine mid-update should still
+            // open its window.
+            if let Err(e) = stt::seed_runtime(app.handle()) {
+                eprintln!("transcription runtime not installed: {e}");
+            }
+
             // The take worker exists before the hook, so no chord edge
             // can arrive before there is a thread that owns the live
             // capture stream.

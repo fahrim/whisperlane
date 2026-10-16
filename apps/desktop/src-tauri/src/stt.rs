@@ -4,7 +4,7 @@
 //! and honest model-presence reporting. Never stops a server instance
 //! it did not start.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -99,6 +99,67 @@ pub fn app_dir(app: &AppHandle) -> Result<PathBuf, String> {
 
 pub fn runtime_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_dir(app)?.join("runtime"))
+}
+
+/// The runtime as it was installed, next to the executable.
+///
+/// The copy the app runs from is in the data directory rather than here
+/// because a Program Files install is not writable by the user, and the
+/// engine loads libraries by relative path from its own directory.
+fn installed_runtime_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app
+        .path()
+        .resource_dir()
+        .map_err(|e| format!("could not resolve resource dir: {e:?}"))?
+        .join("runtime"))
+}
+
+/// Puts the installed engine in the data directory, if it is not there.
+///
+/// A fresh install has the runtime inside the install directory and
+/// nowhere else, so without this a machine that has just installed the
+/// app has no engine: the take records, and then there is nothing to
+/// transcribe it. Existing files are left alone, so a repair never
+/// overwrites a runtime that is already working.
+pub fn seed_runtime(app: &AppHandle) -> Result<(), String> {
+    let target = runtime_dir(app)?;
+    if target.join("whisper-server.exe").is_file() {
+        return Ok(());
+    }
+    let source = installed_runtime_dir(app)?;
+    install_runtime_files(&source, &target)
+}
+
+/// Copies an installed engine into the directory the app runs it from.
+///
+/// Flat files only, because the engine resolves its libraries by
+/// relative path from its own directory: a subfolder would load nothing.
+pub fn install_runtime_files(source: &Path, target: &Path) -> Result<(), String> {
+    if !source.join("whisper-server.exe").is_file() {
+        // Said plainly rather than guessed at: an install with no engine
+        // cannot be repaired by trying harder.
+        return Err(format!(
+            "no transcription runtime was installed at {}",
+            source.display()
+        ));
+    }
+    std::fs::create_dir_all(target)
+        .map_err(|e| format!("could not create {}: {e}", target.display()))?;
+    let entries = std::fs::read_dir(source)
+        .map_err(|e| format!("could not read {}: {e}", source.display()))?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            let name = path.file_name().unwrap_or_default();
+            std::fs::copy(&path, target.join(name)).map_err(|e| {
+                format!(
+                    "could not install runtime file {}: {e}",
+                    name.to_string_lossy()
+                )
+            })?;
+        }
+    }
+    Ok(())
 }
 
 /// The model file the chosen model resolves to on disk.
@@ -567,6 +628,50 @@ pub fn verify_backend(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A stand-in install: one real filename and one that is not part of
+    /// the engine, so the test can tell copying everything from copying
+    /// the right things.
+    fn fake_install(dir: &Path) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join("whisper-server.exe"), b"engine").unwrap();
+        std::fs::write(dir.join("ggml-vulkan.dll"), b"backend").unwrap();
+        std::fs::create_dir_all(dir.join("Release")).unwrap();
+        std::fs::write(dir.join("Release").join("leftover.txt"), b"x").unwrap();
+    }
+
+    #[test]
+    fn a_fresh_install_gets_an_engine_to_run() {
+        // The failure this prevents: the installer ships the runtime and
+        // nothing ever moves it, so the app opens, records a take, and
+        // has nothing to transcribe it with.
+        let root = std::env::temp_dir().join("whisperlane-seed-runtime");
+        let source = root.join("install").join("runtime");
+        let target = root.join("data").join("runtime");
+        let _ = std::fs::remove_dir_all(&root);
+        fake_install(&source);
+
+        install_runtime_files(&source, &target).unwrap();
+
+        assert!(target.join("whisper-server.exe").is_file());
+        assert!(target.join("ggml-vulkan.dll").is_file());
+        // Flat, because the engine resolves its libraries by relative
+        // path from its own directory.
+        assert!(!target.join("Release").exists(), "nested folder copied through");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_install_with_no_engine_says_so() {
+        // Not a silent no-op: an app that cannot transcribe has to be
+        // able to say why rather than looking like it is still loading.
+        let root = std::env::temp_dir().join("whisperlane-seed-empty");
+        let source = root.join("runtime");
+        std::fs::create_dir_all(&source).unwrap();
+        let err = install_runtime_files(&source, &root.join("data")).unwrap_err();
+        assert!(err.contains("no transcription runtime"), "{err}");
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn unloads_only_when_warm_idle_and_free() {

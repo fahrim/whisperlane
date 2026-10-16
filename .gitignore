@@ -27,6 +27,12 @@ build/
 models/
 src-tauri/resources/models/
 
+# Transcription runtime. Fetched by tag and checksum at build time from
+# whisper-vulkan-win, so the bytes live in one pinned place rather than
+# twice in git.
+src-tauri/runtime/
+src-tauri/runtime.pin
+
 # Logs
 *.log
 logs/

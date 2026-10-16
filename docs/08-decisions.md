@@ -476,6 +476,40 @@ same decision table in the core, so neither can drift from the other.
 Status: approved — see `adr/008-pill-control.md`, which amends
 `adr/004-cancel-gesture.md` and extends `adr/007-chord-from-terminal-state.md`.
 
+## 11. Where the transcription runtime comes from, and what pins it
+
+Context: the packaging slice found that the engine was never shipped. The
+installer carried the application and nothing else; the transcription
+runtime existed only on the machine that had built it. A fresh install
+opened its window, recorded a take, and had nothing to transcribe it with.
+
+Options: commit the engine binaries; build the engine as part of every
+product build; or fetch a published build at build time.
+
+Trade-offs: committing the bytes makes the build hermetic and the
+repository heavy, and puts a third-party binary under this project's
+version history. Building the engine on every product build makes the
+build slow and fragile — it needs the Vulkan SDK and a toolchain most
+contributors do not have. Fetching keeps the repository light and the
+provenance honest, and makes the pin a single thing to change.
+
+A fourth option existed and was rejected on fact: upstream publishes
+Windows builds for CPU and CUDA, and nothing for Vulkan. The Vulkan
+backend was written for this project and is published as its own
+repository, built in CI from unmodified upstream sources.
+
+Decision: the runtime is fetched at build time from that repository,
+pinned by tag, and checked against a published digest before anything
+uses it. The build fails rather than continuing without it, because a
+build with no engine produces an installer that cannot work.
+
+Changing the pin is a deliberate act rather than a version bump: the
+engine is the one component where a surprise is a wrong answer rather
+than a crash.
+
+Status: approved — recorded here rather than in an ADR because it
+constrains the build, not the product's behaviour.
+
 ## ADR process
 
 - A decision becomes an ADR only after explicit approval of the

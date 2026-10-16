@@ -21,6 +21,33 @@ use crate::stt_shared::{
     resample_linear, Backend, ENGINE_SAMPLE_RATE, INFERENCE_PATH, OPENAI_FALLBACK_PATH,
 };
 
+// Windows-only on purpose. This is the flag that decides whether the
+// engine is allowed to take the screen, and the product ships as a
+// Windows application; naming it unconditionally makes the assumption
+// loud on any other platform rather than quietly dropping the flag and
+// bringing the bug back.
+use std::os::windows::process::CommandExt;
+
+/// `CREATE_NO_WINDOW`: start a console program without giving it a window.
+///
+/// whisper-server is a console application. Started from one that has no
+/// console of its own, Windows allocates a fresh one — and that window
+/// takes focus, so a dictation lands in the engine's own command prompt
+/// instead of the application the user was writing in. The engine's
+/// output is read through a pipe either way; nothing needs a window.
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// A command that starts the engine in the background.
+///
+/// Both the probe and the real service go through here: the probe runs
+/// on every launch, so leaving it out of one place means the window
+/// still appears — just later, and only on the first take.
+fn engine_command(bin: &Path) -> Command {
+    let mut command = Command::new(bin);
+    command.creation_flags(CREATE_NO_WINDOW);
+    command
+}
+
 /// Proven idle-unload period: ten minutes, never while a take is live.
 pub const IDLE_UNLOAD_SECS: u64 = 600;
 /// whisperlane's own port; the paired plugin defaults to 8801.
@@ -249,7 +276,7 @@ pub fn probe_backend(app: &AppHandle) -> Backend {
         Ok(port) => port,
         Err(_) => return Backend::Cpu,
     };
-    let mut child = match Command::new(bin)
+    let mut child = match engine_command(&bin)
         .arg("--model")
         .arg(&model)
         .arg("--host")
@@ -361,7 +388,7 @@ pub fn ensure_ready(app: &AppHandle) -> Result<u16, String> {
     // Spawn and wait for the ping.
     let bin = server_bin(app)?;
     let port = pick_port();
-    let mut child = Command::new(bin)
+    let mut child = engine_command(&bin)
         .arg("--model")
         .arg(&model)
         .arg("--host")

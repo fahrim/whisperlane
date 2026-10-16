@@ -42,6 +42,15 @@ texts.
 - Open questions are never decided silently. They are proposed in the
   decisions document with options, trade-offs, and a recommendation, and
   closed by approval into an ADR.
+- The name is written in two places on purpose. What the operating system
+  shows the user — the installed application, its shortcut, its entry in
+  the installed-programs list — carries a leading capital. What the product
+  says for itself — its window, its tray, its settings file, these
+  documents — keeps the lower-case spelling the brand uses. Neither form
+  is a typo of the other, and a change that moves one toward the other is
+  a change to the decision rather than an edit. The rule and the reason
+  are recorded in the decisions document; the constraint that makes it
+  safe only on Windows is recorded with it.
 - Scope discipline holds: keep each document free of filler and repetition,
   but keep the set wide enough to cover vision, audience, product,
   experience, architecture, integration, roadmap, decisions, and repository.

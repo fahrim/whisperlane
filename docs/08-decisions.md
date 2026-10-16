@@ -510,6 +510,47 @@ than a crash.
 Status: approved — recorded here rather than in an ADR because it
 constrains the build, not the product's behaviour.
 
+## 12. How the name is written, and where
+
+Context: the packaging slice found the application listed in Windows in
+lower case, among entries like Steam and Notepad that Windows sorts
+together and reads at a glance. A lower-case entry among them looks like
+something that arrived by accident rather than something a person chose.
+
+Options: write the name in one case everywhere; capitalise only where the
+operating system displays it; or capitalise everywhere and change the
+brand to match.
+
+Trade-offs: one case everywhere is the simplest rule and the one most
+software follows, but it puts the product's own spelling at the mercy of
+a convention aimed at installers. Capitalising everywhere cannot actually
+reach one case, because the data directory is keyed on an identifier that
+stays as it is; changing that would move several hundred megabytes of
+already-downloaded models on a user's machine to fix a letter.
+
+Direction: the reference project's installers declare a capitalised
+product name while their downloads are published in lower case. That is
+the split adopted here — the name the operating system shows is
+capitalised, the name the brand uses is not.
+
+Decision: the packaging manifest declares the name in the capitalised
+form, and every place the product speaks for itself keeps its own
+lower-case spelling — the window title, the tray, the settings file, the
+documentation. The identifier is untouched and remains the stable,
+machine-facing name.
+
+Known constraint, carried forward: this is safe on Windows only because
+the filesystem and the registry are both case-insensitive there, so the
+change of case moved nothing. On a case-sensitive filesystem the same
+edit would leave the old install directory behind and quietly break
+upgrades. Every platform added from the wider milestone onward must be
+checked against this before inheriting the convention, rather than
+assuming it travelled.
+
+Status: approved — recorded here rather than in an ADR because it
+constrains the packaging, not the product's behaviour. Extends item six,
+which settled the name itself.
+
 ## ADR process
 
 - A decision becomes an ADR only after explicit approval of the

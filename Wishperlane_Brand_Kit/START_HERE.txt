@@ -1,0 +1,17 @@
+WISHPERLANE BRAND KIT
+
+1) Transparent logos: 01_Logos/PNG/
+2) Scalable symbol: 01_Logos/SVG/
+3) App icons and favicon: 02_App_Icons/PNG/
+4) Android adaptive icon layers: 02_App_Icons/Android/
+5) UI status icons: 03_Status_States/
+6) Social banners/posts: 04_Social_Media/
+7) Overview and color guide: 05_Guidelines/
+
+For a typical website, start with:
+- Logo: 01_Logos/PNG/wishperlane-lockup-horizontal-on-dark.png
+- App/social icon: 02_App_Icons/PNG/wishperlane-app-icon-flat-1024.png
+- Favicon: 02_App_Icons/PNG/favicon.ico
+- Web manifest: 02_App_Icons/PNG/site.webmanifest
+
+See README.md for details and source limitations.

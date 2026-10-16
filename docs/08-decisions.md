@@ -194,6 +194,33 @@ Trade-offs: renaming now is cheap; renaming after release is expensive.
 Recommendation: run the availability and collision check before M2
 packaging; record the outcome here.
 
+Outcome: the check was run on 14 October 2026 and the name stands.
+
+Package registries are unclaimed: the name is free on npm, on crates.io
+and on PyPI. No desktop dictation or transcription product uses it —
+the neighbouring products all sit under different names, and the crowded
+part of the space is the whisper-prefixed names rather than this one.
+
+The domains are held, by unrelated businesses, and all of them write the
+name as two words rather than one: a wellness studio, a wellness shop and
+an investment firm. None is in software.
+
+Two things are noted rather than resolved, because neither is a barrier
+to packaging. The first word is part of a well-known model family name,
+so a trademark filing would have to be argued in that neighbourhood
+rather than assumed. And the name arrives spelled with an extra letter in
+the brand kit as supplied; the maintainer confirmed that was a slip, and
+the kit now spells it as the product does.
+
+A professional trademark search is still outstanding and is not something
+a registry lookup can stand in for. It matters before a public launch,
+not before a milestone build.
+
+Decision: the name stays. Packaging identity follows it.
+
+Status: resolved — no ADR; a name that changes nothing about how the
+product behaves does not need one.
+
 ## 7. Default hotkey
 
 Context: the whole product hinges on one key interaction, but the default

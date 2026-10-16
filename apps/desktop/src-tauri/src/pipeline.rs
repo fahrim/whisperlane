@@ -195,7 +195,7 @@ pub fn clear_last_text(app: &AppHandle) {
 }
 
 /// Records the latest transcript without moving the phase.
-/// Delivery (S5) reads it from here.
+/// The delivery seam reads it from here.
 pub fn set_last_text(app: &AppHandle, text: String) {
     if let Some(state) = app.try_state::<PipelineState>() {
         let snapshot = {
@@ -206,6 +206,17 @@ pub fn set_last_text(app: &AppHandle, text: String) {
         app.emit("pipeline-state", snapshot)
             .expect("failed to emit pipeline-state");
     }
+}
+
+/// Where the next take will be delivered.
+///
+/// Read by the delivery seam rather than assumed by it, so the target
+/// recorded in the status and the target text actually goes to cannot be
+/// two different things.
+pub fn target_of(app: &AppHandle) -> InsertionTarget {
+    app.try_state::<PipelineState>()
+        .map(|state| state.0.lock().expect("pipeline state poisoned").target.clone())
+        .unwrap_or(InsertionTarget::FocusedApp)
 }
 
 /// Records how a finished take was delivered. Stays in Done: the take

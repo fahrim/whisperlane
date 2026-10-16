@@ -524,7 +524,11 @@ pub fn transcribe_take(app: AppHandle, wav_path: String) {
                 if current_phase(&app) != Some(Phase::Thinking) {
                     return;
                 }
-                if text.is_empty() {
+                // Trimmed, not length-checked: the engine returns whitespace for a
+                // recording of nothing, and a take that reported success
+                // with nothing in it would sit in Done forever with the
+                // user told the text landed.
+                if text.trim().is_empty() {
                     set_phase(
                         &app,
                         Phase::Failed,
@@ -533,7 +537,7 @@ pub fn transcribe_take(app: AppHandle, wav_path: String) {
                 } else {
                     set_last_text(&app, text);
                     set_phase(&app, Phase::Done, None);
-                    crate::insert::deliver(&app);
+                    crate::target::deliver(&app);
                 }
             }
             Err(detail) => {

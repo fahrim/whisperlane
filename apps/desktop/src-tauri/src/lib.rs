@@ -4,12 +4,12 @@ use tauri::Manager;
 mod audio;
 mod deliver;
 mod hotkey;
-mod insert;
 mod models;
 mod pipeline;
 mod settings;
 mod stt;
 pub mod stt_shared;
+mod target;
 mod tray;
 mod windows;
 

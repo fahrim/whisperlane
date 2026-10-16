@@ -36,6 +36,23 @@ abstraction reserves an explicit agent destination for phase two, so adding
 it later means describing a new target, not redesigning dictation. The
 phase-two agent design lives in the agent integration document.
 
+The delivery seam is the only place that decides where a take goes. The
+destination is also recorded in the status and carried to the interface,
+because the user is entitled to know where their words are about to land;
+knowing is not deciding. Everything above the seam is the same whatever
+the destination is; everything below it is one module per destination,
+reachable only from the seam, so no other part of the program can write
+into an application — a caller that reached past it would be choosing a
+destination by accident, which is the whole thing the seam prevents.
+
+The seam also decides whether a take delivers at all. That question is
+asked in the same breath as where it goes, and splitting the two would
+leave half the decision in each place.
+
+The abstract shape exists with a single destination behind it, which is
+the point: the second destination becomes an addition at the seam, not a
+change to the pipeline, the indicator, or the cancellation rules.
+
 ## Technology choices and why
 
 - A native desktop shell with a system web view keeps binaries small and

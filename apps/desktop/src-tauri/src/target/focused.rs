@@ -1,6 +1,12 @@
-//! Focused-application insertion (ADR-005): native input synthesis is
-//! the primary path, the clipboard is the fallback, and neither is
+//! The focused-application destination (ADR-005): native input synthesis
+//! is the primary path, the clipboard is the fallback, and neither is
 //! silent.
+//!
+//! This is one destination's implementation, reached only through its
+//! parent. The delivery seam in `super` is the only caller, which is what
+//! makes "no other part of the program writes into an application" a
+//! property the compiler holds rather than a rule people have to
+//! remember: `insert` is visible to the seam alone.
 //!
 //! Two shapes live here on purpose. Everything that decides something —
 //! which keys a text needs, what a partial result means, whether a
@@ -20,12 +26,12 @@ use serde::Serialize;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
+    INPUT, INPUT_0, INPUT_KEYBOARD, KEYBD_EVENT_FLAGS, KEYBDINPUT, KEYEVENTF_KEYUP,
     KEYEVENTF_UNICODE, VIRTUAL_KEY,
 };
 use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 
-use crate::pipeline::{set_delivery, DeliveryKind};
+use crate::pipeline::DeliveryKind;
 
 /// Events per `SendInput` call. The system buffer is finite, so a long
 /// transcript is typed in chunks rather than dropped.
@@ -52,9 +58,7 @@ impl Insertion {
         match self {
             Insertion::Typed => None,
             Insertion::Clipboard { notice } => Some(notice),
-            Insertion::Partial { .. } => {
-                Some("only part of the text could be inserted")
-            }
+            Insertion::Partial { .. } => Some("only part of the text could be inserted"),
         }
     }
 
@@ -87,10 +91,7 @@ pub fn keystrokes(text: &str) -> Vec<Keystroke> {
     // keystroke, which is what the platform expects.
     for unit in text.encode_utf16() {
         plan.push(Keystroke { unit, down: true });
-        plan.push(Keystroke {
-            unit,
-            down: false,
-        });
+        plan.push(Keystroke { unit, down: false });
     }
     plan
 }
@@ -202,10 +203,7 @@ fn virtual_key_events(vk: VIRTUAL_KEY) -> Vec<INPUT> {
 fn send_all(events: &[INPUT]) -> usize {
     // SAFETY: the slice is fully initialized and the size matches the
     // structure the call expects.
-    unsafe {
-        windows::Win32::UI::Input::KeyboardAndMouse::SendInput(events, INPUT_SIZE)
-            as usize
-    }
+    unsafe { windows::Win32::UI::Input::KeyboardAndMouse::SendInput(events, INPUT_SIZE) as usize }
 }
 
 /// Releases a modifier to the focused window, so it cannot stay latched.
@@ -245,12 +243,17 @@ pub fn synthesize(text: &str) -> usize {
     typed.min(text.encode_utf16().count())
 }
 
-/// The full delivery step for a finished take: type the text, or put it
-/// on the clipboard and say so.
+/// Sends a finished take into the focused window: types the text, or
+/// puts it on the clipboard and says so.
 ///
-/// Reports what happened through the pipeline so the user is never left
-/// guessing whether the text was inserted.
-pub fn insert(app: &AppHandle, text: &str) -> Insertion {
+/// Visible to the delivery seam alone. That restriction is the point: a
+/// caller that reached this directly would be choosing a destination by
+/// accident, which is what the seam above exists to prevent.
+///
+/// Returns what happened rather than reporting it, so the seam is the one
+/// place that records an outcome and the user is never left guessing
+/// whether the text was inserted.
+pub(super) fn insert(app: &AppHandle, text: &str) -> Insertion {
     let planned = text.encode_utf16().count();
     if text.is_empty() {
         return Insertion::Typed;
@@ -277,26 +280,12 @@ pub fn insert(app: &AppHandle, text: &str) -> Insertion {
     // shows it, and the notice says where it is.
     if app.clipboard().write_text(text.to_string()).is_err() {
         return Insertion::Clipboard {
-            notice: format!(
-                "{notice} — but the clipboard could not be written either"
-            ),
+            notice: format!("{notice} — but the clipboard could not be written either"),
         };
     }
     Insertion::Clipboard {
         notice: notice.to_string(),
     }
-}
-
-/// Called right after a take reaches Done.
-pub fn deliver(app: &AppHandle) {
-    let Some(text) = crate::deliver::last_text_of(app) else {
-        return;
-    };
-    if !crate::deliver::should_deliver(crate::pipeline::current_phase(app), Some(&text)) {
-        return;
-    }
-    let outcome = insert(app, &text);
-    set_delivery(app, outcome.kind(), outcome.notice().map(str::to_string));
 }
 
 #[cfg(test)]
@@ -309,10 +298,22 @@ mod tests {
         assert_eq!(
             plan,
             vec![
-                Keystroke { unit: b'h' as u16, down: true },
-                Keystroke { unit: b'h' as u16, down: false },
-                Keystroke { unit: b'i' as u16, down: true },
-                Keystroke { unit: b'i' as u16, down: false },
+                Keystroke {
+                    unit: b'h' as u16,
+                    down: true
+                },
+                Keystroke {
+                    unit: b'h' as u16,
+                    down: false
+                },
+                Keystroke {
+                    unit: b'i' as u16,
+                    down: true
+                },
+                Keystroke {
+                    unit: b'i' as u16,
+                    down: false
+                },
             ]
         );
     }
@@ -356,10 +357,7 @@ mod tests {
     fn partial_acceptance_never_sends_the_text_twice() {
         // Half the text landed: re-sending would duplicate it, so the
         // outcome is a plain report and nothing else.
-        assert_eq!(
-            decide(10, 5, false),
-            Insertion::Partial { typed_chars: 5 }
-        );
+        assert_eq!(decide(10, 5, false), Insertion::Partial { typed_chars: 5 });
     }
 
     #[test]
@@ -385,11 +383,13 @@ mod tests {
     fn only_a_clean_type_in_needs_no_notice() {
         assert_eq!(Insertion::Typed.notice(), None);
         assert!(Insertion::Partial { typed_chars: 3 }.notice().is_some());
-        assert!(Insertion::Clipboard {
-            notice: "x".to_string()
-        }
-        .notice()
-        .is_some());
+        assert!(
+            Insertion::Clipboard {
+                notice: "x".to_string()
+            }
+            .notice()
+            .is_some()
+        );
     }
 
     #[test]

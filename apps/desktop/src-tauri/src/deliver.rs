@@ -1,21 +1,13 @@
 //! Clipboard access and the manual re-copy command (ADR-005).
 //!
-//! Automatic delivery lives in `insert`: a finished take is typed into
-//! the focused application, and the clipboard is the honest fallback
-//! when synthesis cannot complete. What stays here is the user's own
-//! access to that clipboard text, which must keep working whether the
-//! take arrived by typing or by fallback.
+//! Whether a take delivers, and where it goes, belong to `target`; what
+//! stays here is the user's own access to the clipboard text, which must
+//! keep working whether the take arrived by typing or by fallback.
 
 use tauri::{AppHandle, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 use crate::pipeline::{get_pipeline_state_inner, set_phase, Phase, PipelineStatus};
-
-/// Pure gate, unit-tested: a transcript is only delivered once it is
-/// finished and non-empty.
-pub fn should_deliver(phase: Option<Phase>, text: Option<&str>) -> bool {
-    matches!(phase, Some(Phase::Done)) && text.is_some_and(|t| !t.trim().is_empty())
-}
 
 pub fn last_text_of(app: &AppHandle) -> Option<String> {
     app.try_state::<crate::pipeline::PipelineState>()
@@ -40,19 +32,4 @@ pub fn copy_last_text(app: AppHandle) -> PipelineStatus {
         Err(detail) => set_phase(&app, Phase::Done, Some(detail)),
     }
     get_pipeline_state_inner(&app)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn delivers_only_finished_nonempty_takes() {
-        assert!(should_deliver(Some(Phase::Done), Some("merhaba")));
-        assert!(!should_deliver(Some(Phase::Done), Some("   ")));
-        assert!(!should_deliver(Some(Phase::Done), None));
-        assert!(!should_deliver(Some(Phase::Thinking), Some("merhaba")));
-        assert!(!should_deliver(Some(Phase::Idle), Some("merhaba")));
-        assert!(!should_deliver(None, Some("merhaba")));
-    }
 }

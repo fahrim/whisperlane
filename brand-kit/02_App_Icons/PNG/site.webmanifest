@@ -1,6 +1,6 @@
 {
-  "name": "Wishperlane",
-  "short_name": "Wishperlane",
+  "name": "Whisperlane",
+  "short_name": "Whisperlane",
   "icons": [
     {
       "src": "android-chrome-192x192.png",
@@ -14,7 +14,7 @@
       "purpose": "any"
     },
     {
-      "src": "wishperlane-maskable-512.png",
+      "src": "whisperlane-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

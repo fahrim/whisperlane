@@ -1,4 +1,4 @@
-WISHPERLANE BRAND KIT
+WHISPERLANE BRAND KIT
 
 1) Transparent logos: 01_Logos/PNG/
 2) Scalable symbol: 01_Logos/SVG/
@@ -9,8 +9,8 @@ WISHPERLANE BRAND KIT
 7) Overview and color guide: 05_Guidelines/
 
 For a typical website, start with:
-- Logo: 01_Logos/PNG/wishperlane-lockup-horizontal-on-dark.png
-- App/social icon: 02_App_Icons/PNG/wishperlane-app-icon-flat-1024.png
+- Logo: 01_Logos/PNG/whisperlane-lockup-horizontal-on-dark.png
+- App/social icon: 02_App_Icons/PNG/whisperlane-app-icon-flat-1024.png
 - Favicon: 02_App_Icons/PNG/favicon.ico
 - Web manifest: 02_App_Icons/PNG/site.webmanifest
 

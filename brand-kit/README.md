@@ -1,15 +1,15 @@
-# Wishperlane — Brand Asset Kit
+# Whisperlane — Brand Asset Kit
 
-Bu paket, paylaşılan iki Wishperlane logo görselinden hazırlanmış pratik marka varlıklarını içerir.
+Bu paket, paylaşılan iki Whisperlane logo görselinden hazırlanmış pratik marka varlıklarını içerir.
 
 ## Hızlı başlangıç
 
-- **Web sitesi / sunum / e-posta (koyu zemin):** `01_Logos/PNG/wishperlane-lockup-horizontal-on-dark.png`
-- **Açık zemin:** `01_Logos/PNG/wishperlane-lockup-horizontal-on-light.png`
-- **Sadece sembol, şeffaf PNG:** `01_Logos/PNG/wishperlane-brandmark-gradient.png`
-- **Sadece wordmark, şeffaf PNG:** `01_Logos/PNG/wishperlane-wordmark-silver.png`
-- **Uygulama ikonu — önerilen düz sürüm:** `02_App_Icons/PNG/wishperlane-app-icon-flat-1024.png`
-- **Cam efektli alternatif ikon:** `02_App_Icons/PNG/wishperlane-app-icon-1024.png`
+- **Web sitesi / sunum / e-posta (koyu zemin):** `01_Logos/PNG/whisperlane-lockup-horizontal-on-dark.png`
+- **Açık zemin:** `01_Logos/PNG/whisperlane-lockup-horizontal-on-light.png`
+- **Sadece sembol, şeffaf PNG:** `01_Logos/PNG/whisperlane-brandmark-gradient.png`
+- **Sadece wordmark, şeffaf PNG:** `01_Logos/PNG/whisperlane-wordmark-silver.png`
+- **Uygulama ikonu — önerilen düz sürüm:** `02_App_Icons/PNG/whisperlane-app-icon-flat-1024.png`
+- **Cam efektli alternatif ikon:** `02_App_Icons/PNG/whisperlane-app-icon-1024.png`
 - **PWA favicon:** `02_App_Icons/PNG/favicon.ico`
 - **Durum ikonları:** `03_Status_States/`
 - **Sosyal medya görselleri:** `04_Social_Media/`
@@ -25,7 +25,7 @@ Bu paket, paylaşılan iki Wishperlane logo görselinden hazırlanmış pratik m
 - `PNG/`: 16–1024 px arasında yaygın ikon boyutları, favicon ve maskable PWA ikonu.
 - `Android/`: Android adaptive foreground ve background kaynakları.
 
-**Not:** `wishperlane-app-icon-1024.png`, gönderdiğin cam/plaka görselindeki ikonu koruyan stilize sürümdür. Platformlar için köşe maskesinin iki kez oluşmasını istemiyorsan, köşeleri önceden yuvarlatılmamış `wishperlane-app-icon-flat-1024.png` sürümünü tercih et.
+**Not:** `whisperlane-app-icon-1024.png`, gönderdiğin cam/plaka görselindeki ikonu koruyan stilize sürümdür. Platformlar için köşe maskesinin iki kez oluşmasını istemiyorsan, köşeleri önceden yuvarlatılmamış `whisperlane-app-icon-flat-1024.png` sürümünü tercih et.
 
 ### `03_Status_States`
 `idle`, `listening-active`, `processing`, `muted` ve ek bir `error` varyasyonu içerir. Her durumun şeffaf PNG'si ve koyu zeminli önizleme karosu vardır. Bunlar UI durumları için statik görsellerdir; animasyon/Lottie içermez.

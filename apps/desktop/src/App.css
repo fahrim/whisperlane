@@ -115,6 +115,13 @@ body {
   );
 }
 
+/* Inspecting: no mask, so what the field actually is can be seen rather
+   than judged through the gradient that keeps it off the small text. */
+.signal-backdrop.signal-inspect {
+  -webkit-mask-image: none;
+  mask-image: none;
+}
+
 /* Everything above the signal, or the signal is not behind anything. */
 .title-bar,
 .content {

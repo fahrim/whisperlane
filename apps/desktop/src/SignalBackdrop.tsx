@@ -98,39 +98,82 @@ const LOOP_TURN = Math.PI * 10;
 /** A flatter bell than the pill's, so the field reaches both edges. */
 const ENVELOPE_EXPONENT = 0.5;
 
-const RIBBONS: Ribbon[] = [
-  {
-    colorStart: "rgba(244, 63, 94, 0.85)",
-    colorEnd: "rgba(168, 85, 247, 0.85)",
-    freq: 1.4,
-    phase: 0,
-    ampMultiplier: 1,
-  },
-  {
-    colorStart: "rgba(56, 189, 248, 0.8)",
-    colorEnd: "rgba(99, 102, 241, 0.8)",
-    freq: 2.1,
-    phase: 2.1,
-    ampMultiplier: 0.86,
-  },
-  {
-    colorStart: "rgba(192, 132, 252, 0.7)",
-    colorEnd: "rgba(45, 212, 191, 0.7)",
-    freq: 2.9,
-    phase: 4.2,
-    ampMultiplier: 0.7,
-  },
-  {
-    colorStart: "rgba(251, 191, 36, 0.5)",
-    colorEnd: "rgba(244, 63, 94, 0.5)",
-    freq: 1.1,
-    phase: 5.6,
-    ampMultiplier: 0.55,
-  },
-];
+/**
+ * ============================================================================
+ *  THE CONTROLS
+ * ============================================================================
+ *
+ *  Everything that decides what this looks like is in this file or in the
+ *  custom properties at the top of App.css. Nothing else decides anything.
+ *
+ *  Here — the parts that describe the shape of the signal:
+ *
+ *    enabled     false turns the whole field off. The window then has no
+ *                backdrop at all, which is what "no" has to mean: a
+ *                field at zero opacity is still a field still being
+ *                drawn sixty times a second.
+ *    inspect     true removes the mask and triples the strength, for
+ *                seeing plainly what the field is while deciding whether
+ *                it should be there. Off is what ships.
+ *    blurWide    the first, soft pass: the glow the field is made of.
+ *    blurTight   the second pass: the edge the eye reads as a moving
+ *                shape rather than as haze.
+ *    ribbons     four bands, top to bottom. Each is a gradient and two
+ *                numbers: how many waves it carries across the window,
+ *                and where it starts in the loop. ampMultiplier is how
+ *                big it is allowed to be against the others.
+ *
+ *  In App.css — the parts found by eye, against a real window with the
+ *  real text on it, changeable from the inspector without a rebuild:
+ *
+ *    --signal-alpha     how present the field is
+ *    --signal-loop      seconds for one loop
+ *    --signal-center    how far down the surface it sits
+ *    --signal-spread    how far apart the bands are stacked
+ *    --signal-scale     how far a band travels from its own line
+ *    --signal-mask      the gradient that keeps it off the small text
+ */
+const SIGNAL = {
+  enabled: true,
+  inspect: false,
+  blurWide: 0.62,
+  blurTight: 0.18,
+  ribbons: [
+    {
+      colorStart: "rgba(244, 63, 94, 0.85)",
+      colorEnd: "rgba(168, 85, 247, 0.85)",
+      freq: 1.4,
+      phase: 0,
+      ampMultiplier: 1,
+    },
+    {
+      colorStart: "rgba(56, 189, 248, 0.8)",
+      colorEnd: "rgba(99, 102, 241, 0.8)",
+      freq: 2.1,
+      phase: 2.1,
+      ampMultiplier: 0.86,
+    },
+    {
+      colorStart: "rgba(192, 132, 252, 0.7)",
+      colorEnd: "rgba(45, 212, 191, 0.7)",
+      freq: 2.9,
+      phase: 4.2,
+      ampMultiplier: 0.7,
+    },
+    {
+      colorStart: "rgba(251, 191, 36, 0.5)",
+      colorEnd: "rgba(244, 63, 94, 0.5)",
+      freq: 1.1,
+      phase: 5.6,
+      ampMultiplier: 0.55,
+    },
+  ] as Ribbon[],
+};
 
 export function SignalBackdrop() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  if (!SIGNAL.enabled) return null;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -179,7 +222,7 @@ export function SignalBackdrop() {
       ctx.clearRect(0, 0, width, height);
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
-      ctx.globalAlpha = tuning.alpha;
+      ctx.globalAlpha = SIGNAL.inspect ? Math.min(1, tuning.alpha * 3) : tuning.alpha;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
 
@@ -191,8 +234,8 @@ export function SignalBackdrop() {
       // window does not turn the wave into a slow ocean swell.
       const scale = Math.min(width * tuning.scale, height * 0.06, 66);
 
-      RIBBONS.forEach((ribbon, index) => {
-        const bandY = centerY + (index - (RIBBONS.length - 1) / 2) * spread;
+      SIGNAL.ribbons.forEach((ribbon, index) => {
+        const bandY = centerY + (index - (SIGNAL.ribbons.length - 1) / 2) * spread;
         const amplitude = amp * ribbon.ampMultiplier;
 
         const path = new Path2D();
@@ -213,11 +256,11 @@ export function SignalBackdrop() {
         // band of it is something else. The wide blurred pass is the glow
         // the field is made of; the narrow one is the edge of it that the
         // eye reads as a moving shape rather than as haze.
-        ctx.filter = `blur(${Math.round(spread * 0.62)}px)`;
+        ctx.filter = `blur(${Math.round(spread * SIGNAL.blurWide)}px)`;
         ctx.lineWidth = spread * 1.5;
         ctx.stroke(path);
 
-        ctx.filter = `blur(${Math.round(spread * 0.18)}px)`;
+        ctx.filter = `blur(${Math.round(spread * SIGNAL.blurTight)}px)`;
         ctx.lineWidth = spread * 0.3;
         ctx.stroke(path);
 
@@ -306,7 +349,13 @@ export function SignalBackdrop() {
     };
   }, []);
 
-  return <canvas ref={canvasRef} className="signal-backdrop" aria-hidden="true" />;
+  return (
+    <canvas
+      ref={canvasRef}
+      aria-hidden="true"
+      className={`signal-backdrop${SIGNAL.inspect ? " signal-inspect" : ""}`}
+    />
+  );
 }
 
 /**

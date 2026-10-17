@@ -22,4 +22,4 @@
 Instagram, X, LinkedIn, YouTube, Open Graph, profile-avatar and email-signature assets. Dimensions are encoded in the filenames.
 
 ## Guidelines (`05_Guidelines`)
-`brand-overview.png`, `color-palette.png`
+`brand-overview.png`, `color-palette.png`, `whisperline-brand-identity-presets_design-system.png`

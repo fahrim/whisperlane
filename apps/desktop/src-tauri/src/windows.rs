@@ -833,30 +833,33 @@ pub fn fit_window(app: AppHandle, content_width: f64, content_height: f64, bleed
     let Some(window) = app.get_webview_window(MAIN) else {
         return;
     };
-    let Ok(scale) = window.scale_factor() else {
+    // Everything here is in physical pixels, matching what the two calls
+    // below take. Reading the window's own geometry directly rather than
+    // through the pill's helper keeps the units in one place: that helper
+    // reports logical pixels, and mixing the two silently moved the window
+    // to its own size instead of its own place.
+    let (Ok(scale), Ok(position), Ok(size)) = (
+        window.scale_factor(),
+        window.outer_position(),
+        window.outer_size(),
+    ) else {
         return;
     };
-    let Some((_, (_, _, width, height))) = window_rect(&window) else {
+    if scale <= 0.0 {
         return;
-    };
+    }
     let wanted_width = ((content_width + bleed * 2.0) * scale).round().max(1.0) as u32;
     let wanted_height = ((content_height + bleed * 2.0) * scale).round().max(1.0) as u32;
-    if width.round() as u32 == wanted_width && height.round() as u32 == wanted_height {
+    if size.width == wanted_width && size.height == wanted_height {
         return;
     }
     let _ = window.set_size(tauri::PhysicalSize::new(wanted_width, wanted_height));
-    // Windows anchors a resized window at its top-left, which would walk
-    // the window down the screen each time the content grew. Moving it
-    // back by half the difference keeps the middle where the user left
-    // it.
-    let dx = (width - wanted_width as f64) / 2.0;
-    let dy = (height - wanted_height as f64) / 2.0;
-    if dx != 0.0 || dy != 0.0 {
-        let _ = window.set_position(tauri::PhysicalPosition::new(
-            ((width + dx) * scale).round() as i32,
-            ((height + dy) * scale).round() as i32,
-        ));
-    }
+    // Windows anchors a resized window at its top-left, so a window that
+    // shrinks on open would creep down and to the right. Moving it back
+    // by half the difference keeps the middle where the user left it.
+    let dx = (size.width as i32 - wanted_width as i32) / 2;
+    let dy = (size.height as i32 - wanted_height as i32) / 2;
+    let _ = window.set_position(tauri::PhysicalPosition::new(position.x + dx, position.y + dy));
 }
 
 #[cfg(test)]

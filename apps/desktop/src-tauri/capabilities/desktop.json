@@ -1,14 +1,19 @@
 {
   "identifier": "desktop-capability",
+  "description": "Permissions for both windows. Custom Rust commands need none — the toolkit gates its own, which is why the drag handle needs one named explicitly.",
   "platforms": [
     "macOS",
     "windows",
     "linux"
   ],
   "windows": [
-    "main"
+    "main",
+    "pill"
   ],
   "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
     "autostart:default",
     "autostart:allow-enable",
     "autostart:allow-disable",

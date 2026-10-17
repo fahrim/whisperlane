@@ -52,8 +52,13 @@ body {
 
 /* The visible card. Everything the user reads sits inside this, so this is
    where the surface colour, the radius and the depth are drawn — the
-   operating system supplies none of it to a frameless window. */
+   operating system supplies none of it to a frameless window. It also
+   holds the stack the signal is drawn into: the backdrop is a layer of
+   the card, not of the document, so it is clipped by the rounded corner
+   and travels with the card when the card resizes. */
 .window-frame {
+  position: relative;
+  isolation: isolate;
   background: var(--surface-base);
   border: 1px solid var(--surface-border);
   border-radius: var(--window-radius);
@@ -61,6 +66,40 @@ body {
   overflow: hidden;
   width: 100%;
   max-width: 560px;
+}
+
+/* --- The signal behind the window ------------------------------------
+   Faint, and masked so it is strongest where the surface has no small
+   text on it. The mask is the compromise between the brand and the
+   reading: a field that faded to nothing behind every label would be a
+   decoration nobody looks at, and one drawn at full strength behind them
+   would be a form nobody can read. */
+.signal-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 40%) 0%,
+    rgb(0 0 0 / 70%) 42%,
+    rgb(0 0 0 / 100%) 78%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 40%) 0%,
+    rgb(0 0 0 / 70%) 42%,
+    rgb(0 0 0 / 100%) 78%
+  );
+}
+
+/* Everything above the signal, or the signal is not behind anything. */
+.title-bar,
+.content {
+  position: relative;
+  z-index: 1;
 }
 
 /* --- Title bar ----------------------------------------------------- */

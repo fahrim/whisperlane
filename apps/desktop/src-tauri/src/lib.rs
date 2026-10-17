@@ -27,8 +27,8 @@ use settings::{
 };
 use stt::{get_stt_status, sweep_idle, SttState};
 use windows::{
-    begin_pill_drag, continue_pill_drag, end_pill_drag, fit_window, quit_app, set_pill_panel,
-    toggle_settings,
+    begin_pill_drag, continue_pill_drag, end_pill_drag, fit_window, is_settings_visible,
+    quit_app, set_pill_panel, toggle_settings,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -70,6 +70,7 @@ pub fn run() {
             ensure_model_ready,
             take_control,
             toggle_settings,
+            is_settings_visible,
             set_pill_panel,
             begin_pill_drag,
             continue_pill_drag,
@@ -95,7 +96,7 @@ pub fn run() {
                 return;
             }
             api.prevent_close();
-            let _ = window.hide();
+            windows::set_settings_visible(window.app_handle(), false);
         })
         .setup(|app| {
             // Settings need the resolved data dir, so they load here
@@ -117,10 +118,10 @@ pub fn run() {
             // later, because a window that appears and is then taken away
             // is a flash, and at logon a flash is the first thing anyone
             // sees of the product.
-            if !saved.onboarded
-                && let Some(main) = app.get_webview_window(windows::MAIN)
-            {
-                let _ = main.show();
+            if saved.onboarded {
+                windows::set_settings_visible(app.handle(), false);
+            } else {
+                windows::set_settings_visible(app.handle(), true);
             }
 
             tray::build(app.handle())?;

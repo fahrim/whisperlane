@@ -8,7 +8,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 
 use serde::Serialize;
-use tauri::{AppHandle, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
     EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO,
@@ -801,12 +801,43 @@ pub fn toggle_settings(app: AppHandle) {
         return;
     };
     if settings_toggle_closes(main.is_visible().unwrap_or(false)) {
-        let _ = main.hide();
+        set_settings_visible(&app, false);
         return;
     }
-    let _ = main.show();
+    set_settings_visible(&app, true);
     let _ = main.unminimize();
     let _ = main.set_focus();
+}
+
+/// Whether the settings window is on screen.
+///
+/// Asked by the interface on mount, because the window that would have
+/// started its background has already been on screen by then.
+#[tauri::command]
+pub fn is_settings_visible(app: AppHandle) -> bool {
+    app.get_webview_window(MAIN)
+        .map(|window| window.is_visible().unwrap_or(false))
+        .unwrap_or(false)
+}
+
+/// Shows or hides the settings window and says which it did.
+///
+/// Every hiding and showing goes through here so the window can tell the
+/// interface when it has left the screen. The settings window draws a
+/// moving background, and a window nobody can see is not a reason to keep
+/// drawing it: the whole application spends most of its life hidden in
+/// the tray, and a full-surface blurred animation running through all of
+/// that is a cost paid for a picture nobody is looking at.
+pub fn set_settings_visible(app: &AppHandle, visible: bool) {
+    let Some(window) = app.get_webview_window(MAIN) else {
+        return;
+    };
+    if visible {
+        let _ = window.show();
+    } else {
+        let _ = window.hide();
+    }
+    let _ = window.emit("window-visibility", visible);
 }
 
 /// Exits the application cleanly from the pill's popover menu, matching

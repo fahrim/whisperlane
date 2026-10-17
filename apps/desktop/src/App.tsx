@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { FirstRun } from "./FirstRun";
 import { Picker, Switch } from "./controls";
+import { SignalBackdrop } from "./SignalBackdrop";
 import { deliveryNote, transcriptMatters } from "./delivery";
 import type {
   Download,
@@ -331,6 +332,7 @@ function App() {
   return (
     <div className="window">
       <div className="window-frame" ref={frameRef}>
+        <SignalBackdrop />
         <header className="title-bar" data-tauri-drag-region="deep">
           <span className="title-bar-name">whisperlane</span>
           <span className="title-bar-drag" />

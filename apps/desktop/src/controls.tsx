@@ -31,6 +31,7 @@ export interface PickerProps {
 interface Placement {
   top: number;
   left: number;
+  width: number;
   maxHeight: number;
   above: boolean;
 }
@@ -94,9 +95,16 @@ export function Picker({ value, options, label, onChange }: PickerProps) {
     const wanted = panel.scrollHeight;
     const upwards = wanted > below && above > below;
     const room = Math.max(upwards ? above : below, 120);
+    // The field's own width, not its widest label. A list that grew to fit
+    // its longest option would push past the window's right edge on the
+    // same rows where it used to overflow at the bottom, and a long entry
+    // is the rule here rather than the exception: keyboard shortcuts and
+    // device names are both long. Long text ellipsises instead.
+    const width = Math.min(anchor.width, window.innerWidth - GUTTER * 2);
     setPlacement({
       top: upwards ? anchor.top - GUTTER - Math.min(wanted, room) : anchor.bottom + 6,
-      left: Math.min(anchor.left, window.innerWidth - anchor.width - GUTTER),
+      left: Math.min(anchor.left, window.innerWidth - width - GUTTER),
+      width,
       maxHeight: room,
       above: upwards,
     });
@@ -201,6 +209,7 @@ export function Picker({ value, options, label, onChange }: PickerProps) {
               ? {
                   top: placement.top,
                   left: placement.left,
+                  width: placement.width,
                   maxHeight: placement.maxHeight,
                 }
               : undefined

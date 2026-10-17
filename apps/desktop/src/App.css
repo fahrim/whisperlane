@@ -229,6 +229,30 @@ section {
   color: var(--text-tertiary);
 }
 
+.field-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Fetching is its own act, so it is its own control. Drawn as an arrow
+   rather than the word "download" because the word is longer than the
+   field it sits beside, and the row would grow to hold it. */
+.download-button {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  color: var(--text-secondary);
+}
+
+.download-button:hover {
+  color: var(--text-primary);
+}
+
 .field-status {
   margin: 0;
 }
@@ -325,7 +349,6 @@ button:disabled {
 .picker-list {
   position: fixed;
   z-index: 20;
-  min-width: 190px;
   padding: 4px;
   border-radius: var(--control-radius);
   border: 1px solid var(--surface-border-strong);
@@ -344,6 +367,12 @@ button:disabled {
   border-radius: 7px;
   cursor: pointer;
   color: var(--text-secondary);
+}
+
+.picker-option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .picker-option-active {

@@ -130,19 +130,15 @@ function App() {
     }
   }
 
-  // Choosing a model is the request for it. The three separate download
-  // buttons this replaces asked the same question twice: "which model" and
-  // "now get it", in two controls, which is how a window ends up offering
-  // a gigabyte of choices as three buttons of equal weight. Picking the
-  // model fetches it; a button is left only for the case where that fetch
-  // failed, and it says so.
+  // Choosing a model says which model, and nothing else. It used to fetch
+  // the one chosen, which quietly spent the user's bandwidth on a decision
+  // they had only made provisionally — and a settings window is where
+  // someone changes their mind. Fetching is its own act, behind its own
+  // control, so the size of the download is something they agreed to
+  // rather than something that happened.
   async function chooseModel(id: string) {
     try {
       setSettings(await invoke<Settings>("set_model", { model: id }));
-      const chosen = modelOptions.find((option) => option.id === id);
-      if (chosen && !chosen.present && !download?.running) {
-        setDownload(await invoke<Download>("download_model", { id }));
-      }
       await refreshModels();
     } catch (e) {
       setError(String(e));
@@ -252,12 +248,23 @@ function App() {
     return `${chosenModel.size_mb} MB · ready`;
   })();
 
-  // Offered whenever the model is absent and nothing is on its way, so a
-  // button on this row always means the same thing: fetch it. Choosing a
-  // model already starts this, which leaves the button for the fetch that
-  // did not finish.
-  const retryDownload =
+  // The one thing that fetches a model, offered whenever the chosen one is
+  // not on disk and nothing is already on its way. It sits beside the
+  // choice rather than below it so that what is missing and what to do
+  // about it are the same gesture.
+  const canDownload =
     chosenModel !== null && !chosenModel.present && !download?.running;
+
+  // Progress has to move while a download runs, and the model list has to
+  // change once it finishes. Both are read from the core on every tick
+  // rather than only when the last tick said a download was running: this
+  // poll is written once, at mount, so the `download` it closes over is
+  // the value from that first render and never changes. Asking "is it
+  // running" of a frozen answer means never asking.
+  //
+  // Whether the previous tick saw one running is kept in a ref for the
+  // same reason, and because state cannot be read here without waiting.
+  const wasDownloading = useRef(false);
 
   useEffect(() => {
     let stop = false;
@@ -265,12 +272,10 @@ function App() {
       try {
         setStatus(await invoke<PipelineStatus>("get_pipeline_state"));
         await refreshStt();
-        // Progress has to move while a download runs, and the list has
-        // to change once it finishes.
-        if (download?.running) {
-          setDownload(await invoke<Download>("get_download"));
-          if (!download.running) await refreshModels();
-        }
+        const state = await invoke<Download>("get_download");
+        setDownload(state);
+        if (wasDownloading.current && !state.running) await refreshModels();
+        wasDownloading.current = state.running;
       } catch (e) {
         if (!stop) setError(String(e));
       }
@@ -279,7 +284,18 @@ function App() {
       .then(setHotkey)
       .catch((e) => setError(String(e)));
     invoke<Settings>("get_settings")
-      .then(setSettings)
+      .then((loaded) => {
+        setSettings(loaded);
+        // First run brings the model down on its own, quietly, while the
+        // user reads the one instruction. Later runs never fetch anything
+        // the user did not ask for: a missing model then is shown on the
+        // model row with a download control, not fetched behind their
+        // back.
+        return invoke<Download>("ensure_model_ready", {
+          firstRun: !loaded.onboarded,
+        });
+      })
+      .then(setDownload)
       .catch((e) => setError(String(e)));
     invoke<LanguageChoice[]>("list_languages")
       .then(setLanguages)
@@ -301,12 +317,6 @@ function App() {
       .catch(() => {});
     refreshModels();
     poll();
-    // First run brings the model down on its own, quietly, while the
-    // user reads the one instruction. Later runs never fetch anything
-    // the user did not ask for.
-    invoke<Download>("ensure_model_ready")
-      .then(setDownload)
-      .catch((e) => setError(String(e)));
     const timer = setInterval(poll, 1000);
     return () => {
       stop = true;
@@ -442,26 +452,38 @@ function App() {
               bigger hears more, but answers slower
             </span>
           </span>
-          <Picker
-            label="Model"
-            value={settings.model}
-            options={modelOptions.map((option) => ({
-              code: option.id,
-              label: option.label,
-            }))}
-            onChange={chooseModel}
-          />
-        </div>
-        {modelLine && (
-          <div className="field-status-row">
-            <p className="field-status">{modelLine}</p>
-            {retryDownload && chosenModel && (
-              <button type="button" onClick={() => downloadModel(chosenModel.id)}>
-                Download
+          <span className="field-control">
+            <Picker
+              label="Model"
+              value={settings.model}
+              options={modelOptions.map((option) => ({
+                code: option.id,
+                label: option.label,
+              }))}
+              onChange={chooseModel}
+            />
+            {canDownload && chosenModel && (
+              <button
+                type="button"
+                className="download-button"
+                aria-label={`Download the speech model, ${chosenModel.size_mb} MB`}
+                onClick={() => downloadModel(chosenModel.id)}
+              >
+                <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    d="M8 2.5 V10 M4.6 7.2 L8 10.6 L11.4 7.2 M2.8 13 H13.2"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
               </button>
             )}
-          </div>
-        )}
+          </span>
+        </div>
+        {modelLine && <p className="field-status">{modelLine}</p>}
         {download?.error && (
           <p role="alert" className="field-status">
             {download.error}

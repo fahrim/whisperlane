@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
-use crate::pipeline::{set_phase, Phase};
+
 
 /// Where the speech models come from: the whisper.cpp model repository,
 /// resolved through its download endpoint.
@@ -198,14 +198,18 @@ fn publish(app: &AppHandle, update: impl FnOnce(&mut Download)) {
 /// Starts a download on its own thread and returns immediately, so
 /// dictation stays usable while a model fetches. A second request while
 /// one runs is refused rather than doubling the traffic.
+///
+/// Nothing here speaks for the pipeline. A failed download is a problem
+/// with the model on disk, and it is said on the download's own state and
+/// on the surface that asked for it. Moving the pipeline to failed put the
+/// pill up with a message about fetching a file — as if the user's last
+/// take had gone wrong because the next model was slow to arrive.
 #[tauri::command]
 pub fn download_model(app: AppHandle, id: String) -> Download {
     let Some(model) = ModelChoice::from_id(&id) else {
-        set_phase(
-            &app,
-            crate::pipeline::Phase::Failed,
-            Some(format!("unknown model '{id}'")),
-        );
+        publish(&app, |state| {
+            state.error = Some(format!("unknown model '{id}'"));
+        });
         return Download::default();
     };
     {
@@ -256,7 +260,6 @@ fn run_download(app: &AppHandle, model: ModelChoice) {
             let _ = std::fs::remove_file(target.with_extension("part"));
         }
         publish(app, |state| state.error = Some(detail.clone()));
-        set_phase(app, Phase::Failed, Some(detail.clone()));
     }
     publish(app, |state| {
         state.running = false;
@@ -314,19 +317,24 @@ fn fetch(url: &str, target: &Path, app: &AppHandle) -> Result<u64, String> {
 /// Only the honest answer: a model already on disk, or a download already
 /// running, means there is nothing to start. Dictation is never blocked by
 /// this — a take without a model fails plainly in the transcription step.
-pub fn should_start_first_run_download(present: bool, running: bool) -> bool {
-    !present && !running
+pub fn should_start_first_run_download(first_run: bool, present: bool, running: bool) -> bool {
+    first_run && !present && !running
 }
 
 /// Starts the chosen model's download when the first run still needs it.
 ///
 /// First run is one screen with honest progress behind it, so the fetch
-/// begins on its own rather than waiting to be asked for. Anything already
-/// present or in flight is left alone, so calling it again is harmless.
+/// begins on its own rather than waiting to be asked for. That is a
+/// first-run courtesy and nothing more: a later launch fetches nothing
+/// the user did not ask for, even when the chosen model is missing, and
+/// says so on the surface instead. Anything already present or in flight
+/// is left alone, so calling it again is harmless.
 #[tauri::command]
-pub fn ensure_model_ready(app: AppHandle) -> Download {
+pub fn ensure_model_ready(app: AppHandle, first_run: bool) -> Download {
     let chosen = crate::settings::model_of(&app);
-    if should_start_first_run_download(is_present(&app, chosen), get_download(app.clone()).running) {
+    let present = is_present(&app, chosen);
+    let running = get_download(app.clone()).running;
+    if should_start_first_run_download(first_run, present, running) {
         return download_model(app, chosen.id.to_string());
     }
     get_download(app)
@@ -453,12 +461,19 @@ mod tests {
 
     #[test]
     fn first_run_starts_a_download_only_when_one_is_missing() {
-        // Nothing on disk and nothing in flight: fetch it.
-        assert!(should_start_first_run_download(false, false));
+        // First run, nothing on disk and nothing in flight: fetch it.
+        assert!(should_start_first_run_download(true, false, false));
         // Already there, or already coming: never start a second.
-        assert!(!should_start_first_run_download(true, false));
-        assert!(!should_start_first_run_download(false, true));
-        assert!(!should_start_first_run_download(true, true));
+        assert!(!should_start_first_run_download(true, true, false));
+        assert!(!should_start_first_run_download(true, false, true));
+        assert!(!should_start_first_run_download(true, true, true));
+        // Later runs fetch nothing at all. A missing model then is
+        // something the user is told about and asked for, not something
+        // fetched behind their back — the window offers the download.
+        assert!(!should_start_first_run_download(false, false, false));
+        assert!(!should_start_first_run_download(false, true, false));
+        assert!(!should_start_first_run_download(false, false, true));
+        assert!(!should_start_first_run_download(false, true, true));
     }
 
     #[test]

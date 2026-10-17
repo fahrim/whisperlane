@@ -551,6 +551,87 @@ Status: approved — recorded here rather than in an ADR because it
 constrains the packaging, not the product's behaviour. Extends item six,
 which settled the name itself.
 
+## 13. The window's own surface, and what stays locked to the pill
+
+Context: item eight locked the liquid-glass token set and placed it in the
+pill. The settings window is a different kind of object from the pill, and
+the set does not transfer to it. Glass is a material for a small floating
+surface and its values are chosen against a dark backdrop; a large calm
+plane has to stay readable in a light room, which a palette built to read
+as glass on darkness cannot do. The window also needs things the pill has
+no use for at all — a light theme, a warning colour, and one filled action
+— and a warning colour is exactly what the pill's recording accent would
+supply if the boundary were not drawn: the same red would then mean both
+"something went wrong" and "it is listening".
+
+Options: extend the glass set to cover the window; merge everything into
+one token file; or give the window its own surface and palette and keep
+glass where it was locked.
+
+Trade-offs: extending the set would put a dark glass palette on a window
+that has to survive daylight, and merging would make every later colour a
+negotiation between two surfaces that want opposite things. A separate
+palette costs the discipline of keeping rhythm, radii, and motion easing
+in step, and that is a real cost; it is paid for by the shared file
+remaining the single home of everything genuinely shared.
+
+Decision: the window carries its own surface and its own palette, and the
+pill's glass stays locked to the pill. Anything about colour or material
+is defined once, for the surface that owns it. What is genuinely shared —
+spacing rhythm, radii, motion easing — still comes from the token file, so
+the two read as one product rather than as two stylesheets.
+
+The window follows the system theme live, with the user's own choice as an
+override. Following the system is expressed as having no opinion at all
+rather than as a third dark variant, which is what lets switching to it
+take effect without a reload.
+
+Status: approved — recorded here rather than in an ADR because it extends
+item eight's lock rather than replacing it.
+
+## 14. Starting with Windows is asked, not assumed
+
+Context: the chord is the product, and a dictation tool that is not running
+cannot be dictated to. Without a way to have it start, every session began
+with finding and launching it first — a step that has to happen at exactly
+the moment the user wants to speak.
+
+The preference cannot simply be assumed either. Registering an application
+to start with the machine is an act on the user's computer that they did
+not ask for, and the failure it prevents is invisible rather than loud:
+nothing happens at all, which is indistinguishable from the product being
+broken.
+
+Options: register by default and let the user turn it off; never register
+and leave it to be found; or ask once, on first run, as an answer the user
+has to give.
+
+Trade-offs: defaulting on gets the product working from the first login
+and silently edits the user's machine to do it. Never registering keeps the
+machine untouched and leaves the product failing quietly at the worst
+possible moment. Asking costs one question on a screen the user is already
+reading, and is the only option that neither edits their computer nor
+leaves them to find the switch themselves.
+
+Direction: the maintainer directed that the question is required on first
+run, that it says the answer can be changed later, and that the answer
+remains reachable afterwards.
+
+Decision: asked once, as a required answer on the first-run screen, with a
+setting in the window that opens it. It is asked as two answers rather than
+as a toggle, because a toggle resting at a default is an answer nobody
+gave, and the screen is not finished until one of the two has been chosen.
+Someone who already has it registered from a previous install is not asked
+again.
+
+The setting reads its own state back from the operating system rather than
+from the stored answer. A registration that was refused, or removed by
+hand, is shown as what it is, and a refused change leaves the setting saying
+what is true rather than what was asked for.
+
+Status: approved — recorded here rather than in an ADR because it
+constrains a preference, not the product's behaviour.
+
 ## ADR process
 
 - A decision becomes an ADR only after explicit approval of the

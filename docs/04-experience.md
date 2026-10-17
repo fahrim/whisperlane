@@ -12,8 +12,11 @@
   shown with one small, tasteful indicator, never a wall of chrome.
 - Native feel. Real platform behavior, restrained motion, generous space,
   and a single accent color. Nothing that reads as a web page in a box.
-- First run is one screen. One big, clear instruction — hold the key and
-  speak — with the model download running honestly in the background.
+- First run is one screen, and it is a settings screen. One big, clear
+  instruction — hold the key and speak — over the answers that cannot be
+  assumed, with the model download running honestly in the background. No
+  account step, no wizard. It is shown once; closing it says where settings
+  live from then on.
 
 ## Core flows
 
@@ -73,12 +76,26 @@
 - Tray affordance and popover. The quiet home when the pill is hidden:
   status at a glance, quick access to start dictation, and a path to
   settings.
-- Onboarding window. A single screen with one instruction and honest model
-  download progress. No account step, no multi-page wizard.
-- Settings window. Opened from the pill three-dot control or the tray. The
-  minimum v1 requires: hotkey choice, microphone and language choice, and
-  model state. Destination choice arrives with phase two. Everything else
-  stays hidden or at defaults.
+- Onboarding window. A single screen with one instruction, the answers it
+  cannot assume, and honest model download progress. Starting with Windows
+  is required on it and is asked as two answers rather than as a toggle
+  left at a default; everything else offered there is already correct and
+  one click from being otherwise. No account step, no multi-page wizard.
+- Settings window. Opened from the pill three-dot control or the tray. It
+  groups what it holds by what each thing is for — dictation, speech model,
+  appearance, startup — with a control in a fixed column, so every one ends
+  on the same edge and the labels keep their room. The minimum v1 requires:
+  hotkey choice, microphone and language choice, model choice, theme, and
+  starting with Windows. Destination choice arrives with phase two.
+  Everything else stays hidden or at defaults. Choosing a model fetches it,
+  so the model row is one control and one line of what it is doing rather
+  than a list of equal-weight download buttons. Engine diagnostics are not
+  shown: which backend is in use and whether it has been verified are true
+  and not the user's business.
+- Window surface. A calm flat plane, not glass. Glass stays with the pill,
+  which is the small floating surface it was chosen for; the window has to
+  stay readable in a light room, and its palette is chosen for that. It
+  follows the system theme live, with the user's choice as an override.
 - Model manager. A quiet surface showing download and readiness state with
   honest progress. It never blocks dictation language with jargon.
 - State presence in the pill. Idle, listening, thinking, done, and failure
@@ -170,7 +187,7 @@ and recorded in the decision record.
 - Structure behind the flows: `05-architecture.md`
 - Agent destination behavior (phase two): `06-agent-integration.md`
 - When polish lands: `07-roadmap.md`
-- Decisions behind these flows: `08-decisions.md` items 8 and 10,
+- Decisions behind these flows: `08-decisions.md` items 8, 10, 13 and 14,
   `adr/004-cancel-gesture.md`, `adr/007-chord-from-terminal-state.md`,
   `adr/008-pill-control.md`, `adr/009-liquid-glass-tokens.md`
 - External input merged here: `reference/external-ui-ux-brief.md`, triage in `reference/ui-brief-triage.md`

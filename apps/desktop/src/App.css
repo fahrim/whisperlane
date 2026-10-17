@@ -23,7 +23,7 @@ body {
 
 body {
   margin: 0;
-  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   font-size: var(--text-body);
   line-height: 1.5;
   font-synthesis: none;
@@ -32,8 +32,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
   color: var(--text-primary);
-  /* The window is transparent so its corners and shadow can be drawn in
-     CSS. Nothing here paints the root, or that transparency is gone. */
   background: transparent;
   overflow: hidden;
 }
@@ -42,56 +40,203 @@ body {
    the bleed left empty for the shadow to occupy. */
 .window {
   min-height: 100vh;
+  width: max-content;
+  min-width: 100%;
   padding: var(--window-bleed);
   box-sizing: border-box;
   display: flex;
   align-items: flex-start;
-  justify-content: center;
+  justify-content: flex-start;
   background: transparent;
 }
 
-/* The visible card. Everything the user reads sits inside this, so this is
-   where the surface colour, the radius and the depth are drawn — the
-   operating system supplies none of it to a frameless window. It also
-   holds the stack the signal is drawn into: the backdrop is a layer of
-   the card, not of the document, so it is clipped by the rounded corner
-   and travels with the card when the card resizes. */
+/* The visible card. */
 .window-frame {
   position: relative;
   isolation: isolate;
+  flex: none;
   background: var(--surface-base);
   border: 1px solid var(--surface-border);
   border-radius: var(--window-radius);
   box-shadow: var(--shadow-spread);
   overflow: hidden;
-  width: 100%;
+  width: 560px;
   max-width: 560px;
 }
 
-/* --- The signal behind the window ------------------------------------
-   Faint, and masked so it is strongest where the surface has no small
-   text on it. The mask is the compromise between the brand and the
-   reading: a field that faded to nothing behind every label would be a
-   decoration nobody looks at, and one drawn at full strength behind them
-   would be a form nobody can read. */
-/* The signal's shape and speed, as custom properties rather than as
-   numbers in the drawing code. Every one of them is found by eye, against
-   a real window with the real text on it, and a number buried in a
-   drawing function can only be found by rebuilding. */
+.window-frame.window-frame-settings {
+  flex: none;
+  width: 790px;
+  min-width: 540px;
+  max-width: 1280px;
+  container-type: inline-size;
+  container-name: settings-frame;
+  background: linear-gradient(
+    145deg,
+    #151728 0%,
+    #11121e 48%,
+    #141322 100%
+  );
+  border: none;
+  box-shadow:
+    0 28px 64px -12px rgb(0 0 0 / 82%),
+    -12px -12px 38px -14px rgb(96 165 250 / 26%),
+    14px 14px 42px -14px rgb(244 114 182 / 22%);
+}
+
+.window-frame.window-frame-settings.has-custom-height {
+  display: flex;
+  flex-direction: column;
+}
+
+/* --- Interactive Resize Handles ------------------------------------- */
+
+.window-resize-handle {
+  position: absolute;
+  z-index: 30;
+  touch-action: none;
+}
+
+.window-resize-n {
+  top: 0;
+  left: 14px;
+  right: 14px;
+  height: 7px;
+  cursor: ns-resize;
+}
+
+.window-resize-s {
+  bottom: 0;
+  left: 14px;
+  right: 14px;
+  height: 7px;
+  cursor: ns-resize;
+}
+
+.window-resize-e {
+  top: 14px;
+  bottom: 14px;
+  right: 0;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.window-resize-w {
+  top: 14px;
+  bottom: 14px;
+  left: 0;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.window-resize-nw {
+  top: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+}
+
+.window-resize-ne {
+  top: 0;
+  right: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nesw-resize;
+}
+
+.window-resize-sw {
+  bottom: 0;
+  left: 0;
+  width: 14px;
+  height: 14px;
+  cursor: nesw-resize;
+}
+
+.window-resize-se {
+  bottom: 0;
+  right: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+}
+
+.window-resize-se::after {
+  content: "";
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid rgb(255 255 255 / 24%);
+  border-bottom: 1.5px solid rgb(255 255 255 / 24%);
+  border-bottom-right-radius: 3px;
+  transition: border-color var(--fade);
+}
+
+.window-resize-se:hover::after {
+  border-color: rgb(192 132 252 / 75%);
+}
+
+/* Luminous glass border rim around the settings window */
+.window-frame.window-frame-settings::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.25px;
+  background: linear-gradient(
+    135deg,
+    rgb(196 220 255 / 72%) 0%,
+    rgb(139 92 246 / 38%) 28%,
+    rgb(255 255 255 / 12%) 54%,
+    rgb(244 114 182 / 48%) 82%,
+    rgb(251 146 60 / 58%) 100%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 10;
+}
+
+:root[data-theme="light"] .window-frame.window-frame-settings {
+  background: linear-gradient(145deg, #f8f9fc 0%, #f1f2f8 100%);
+  border: 1px solid var(--surface-border-strong);
+  box-shadow: var(--shadow-spread);
+}
+
+:root[data-theme="light"] .window-frame.window-frame-settings::after {
+  display: none;
+}
+
+/* Soft ambient color blooms behind the dark glass panels */
+.window-ambient {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 10% 10%, rgb(59 130 246 / 24%) 0%, transparent 46%),
+    radial-gradient(circle at 8% 36%, rgb(139 92 246 / 20%) 0%, transparent 48%),
+    radial-gradient(circle at 12% 92%, rgb(147 51 234 / 26%) 0%, transparent 50%),
+    radial-gradient(circle at 96% 56%, rgb(244 63 94 / 16%) 0%, transparent 42%),
+    radial-gradient(circle at 92% 88%, rgb(236 72 153 / 20%) 0%, transparent 46%);
+}
+
+:root[data-theme="light"] .window-ambient {
+  opacity: 0.25;
+}
+
+/* --- The signal behind the window ------------------------------------ */
 :root {
-  /* How present the field is. Lower reads as depth; higher reads as a
-     background that is showing off. */
-  --signal-alpha: 0.32;
-  /* Seconds for one loop. Slow on purpose: this is a backdrop, not a
-     meter, and the loop is long enough that the motion never announces
-     itself as a loop. */
+  --signal-alpha: 0.40;
   --signal-loop: 18;
-  /* How far down the surface the field sits, and how far apart the
-     ribbons are stacked. */
-  --signal-center: 0.58;
-  --signal-spread: 0.13;
-  /* How far a ribbon travels from its band. */
-  --signal-scale: 0.11;
+  --signal-center: 0.56;
+  --signal-spread: 0.14;
+  --signal-scale: 0.12;
 }
 
 .signal-backdrop {
@@ -103,33 +248,558 @@ body {
   pointer-events: none;
   -webkit-mask-image: linear-gradient(
     to bottom,
-    rgb(0 0 0 / 40%) 0%,
-    rgb(0 0 0 / 70%) 42%,
+    rgb(0 0 0 / 55%) 0%,
+    rgb(0 0 0 / 82%) 42%,
     rgb(0 0 0 / 100%) 78%
   );
   mask-image: linear-gradient(
     to bottom,
-    rgb(0 0 0 / 40%) 0%,
-    rgb(0 0 0 / 70%) 42%,
+    rgb(0 0 0 / 55%) 0%,
+    rgb(0 0 0 / 82%) 42%,
     rgb(0 0 0 / 100%) 78%
   );
 }
 
-/* Inspecting: no mask, so what the field actually is can be seen rather
-   than judged through the gradient that keeps it off the small text. */
 .signal-backdrop.signal-inspect {
   -webkit-mask-image: none;
   mask-image: none;
 }
 
-/* Everything above the signal, or the signal is not behind anything. */
 .title-bar,
-.content {
+.content,
+.settings-shell {
   position: relative;
   z-index: 1;
 }
 
-/* --- Title bar ----------------------------------------------------- */
+/* --- Two-Column Settings Shell -------------------------------------- */
+
+.settings-shell {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  min-height: 720px;
+  flex: 1;
+}
+
+.window-frame.has-custom-height .settings-shell {
+  min-height: 0;
+  height: 100%;
+}
+
+/* --- Left Sidebar --------------------------------------------------- */
+
+.settings-sidebar {
+  display: flex;
+  flex-direction: column;
+  padding: 24px 14px 24px 14px;
+  background: linear-gradient(
+    180deg,
+    rgb(26 28 48 / 46%) 0%,
+    rgb(16 17 30 / 56%) 100%
+  );
+  border-right: 1px solid rgb(255 255 255 / 7%);
+  user-select: none;
+}
+
+:root[data-theme="light"] .settings-sidebar {
+  background: rgb(0 0 0 / 3%);
+  border-right-color: var(--surface-border);
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 2px 10px 22px 10px;
+  cursor: grab;
+}
+
+.sidebar-brand:active {
+  cursor: grabbing;
+}
+
+.brand-wave-icon {
+  flex: none;
+  filter: drop-shadow(0 0 8px rgb(139 92 246 / 65%));
+}
+
+.sidebar-brand-name {
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sidebar-nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  width: 100%;
+  padding: 11px 14px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  text-align: left;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background var(--fade),
+    border-color var(--fade),
+    color var(--fade),
+    box-shadow var(--fade);
+}
+
+.sidebar-nav-item:hover {
+  background: rgb(255 255 255 / 4.5%);
+  color: var(--text-primary);
+}
+
+:root[data-theme="light"] .sidebar-nav-item:hover {
+  background: rgb(0 0 0 / 5%);
+}
+
+.sidebar-nav-item.is-active {
+  background: linear-gradient(
+    90deg,
+    rgb(139 92 246 / 26%) 0%,
+    rgb(124 58 237 / 13%) 60%,
+    rgb(99 102 241 / 6%) 100%
+  );
+  border-color: rgb(168 85 247 / 36%);
+  box-shadow:
+    0 6px 20px -6px rgb(139 92 246 / 32%),
+    inset 0 1px 0 rgb(255 255 255 / 12%);
+  color: var(--text-primary);
+}
+
+.sidebar-nav-item.is-active::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 9px;
+  bottom: 9px;
+  width: 3.5px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #f3e8ff 0%, #c084fc 45%, #9333ea 100%);
+  box-shadow: 0 0 12px 2px rgb(168 85 247 / 90%);
+}
+
+.sidebar-nav-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: var(--text-secondary);
+  transition: color var(--fade), filter var(--fade);
+}
+
+.sidebar-nav-item:hover .sidebar-nav-icon,
+.sidebar-nav-item.is-active .sidebar-nav-icon {
+  color: var(--text-primary);
+}
+
+.sidebar-nav-item.is-active .sidebar-nav-icon {
+  filter: drop-shadow(0 0 6px rgb(192 132 252 / 45%));
+}
+
+.sidebar-nav-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sidebar-nav-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.25;
+}
+
+.sidebar-nav-subtitle {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar-nav-item.is-active .sidebar-nav-subtitle {
+  color: #b4b0dc;
+}
+
+:root[data-theme="light"] .sidebar-nav-item.is-active .sidebar-nav-subtitle {
+  color: #5b21b6;
+}
+
+/* --- Right Main Pane ------------------------------------------------ */
+
+.settings-main {
+  padding: 22px 24px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  min-width: 0;
+  min-height: 0;
+  container-type: inline-size;
+  container-name: settings-main;
+}
+
+.window-frame.has-custom-height .settings-main {
+  height: 100%;
+  overflow: hidden;
+}
+
+.settings-header {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  cursor: grab;
+  user-select: none;
+}
+
+.settings-header:active {
+  cursor: grabbing;
+}
+
+.settings-header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+.settings-subtitle {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+
+/* --- Settings Cards Stack ------------------------------------------- */
+
+.settings-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.window-frame.has-custom-height .settings-cards {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.settings-cards::-webkit-scrollbar {
+  width: 6px;
+}
+
+.settings-cards::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.settings-cards::-webkit-scrollbar-thumb {
+  background: rgb(255 255 255 / 14%);
+  border-radius: 999px;
+}
+
+.settings-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: linear-gradient(
+    180deg,
+    rgb(30 32 50 / 54%) 0%,
+    rgb(22 23 38 / 62%) 100%
+  );
+  border: 1px solid rgb(255 255 255 / 8%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 5%),
+    0 4px 16px -6px rgb(0 0 0 / 35%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+:root[data-theme="light"] .settings-card {
+  background: var(--surface-raised);
+  border-color: var(--surface-border);
+  box-shadow: 0 2px 8px -2px rgb(0 0 0 / 6%);
+}
+
+.settings-card-inline {
+  align-items: center;
+}
+
+.settings-card-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 5%);
+  border: 1px solid rgb(255 255 255 / 7.5%);
+  color: #dcdde9;
+}
+
+:root[data-theme="light"] .settings-card-icon {
+  background: rgb(0 0 0 / 4%);
+  border-color: rgb(0 0 0 / 8%);
+  color: var(--text-primary);
+}
+
+.settings-card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-card-title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
+
+.settings-card-desc {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+
+.settings-card-controls {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-card-inline-control {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.settings-card-inline-control .picker {
+  width: 124px;
+}
+
+/* --- Responsive Container Queries ----------------------------------- */
+
+@container settings-frame (max-width: 700px) {
+  .settings-shell {
+    grid-template-columns: 184px minmax(0, 1fr);
+  }
+}
+
+@container settings-frame (max-width: 610px) {
+  .settings-shell {
+    grid-template-columns: 152px minmax(0, 1fr);
+  }
+  .sidebar-nav-subtitle {
+    display: none;
+  }
+  .sidebar-brand-name {
+    font-size: 16px;
+  }
+}
+
+@container settings-frame (min-width: 960px) {
+  .settings-shell {
+    grid-template-columns: 248px minmax(0, 1fr);
+  }
+  .settings-main {
+    padding: 28px 32px;
+  }
+}
+
+@container settings-main (max-width: 440px) {
+  .settings-card-controls {
+    flex-wrap: wrap;
+  }
+  .settings-card-controls > .picker {
+    flex: 1 1 100%;
+  }
+  .mic-meter-row {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .settings-card-inline {
+    flex-wrap: wrap;
+  }
+  .settings-card-inline-control {
+    margin-left: 52px;
+  }
+}
+
+.settings-card-note {
+  margin: 9px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.settings-card-status {
+  margin: 9px 0 0;
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* --- Keycaps inside Hold to Talk Picker ----------------------------- */
+
+.hotkey-caps {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+
+.hotkey-cap-group {
+  display: inline-flex;
+  align-items: center;
+}
+
+.hotkey-cap {
+  display: inline-block;
+  padding: 2px 9px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--text-primary);
+  background: rgb(255 255 255 / 8%);
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 6px;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 8%),
+    0 1px 2px rgb(0 0 0 / 25%);
+}
+
+:root[data-theme="light"] .hotkey-cap {
+  background: rgb(0 0 0 / 6%);
+  border-color: rgb(0 0 0 / 12%);
+  box-shadow: none;
+}
+
+.hotkey-plus {
+  margin: 0 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+/* --- Action Buttons (Change, Test Mic) ------------------------------ */
+
+.card-action-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: rgb(255 255 255 / 5.5%);
+  border: 1px solid rgb(255 255 255 / 10%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 6%);
+}
+
+.card-action-btn:hover {
+  background: rgb(255 255 255 / 10%);
+  border-color: rgb(255 255 255 / 16%);
+}
+
+.test-mic-btn {
+  background: linear-gradient(
+    135deg,
+    rgb(139 92 246 / 20%) 0%,
+    rgb(99 102 241 / 12%) 100%
+  );
+  border-color: rgb(168 85 247 / 42%);
+  box-shadow:
+    0 0 16px -4px rgb(139 92 246 / 38%),
+    inset 0 1px 0 rgb(255 255 255 / 14%);
+}
+
+.test-mic-btn:hover,
+.test-mic-btn.is-testing {
+  background: linear-gradient(
+    135deg,
+    rgb(139 92 246 / 30%) 0%,
+    rgb(99 102 241 / 20%) 100%
+  );
+  border-color: rgb(192 132 252 / 60%);
+}
+
+/* --- Microphone Input Level Meter ----------------------------------- */
+
+.mic-meter-row {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mic-level-bars {
+  display: flex;
+  align-items: center;
+  gap: 4.5px;
+}
+
+.mic-level-bar {
+  width: 3.5px;
+  height: 13px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 14%);
+  transition: background 110ms ease, box-shadow 110ms ease;
+}
+
+:root[data-theme="light"] .mic-level-bar {
+  background: rgb(0 0 0 / 15%);
+}
+
+.mic-level-bar.is-lit {
+  background: linear-gradient(180deg, #c084fc 0%, #818cf8 100%);
+  box-shadow: 0 0 6px rgb(168 85 247 / 55%);
+}
+
+.mic-meter-hint {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* --- Title bar (First run) & Close button --------------------------- */
 
 .title-bar {
   position: relative;
@@ -142,12 +812,6 @@ body {
   background: var(--surface-sunken);
 }
 
-/* The bar carries the drag region deeply, so the name drags as well as
-   the empty space — a user grabs the word, not the gap beside it. A
-   button inside a drag region still receives its own clicks: the
-   toolkit stops at anything it recognises as clickable, which is why the
-   close button needs nothing to keep the drag off it.
-   The span is only the flexible space between the two. */
 .title-bar-drag {
   flex: 1;
   align-self: stretch;
@@ -170,23 +834,32 @@ body {
   place-items: center;
   width: 30px;
   height: 26px;
+  padding: 0;
   border: none;
   border-radius: 7px;
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
-  transition: background var(--fade), color var(--fade);
+  transition: background var(--fade), color var(--fade), border-color var(--fade);
 }
 
-.title-bar-close:hover {
-  background: var(--control-bg-hover);
-  color: var(--text-primary);
+.settings-close-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: rgb(255 255 255 / 5%);
+  border: 1px solid rgb(255 255 255 / 8%);
+  color: var(--text-secondary);
 }
 
-/* The close button is the one place a red is correct: it is the one
-   action here that discards rather than saves. */
+:root[data-theme="light"] .settings-close-btn {
+  background: rgb(0 0 0 / 4%);
+  border-color: rgb(0 0 0 / 10%);
+}
+
 .title-bar-close:hover {
   background: var(--danger-fill);
+  border-color: transparent;
   color: #ffffff;
 }
 
@@ -195,7 +868,7 @@ body {
   outline-offset: 1px;
 }
 
-/* --- Content -------------------------------------------------------- */
+/* --- Content (First run & shared) ----------------------------------- */
 
 .content {
   padding: var(--page-padding);
@@ -212,29 +885,6 @@ h2 {
   color: var(--text-secondary);
 }
 
-/* What the product is, said once. The title bar already carries the name,
-   so repeating it here as a heading would only add a line the user has to
-   read past. */
-.settings-lead {
-  margin: 0;
-  max-width: 52ch;
-  color: var(--text-secondary);
-}
-
-.settings-lead kbd {
-  font: inherit;
-  font-weight: 600;
-  padding: 1px 7px;
-  border: 1px solid var(--control-border);
-  border-radius: 6px;
-  background: var(--control-bg);
-  white-space: nowrap;
-}
-
-/* Something to act on — a refused change, or dictation in progress. Lifted
-   off the surface so it is a separate thing rather than another line in a
-   column of black ones; the colour then only has to say what kind of thing
-   it is. */
 .banner {
   margin: 0;
   padding: 9px 12px;
@@ -244,30 +894,21 @@ h2 {
   font-size: var(--text-caption);
 }
 
-/* After .banner, so it wins on equal weight and the banner's own colour
-   rule cannot stop the text reading as a failure. */
 [role="alert"] {
   color: var(--danger);
 }
 
-/* Sections are a column of fields with a heading, not a wall of controls:
-   the heading is what lets a person looking for one setting stop reading. */
 section {
   display: flex;
   flex-direction: column;
   gap: var(--field-gap);
 }
 
-/* One setting: what it is on the left, how to change it on the right.
-   The label wraps the whole row, so clicking the words focuses the
-   control, which is what makes a long label feel like part of the control
-   rather than a caption beside it.
+.settings-card {
+  flex-direction: row;
+  gap: 14px;
+}
 
-   The control column is a fixed width rather than `auto`. Left to size
-   itself, a select grows to the longest option in the list — a keyboard
-   shortcut is a long option — and the label is what gets squeezed until
-   its words break one per line. Fixed, every control ends on the same
-   edge and the labels keep their room. */
 .field {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 252px;
@@ -286,9 +927,6 @@ section {
   color: var(--text-primary);
 }
 
-/* The hint lives under the label rather than under the control. Under the
-   control it would sit far from the words it qualifies, and a row whose
-   meaning is in its second line is a row twice as tall for nothing. */
 .field-hint,
 .field-status {
   font-size: var(--text-caption);
@@ -302,15 +940,12 @@ section {
   min-width: 0;
 }
 
-/* Fetching is its own act, so it is its own control. Drawn as an arrow
-   rather than the word "download" because the word is longer than the
-   field it sits beside, and the row would grow to hold it. */
 .download-button {
   flex: none;
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
+  width: 38px;
+  height: 38px;
   padding: 0;
   color: var(--text-secondary);
 }
@@ -324,6 +959,7 @@ section {
 }
 
 .field-status-row {
+  margin-top: 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -331,18 +967,14 @@ section {
 }
 
 .last-take-text {
-  margin: 0;
+  margin: 8px 0 0;
   padding: 10px 13px;
   border-radius: var(--control-radius);
   background: var(--control-bg);
   overflow-wrap: anywhere;
 }
 
-/* --- Controls --------------------------------------------------------
-   Drawn here rather than taken from the platform. The window is frameless
-   and sized to its content, and a native dropdown ignores both: it paints
-   its list outside the window and loses the bottom of it at the edge. All
-   three controls are in controls.tsx. */
+/* --- Controls -------------------------------------------------------- */
 
 button {
   font: inherit;
@@ -380,46 +1012,80 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
+  min-height: 38px;
+  padding: 6px 12px;
   text-align: left;
+  background: rgb(16 17 28 / 55%);
+  border: 1px solid rgb(255 255 255 / 10%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 4%);
+}
+
+:root[data-theme="light"] .picker-button {
+  background: var(--control-bg);
+  border-color: var(--control-border);
+  box-shadow: none;
+}
+
+.picker-button:hover {
+  background: rgb(26 28 44 / 70%);
+  border-color: rgb(255 255 255 / 16%);
+}
+
+:root[data-theme="light"] .picker-button:hover {
+  background: var(--control-bg-hover);
+  border-color: var(--control-border);
+}
+
+.picker-button-lead {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  flex: 1;
+}
+
+.picker-leading-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
 }
 
 .picker-value {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
 }
 
-/* Two lines meeting at a point, rather than the platform's arrow. */
 .picker-chevron {
   flex: none;
-  width: 7px;
-  height: 7px;
-  margin: -4px 2px 0 0;
-  border-right: 1.5px solid var(--text-tertiary);
-  border-bottom: 1.5px solid var(--text-tertiary);
+  width: 6.5px;
+  height: 6.5px;
+  margin: -3px 2px 0 0;
+  border-right: 1.5px solid var(--text-secondary);
+  border-bottom: 1.5px solid var(--text-secondary);
   transform: rotate(45deg);
   transition: transform var(--fade) var(--ease-out);
 }
 
 .picker-chevron-open {
-  margin-top: 4px;
+  margin-top: 3px;
   transform: rotate(-135deg);
 }
 
-/* Fixed, because the frame clips overflow and this must not be clipped by
-   it — but sized and placed to stay inside the window's own bounds, since
-   a webview cannot paint past them. The numbers come from measuring what
-   is left below the field. */
 .picker-list {
   position: fixed;
-  z-index: 20;
-  padding: 4px;
+  z-index: 1000;
+  padding: 5px;
   border-radius: var(--control-radius);
   border: 1px solid var(--surface-border-strong);
   background: var(--surface-raised);
-  box-shadow: 0 12px 28px -8px rgb(0 0 0 / 55%);
+  box-shadow: 0 14px 32px -8px rgb(0 0 0 / 65%);
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -429,10 +1095,11 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 7px 9px;
+  padding: 7px 10px;
   border-radius: 7px;
   cursor: pointer;
   color: var(--text-secondary);
+  font-size: 13px;
 }
 
 .picker-option-label {
@@ -451,8 +1118,6 @@ button:disabled {
   font-weight: 600;
 }
 
-/* The chosen answer is marked by the row it is on rather than by colour,
-   so it survives a theme where that colour means something else. */
 .picker-tick {
   flex: none;
   width: 6px;
@@ -463,12 +1128,11 @@ button:disabled {
   transform: rotate(45deg);
 }
 
-/* A switch states the setting and offers to change it, where a checkbox
-   asks whether a box is ticked. The knob travels rather than appearing, so
-   the change reads as the same object being moved. */
+/* --- Switch --------------------------------------------------------- */
+
 .switch {
   position: relative;
-  width: 42px;
+  width: 48px;
   height: 26px;
   margin: 0;
   padding: 0;
@@ -477,11 +1141,14 @@ button:disabled {
   background: var(--switch-off);
   box-shadow: inset 0 0 0 1px var(--control-border);
   cursor: pointer;
-  transition: background var(--fade);
+  transition: background var(--fade), box-shadow var(--fade);
 }
 
 .switch[aria-checked="true"] {
   background: var(--switch-on);
+  box-shadow:
+    0 0 16px rgb(168 85 247 / 48%),
+    inset 0 1px 0 rgb(255 255 255 / 25%);
 }
 
 .switch-knob {
@@ -497,17 +1164,10 @@ button:disabled {
 }
 
 .switch[aria-checked="true"] .switch-knob {
-  transform: translateX(16px);
+  transform: translateX(22px);
 }
 
-/* --- First run --------------------------------------------------------
-   One screen, in the same language as the settings window it leads to:
-   the same field rows, the same headings, the same controls. A first run
-   drawn differently would be a screen the user has to learn twice.
-
-   What differs is what it holds. The instruction is the heading, because
-   it is the only thing here that is not a choice, and it is what the
-   window is for. */
+/* --- First run -------------------------------------------------------- */
 
 .first-run {
   display: flex;
@@ -523,10 +1183,6 @@ button:disabled {
   line-height: 1.45;
 }
 
-/* The chord is the longest thing on this screen and it cannot be broken
-   across lines, so it needs the room. A measure set for the words around
-   it would push it onto a line of its own, and three lines read as three
-   instructions where there is one. */
 .first-run-instruction {
   max-width: none;
 }
@@ -563,9 +1219,6 @@ button:disabled {
   overflow-wrap: anywhere;
 }
 
-/* Everything below the questions: what the model is doing, the way on,
-   and where settings live afterwards. Separated from the questions so the
-   questions read as a block rather than as more rows to scroll. */
 .first-run-foot {
   display: flex;
   flex-direction: column;
@@ -584,10 +1237,6 @@ button:disabled {
 .first-run-done {
   align-self: stretch;
   margin: 4px 0 0;
-  /* The one filled button in the product. On a screen whose whole job is
-     to be read and answered, an action drawn like the fields above it
-     reads as another field; this is the way out, so it is the one thing
-     that looks pressable. */
   background: var(--accent-fill);
   border-color: transparent;
   color: #ffffff;
@@ -598,10 +1247,6 @@ button:disabled {
   background: var(--accent-fill-hover);
 }
 
-/* Until the startup question is answered there is no action to offer, so
-   it stops being the filled button and goes back to being a shape like
-   the fields above it. Half a purple reads as a live button that is
-   briefly unhappy, which is not what is happening. */
 .first-run-done:disabled {
   opacity: 1;
   background: var(--control-bg);
@@ -611,15 +1256,8 @@ button:disabled {
   cursor: default;
 }
 
-/* --- Segmented choice -------------------------------------------------
-   The pill picks with segments (pill.css, and the glass behind it stays
-   there). This is the same idea on a flat surface: two answers, both on
-   screen, neither of them a default someone else picked. */
+/* --- Segmented choice ----------------------------------------------- */
 
-/* Sized to its options rather than to the column. Stretched to the full
-   width it stops reading as two choices and starts reading as one long
-   field with two labels in it — the one thing a question must not look
-   like. */
 .segmented {
   display: inline-flex;
   align-self: flex-start;
@@ -642,8 +1280,6 @@ button:disabled {
   color: var(--text-primary);
 }
 
-/* The chosen answer sits on the surface rather than on a tint of it, so
-   the eye finds it as an object and not as a slightly darker rectangle. */
 .segment[aria-checked="true"] {
   background: var(--surface-raised);
   color: var(--text-primary);

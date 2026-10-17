@@ -12,7 +12,8 @@
 // list is the only way to keep it inside the window and on the surface.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { KeyboardEvent } from "react";
+import { createPortal } from "react-dom";
+import type { KeyboardEvent, ReactNode, RefObject } from "react";
 
 export interface PickerOption {
   code: string;
@@ -25,6 +26,9 @@ export interface PickerProps {
   /** Plain-language name of the setting, for the accessible name. */
   label: string;
   onChange: (value: string) => void;
+  leadingIcon?: ReactNode;
+  renderValue?: (selected: PickerOption | undefined) => ReactNode;
+  buttonRef?: RefObject<HTMLButtonElement | null>;
 }
 
 /** Where the list has room to open, and how much of it. */
@@ -37,25 +41,31 @@ interface Placement {
 }
 
 /** Room around the list, kept clear of the window's own edge. */
-const GUTTER = 8;
+const GUTTER = 10;
 
 /**
  * One setting chosen from a list.
  *
- * The list opens inside the window by measuring what is left below the
- * field and, when that is not enough, opening upward instead. A list that
- * ran past the edge would be worse than the native one it replaces: the
- * options below the fold are options the user cannot see exist.
+ * The list is portaled to document.body so that ancestor backdrop-filter or
+ * transform layers on cards never hijack position:fixed coordinates, and
+ * measured against .window-frame so it stays inside the visible card.
  */
-export function Picker({ value, options, label, onChange }: PickerProps) {
+export function Picker({
+  value,
+  options,
+  label,
+  onChange,
+  leadingIcon,
+  renderValue,
+  buttonRef,
+}: PickerProps) {
   const [open, setOpen] = useState(false);
-  // Which row the keyboard is on. Kept as the chosen row's index so
-  // opening the list lands on the answer rather than the first row.
   const [active, setActive] = useState(() =>
     Math.max(0, options.findIndex((option) => option.code === value)),
   );
   const [placement, setPlacement] = useState<Placement | null>(null);
-  const button = useRef<HTMLButtonElement>(null);
+  const internalButton = useRef<HTMLButtonElement>(null);
+  const button = buttonRef ?? internalButton;
   const list = useRef<HTMLDivElement>(null);
 
   const selected = options.find((option) => option.code === value);
@@ -71,57 +81,69 @@ export function Picker({ value, options, label, onChange }: PickerProps) {
   }
 
   function choose(code: string) {
-    // Choosing the answer that is already the answer closes without
-    // writing, as it did when the platform drew this.
     if (code !== value) onChange(code);
     setOpen(false);
     button.current?.focus();
   }
 
-  // Measured after the list is on screen, because how tall it wants to be
-  // is the thing being asked. The first paint is unclamped and may overflow
-  // for a frame; nothing visible happens in that frame.
-  //
-  // Keyed on being open rather than on the options, which are rebuilt on
-  // every render at most call sites: measuring again each time would set
-  // state again each time, and a measure that re-measures is a loop.
   useLayoutEffect(() => {
     if (!open) return;
-    const anchor = button.current?.getBoundingClientRect();
-    const panel = list.current;
-    if (!anchor || !panel) return;
-    const below = window.innerHeight - anchor.bottom - GUTTER;
-    const above = anchor.top - GUTTER;
-    const wanted = panel.scrollHeight;
-    const upwards = wanted > below && above > below;
-    const room = Math.max(upwards ? above : below, 120);
-    // The field's own width, not its widest label. A list that grew to fit
-    // its longest option would push past the window's right edge on the
-    // same rows where it used to overflow at the bottom, and a long entry
-    // is the rule here rather than the exception: keyboard shortcuts and
-    // device names are both long. Long text ellipsises instead.
-    const width = Math.min(anchor.width, window.innerWidth - GUTTER * 2);
-    setPlacement({
-      top: upwards ? anchor.top - GUTTER - Math.min(wanted, room) : anchor.bottom + 6,
-      left: Math.min(anchor.left, window.innerWidth - width - GUTTER),
-      width,
-      maxHeight: room,
-      above: upwards,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    const updatePlacement = () => {
+      const anchor = button.current?.getBoundingClientRect();
+      const panel = list.current;
+      if (!anchor || !panel) return;
+
+      const frameEl = button.current?.closest(".window-frame");
+      const bounds = frameEl
+        ? frameEl.getBoundingClientRect()
+        : {
+            top: 0,
+            left: 0,
+            right: window.innerWidth,
+            bottom: window.innerHeight,
+            width: window.innerWidth,
+            height: window.innerHeight,
+          };
+
+      const below = bounds.bottom - anchor.bottom - GUTTER;
+      const above = anchor.top - bounds.top - GUTTER;
+      const wanted = panel.scrollHeight;
+      const upwards = wanted > below && above > below;
+      const room = Math.max(upwards ? above : below, 120);
+      const maxAvailableWidth = Math.max(120, bounds.width - GUTTER * 2);
+      const width = Math.min(Math.max(anchor.width, 160), maxAvailableWidth);
+      const unclampedLeft = anchor.left;
+      const left = Math.max(
+        bounds.left + GUTTER,
+        Math.min(unclampedLeft, bounds.right - width - GUTTER),
+      );
+      const top = upwards
+        ? anchor.top - 6 - Math.min(wanted, room)
+        : anchor.bottom + 6;
+
+      setPlacement({
+        top,
+        left,
+        width,
+        maxHeight: room,
+        above: upwards,
+      });
+    };
+
+    updatePlacement();
+    window.addEventListener("resize", updatePlacement);
+    window.addEventListener("scroll", updatePlacement, true);
+    return () => {
+      window.removeEventListener("resize", updatePlacement);
+      window.removeEventListener("scroll", updatePlacement, true);
+    };
   }, [open]);
 
-  // Focus moves to the list while it is open. That is the whole point:
-  // with the button still focused, Enter is both "choose" and the button's
-  // own activation, so one press would pick an option and then close the
-  // list the picking had just opened. Off the button, Enter is only one
-  // thing, because a div has no activation of its own.
   useEffect(() => {
     if (open) list.current?.focus();
   }, [open]);
 
-  // Any press elsewhere dismisses it, and Escape does too. A list that can
-  // only be closed by choosing something is a list that can trap.
   useEffect(() => {
     if (!open) return;
     function away(event: PointerEvent) {
@@ -135,10 +157,8 @@ export function Picker({ value, options, label, onChange }: PickerProps) {
     }
     document.addEventListener("pointerdown", away);
     return () => document.removeEventListener("pointerdown", away);
-  }, [open]);
+  }, [open, button]);
 
-  // Closed, the arrow keys open the list onto an end; Enter and Space are
-  // left to the button, which already does the right thing with them.
   function onButtonKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
     if (event.key === "ArrowDown") {
       event.preventDefault();
@@ -175,8 +195,6 @@ export function Picker({ value, options, label, onChange }: PickerProps) {
     }
   }
 
-  // The row the keyboard is on is kept in view, so arrowing past the fold
-  // scrolls to it rather than moving the highlight somewhere invisible.
   useEffect(() => {
     if (!open) return;
     list.current?.children[active]?.scrollIntoView({ block: "nearest" });
@@ -194,47 +212,58 @@ export function Picker({ value, options, label, onChange }: PickerProps) {
         onClick={() => (open ? setOpen(false) : show("chosen"))}
         onKeyDown={onButtonKeyDown}
       >
-        <span className="picker-value">{selected?.label ?? label}</span>
+        <span className="picker-button-lead">
+          {leadingIcon && (
+            <span className="picker-leading-icon" aria-hidden="true">
+              {leadingIcon}
+            </span>
+          )}
+          <span className="picker-value">
+            {renderValue ? renderValue(selected) : (selected?.label ?? label)}
+          </span>
+        </span>
         <span className={`picker-chevron${open ? " picker-chevron-open" : ""}`} />
       </button>
-      {open && (
-        <div
-          ref={list}
-          role="listbox"
-          aria-label={label}
-          tabIndex={-1}
-          className="picker-list"
-          style={
-            placement
-              ? {
-                  top: placement.top,
-                  left: placement.left,
-                  width: placement.width,
-                  maxHeight: placement.maxHeight,
-                }
-              : undefined
-          }
-          onKeyDown={onListKeyDown}
-        >
-          {options.map((option, index) => (
-            <div
-              key={option.code}
-              role="option"
-              aria-selected={option.code === value}
-              className={`picker-option${
-                index === active ? " picker-option-active" : ""
-              }`}
-              onPointerEnter={() => setActive(index)}
-              onClick={() => choose(option.code)}
-            >
-              <span className="picker-option-label">{option.label}</span>
-              {option.code === value && (
-                <span className="picker-tick" aria-hidden="true" />
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={list}
+            role="listbox"
+            aria-label={label}
+            tabIndex={-1}
+            className="picker-list"
+            style={
+              placement
+                ? {
+                    top: placement.top,
+                    left: placement.left,
+                    width: placement.width,
+                    maxHeight: placement.maxHeight,
+                  }
+                : { visibility: "hidden" }
+            }
+            onKeyDown={onListKeyDown}
+          >
+            {options.map((option, index) => (
+              <div
+                key={option.code}
+                role="option"
+                aria-selected={option.code === value}
+                className={`picker-option${
+                  index === active ? " picker-option-active" : ""
+                }`}
+                onPointerEnter={() => setActive(index)}
+                onClick={() => choose(option.code)}
+              >
+                <span className="picker-option-label">{option.label}</span>
+                {option.code === value && (
+                  <span className="picker-tick" aria-hidden="true" />
+                )}
+              </div>
+            ))}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
@@ -246,15 +275,6 @@ export interface SwitchProps {
   onChange: (next: boolean) => void;
 }
 
-/**
- * A preference that is either on or off.
- *
- * A checkbox asks the question "is this box ticked"; a switch states the
- * setting and offers to change it. The state lives on the element as
- * aria-checked, so the control reads the same to a screen reader as it
- * looks, and the label is passed in because a button is not a labelable
- * control and would otherwise be announced with nothing but its value.
- */
 export function Switch({ checked, label, disabled, onChange }: SwitchProps) {
   return (
     <button
@@ -277,18 +297,6 @@ export interface SegmentProps {
   onChange: (next: string) => void;
 }
 
-/**
- * One setting with a small number of answers, all of them on screen.
- *
- * Not a switch: a switch states where the setting is, and this is asked
- * because the answer is not known yet. A switch sitting at its default
- * reads as an answer nobody gave. These two buttons say so.
- *
- * Arrow keys are not wired, which a radiogroup is expected to have. Tab
- * reaches each button and Space picks it, so the pair is operable without
- * them; a two-answer question does not earn the arrow-key handling that a
- * long list would.
- */
 export function Segmented({ value, options, onChange }: SegmentProps) {
   return (
     <div className="segmented" role="radiogroup">

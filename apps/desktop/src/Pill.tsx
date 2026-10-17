@@ -234,6 +234,7 @@ export function Pill() {
   const phase: Phase = status?.phase ?? "idle";
   const isRecording = phase === "listening";
   const isProcessing = phase === "thinking";
+  const pillBoxRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const copiedTimer = useRef<number | null>(null);
   const dragRef = useRef<{
@@ -243,6 +244,35 @@ export function Pill() {
     taken: boolean;
   } | null>(null);
   const dragBusy = useRef(false);
+
+  /**
+   * Synchronises the native Windows DWM blur region with the exact
+   * rounded silhouette of the capsule (and any open panel).
+   */
+  const syncBlurRegion = useCallback(() => {
+    const pillEl = pillBoxRef.current;
+    if (!pillEl) return;
+    const pillRect = pillEl.getBoundingClientRect();
+    const panelEl = panelRef.current;
+    const panelSurface = panelEl?.firstElementChild as HTMLElement | null;
+    const panelRect =
+      panel && placement && panelSurface
+        ? panelSurface.getBoundingClientRect()
+        : null;
+    const panelRadius = panel === "take" ? 22 : 16;
+
+    void invoke("set_pill_blur_region", {
+      pillX: pillRect.left,
+      pillY: pillRect.top,
+      pillW: pillRect.width,
+      pillH: pillRect.height,
+      panelX: panelRect ? panelRect.left : null,
+      panelY: panelRect ? panelRect.top : null,
+      panelW: panelRect ? panelRect.width : null,
+      panelH: panelRect ? panelRect.height : null,
+      panelR: panelRect ? panelRadius : null,
+    }).catch(() => {});
+  }, [panel, placement]);
 
   /**
    * Takes the pointer's movement and lets the core move the window.
@@ -415,16 +445,24 @@ export function Pill() {
     void resizeForPanel();
   }, [panel, resizeForPanel]);
 
-  // A panel whose own content changes height has to be measured again.
-  // Long text, a language label, anything the user did inside it: the
-  // window follows the panel rather than the other way round.
+  useLayoutEffect(() => {
+    syncBlurRegion();
+  }, [syncBlurRegion, status?.phase, status?.detail, alignEnd]);
+
+  // Keep the DWM blur region locked to the capsule and panel whenever
+  // either resizes (including during the capsule's width spring transition).
   useEffect(() => {
-    const element = panelRef.current;
-    if (!element || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => void resizeForPanel());
-    observer.observe(element);
+    const pillEl = pillBoxRef.current;
+    const panelEl = panelRef.current;
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      syncBlurRegion();
+      if (panelEl) void resizeForPanel();
+    });
+    if (pillEl) observer.observe(pillEl);
+    if (panelEl) observer.observe(panelEl);
     return () => observer.disconnect();
-  }, [panel, resizeForPanel]);
+  }, [panel, resizeForPanel, syncBlurRegion]);
 
   async function press(command: TakeCommand) {
     try {
@@ -501,7 +539,7 @@ export function Pill() {
         <div className="pill-dock">
           <div className="pill-aura" aria-hidden="true" />
 
-          <div className="liquid-pill">
+          <div className="liquid-pill" ref={pillBoxRef}>
             {/* The glass the content sits on: nine optical layers, cut
                 to the capsule. */}
             <LiquidGlassSurface geometry="capsule" />

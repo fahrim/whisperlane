@@ -94,9 +94,9 @@
     ),
     linear-gradient(
       180deg,
-      rgb(var(--lgs-body-high) / 62%) 0%,
-      rgb(var(--lgs-body-mid) / 72%) 50%,
-      rgb(var(--lgs-body-low) / 78%) 100%
+      rgb(var(--lgs-body-high) / 54%) 0%,
+      rgb(var(--lgs-body-mid) / 64%) 50%,
+      rgb(var(--lgs-body-low) / 72%) 100%
     );
   backdrop-filter: blur(22px) saturate(160%);
   -webkit-backdrop-filter: blur(22px) saturate(160%);
@@ -109,8 +109,8 @@
   background:
     radial-gradient(
       90% 120% at 50% 52%,
-      rgb(var(--lgs-deep) / 38%) 0%,
-      rgb(var(--lgs-deep) / 16%) 58%,
+      rgb(var(--lgs-deep) / 36%) 0%,
+      rgb(var(--lgs-deep) / 14%) 58%,
       transparent 90%
     ),
     linear-gradient(
@@ -123,14 +123,32 @@
     );
 }
 
-/* 5 — The lens. Kept off in normal launches unless verified, because
-   CSS `backdrop-filter: url(#...)` only refracts DOM elements behind the
-   pill inside the WebView2 document (never OS desktop windows behind the
-   transparent window) and is unsupported in Safari/WebKit and Firefox.
-   When `?glass-probe=1` is active, it runs over the high-contrast test
-   pattern with separate capsule and orb displacement maps. */
+/* 5 — The lens. Applies subtle geometry-specific SVG displacement
+   (`#lgs-lens-capsule` and `#lgs-lens-orb`) to bend in-document backdrop
+   light (`.pill-aura` and panel shadows) along the curved meniscus rim,
+   working in tandem with the localized Windows DWM `HRGN` desktop blur
+   (`set_pill_blur_region`). When `?glass-probe=1` is active, it switches
+   to the higher-gain probe filters over the high-contrast test pattern. */
 .lgs-lens {
   display: none;
+}
+
+.lgs-capsule .lgs-lens {
+  display: block;
+  backdrop-filter: url(#lgs-lens-capsule);
+  -webkit-backdrop-filter: url(#lgs-lens-capsule);
+}
+
+.lgs-orb .lgs-lens {
+  display: block;
+  backdrop-filter: url(#lgs-lens-orb);
+  -webkit-backdrop-filter: url(#lgs-lens-orb);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lgs-lens {
+    display: none !important;
+  }
 }
 
 /* 6 — Optical bevel (Droplet Meniscus).

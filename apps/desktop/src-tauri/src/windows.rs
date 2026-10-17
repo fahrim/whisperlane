@@ -10,8 +10,12 @@ use std::sync::Mutex;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT};
+use windows::Win32::Graphics::Dwm::{
+    DwmEnableBlurBehindWindow, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND,
+};
 use windows::Win32::Graphics::Gdi::{
-    EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO,
+    CombineRgn, CreateRoundRectRgn, DeleteObject, EnumDisplayMonitors, GetMonitorInfoW, HDC,
+    HMONITOR, MONITORINFO, RGN_OR,
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
 
@@ -612,6 +616,75 @@ pub fn set_pill_panel(app: AppHandle, required_height: f64) -> Option<PanelPlace
         direction,
         align_end: space.right >= space.left,
     })
+}
+
+/// Applies native Windows DWM backdrop blur strictly inside the pill's
+/// rounded capsule (and its open panel, if any), leaving the surrounding
+/// window room completely unblurred and transparent.
+#[tauri::command]
+pub fn set_pill_blur_region(
+    app: AppHandle,
+    pill_x: f64,
+    pill_y: f64,
+    pill_w: f64,
+    pill_h: f64,
+    panel_x: Option<f64>,
+    panel_y: Option<f64>,
+    panel_w: Option<f64>,
+    panel_h: Option<f64>,
+    panel_r: Option<f64>,
+) {
+    let Some(window) = app.get_webview_window(PILL) else {
+        return;
+    };
+    let Ok(hwnd) = window.hwnd() else {
+        return;
+    };
+    let scale = window.scale_factor().unwrap_or(1.0);
+    if scale <= 0.0 || pill_w <= 0.0 || pill_h <= 0.0 {
+        return;
+    }
+
+    let left = (pill_x * scale).round() as i32;
+    let top = (pill_y * scale).round() as i32;
+    let right = ((pill_x + pill_w) * scale).round() as i32;
+    let bottom = ((pill_y + pill_h) * scale).round() as i32;
+    let radius = (pill_h * scale).round() as i32;
+
+    // SAFETY: Win32 GDI region and DWM calls operate on our own HWND; any
+    // created HRGN is deleted immediately after DwmEnableBlurBehindWindow
+    // copies it.
+    unsafe {
+        let pill_rgn = CreateRoundRectRgn(left, top, right, bottom, radius, radius);
+        if pill_rgn.is_invalid() {
+            return;
+        }
+
+        if let (Some(px), Some(py), Some(pw), Some(ph)) = (panel_x, panel_y, panel_w, panel_h) {
+            if pw > 0.0 && ph > 0.0 {
+                let p_left = (px * scale).round() as i32;
+                let p_top = (py * scale).round() as i32;
+                let p_right = ((px + pw) * scale).round() as i32;
+                let p_bottom = ((py + ph) * scale).round() as i32;
+                let p_diam = ((panel_r.unwrap_or(20.0) * 2.0) * scale).round() as i32;
+                let panel_rgn =
+                    CreateRoundRectRgn(p_left, p_top, p_right, p_bottom, p_diam, p_diam);
+                if !panel_rgn.is_invalid() {
+                    let _ = CombineRgn(pill_rgn, pill_rgn, panel_rgn, RGN_OR);
+                    let _ = DeleteObject(panel_rgn);
+                }
+            }
+        }
+
+        let bb = DWM_BLURBEHIND {
+            dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
+            fEnable: true.into(),
+            hRgnBlur: pill_rgn,
+            fTransitionOnMaximized: false.into(),
+        };
+        let _ = DwmEnableBlurBehindWindow(HWND(hwnd.0), &bb);
+        let _ = DeleteObject(pill_rgn);
+    }
 }
 
 /// Keeps the empty room transparent to the mouse and the pill opaque to

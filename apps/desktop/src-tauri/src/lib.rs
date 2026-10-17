@@ -28,7 +28,7 @@ use settings::{
 use stt::{get_stt_status, sweep_idle, SttState};
 use windows::{
     begin_pill_drag, continue_pill_drag, end_pill_drag, fit_window, is_settings_visible,
-    quit_app, set_pill_panel, toggle_settings,
+    quit_app, set_pill_blur_region, set_pill_panel, toggle_settings,
 };
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -73,6 +73,7 @@ pub fn run() {
             toggle_settings,
             is_settings_visible,
             set_pill_panel,
+            set_pill_blur_region,
             begin_pill_drag,
             continue_pill_drag,
             end_pill_drag,

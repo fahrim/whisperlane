@@ -178,6 +178,8 @@ body {
 }
 
 .pill-actions {
+  position: relative;
+  z-index: 3;
   flex: none;
   display: flex;
   align-items: center;
@@ -189,7 +191,7 @@ body {
   font-size: 12px;
   line-height: 16px;
   font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.75);
+  color: rgba(255, 255, 255, 0.88);
   white-space: nowrap;
 }
 

@@ -174,10 +174,12 @@ already ships.
 Two things the amendment also fixes in passing. The lens can only ever
 bend light that is inside the document — the aura, never the desktop
 behind the window — and that limit is now stated where the lens is
-built, not implied. And the displacement map is one stretched sphere,
-generated once as a static data URI and shared by the capsule's, the
-orb's, and the probe's filters at three scales, so nothing expensive is
-rebuilt per frame.
+built, not implied. And the capsule and the orb use separate,
+geometry-specific displacement maps generated once as static data URIs
+(a flat-centered signed-distance capsule rim for the capsule so its
+middle never bulges, and a circular meniscus for the orb), so neither
+stretches the other's optical field and nothing expensive is rebuilt per
+frame.
 
 ## Related
 

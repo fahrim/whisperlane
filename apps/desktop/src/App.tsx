@@ -5,6 +5,9 @@ import { FirstRun } from "./FirstRun";
 import { Picker, Switch } from "./controls";
 import { SignalBackdrop } from "./SignalBackdrop";
 import { deliveryNote, transcriptMatters } from "./delivery";
+import lockupDark from "./assets/whisperlane-lockup-horizontal-on-dark.png";
+import lockupLight from "./assets/whisperlane-lockup-horizontal-on-light.png";
+import brandmarkGradient from "./assets/whisperlane-brandmark-gradient-512.png";
 import type {
   Download,
   HotkeyChoice,
@@ -39,32 +42,6 @@ function hotkeyKeycaps(code: string, fallbackLabel: string): string[] {
   const cleaned = fallbackLabel.replace(/\s*\(.*\)$/, "").trim();
   if (!cleaned || cleaned === "…") return ["Control", "Shift", "Space"];
   return cleaned.split(/\s*\+\s*/).filter(Boolean);
-}
-
-function BrandWaveIcon() {
-  return (
-    <svg
-      className="brand-wave-icon"
-      width="28"
-      height="28"
-      viewBox="0 0 28 28"
-      fill="none"
-      aria-hidden="true"
-    >
-      <defs>
-        <linearGradient id="wlBrandGrad" x1="0" y1="2" x2="28" y2="26" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#60A5FA" />
-          <stop offset="45%" stopColor="#818CF8" />
-          <stop offset="100%" stopColor="#C084FC" />
-        </linearGradient>
-      </defs>
-      <rect x="2.5" y="10" width="2.8" height="8" rx="1.4" fill="url(#wlBrandGrad)" opacity="0.75" />
-      <rect x="7.5" y="5.5" width="2.8" height="17" rx="1.4" fill="url(#wlBrandGrad)" opacity="0.92" />
-      <rect x="12.6" y="2.5" width="2.8" height="23" rx="1.4" fill="url(#wlBrandGrad)" />
-      <rect x="17.7" y="7" width="2.8" height="14" rx="1.4" fill="url(#wlBrandGrad)" opacity="0.9" />
-      <rect x="22.7" y="10.5" width="2.8" height="7" rx="1.4" fill="url(#wlBrandGrad)" opacity="0.7" />
-    </svg>
-  );
 }
 
 function GearIcon() {
@@ -677,115 +654,95 @@ function App() {
     ? hotkeyKeycaps(settings.hotkey, hotkey)
     : ["Control", "Shift", "Space"];
 
+  const isLight = settings?.theme === "light";
+
   return (
     <div className="window">
       <div
-        className={`window-frame${showSettings ? " window-frame-settings" : ""}${
-          showSettings && windowSize.height !== null ? " has-custom-height" : ""
+        className={`window-frame window-frame-settings${
+          windowSize.height !== null ? " has-custom-height" : ""
         }`}
         ref={frameRef}
-        style={
-          showSettings
-            ? {
-                width: `${windowSize.width}px`,
-                minWidth: `${windowSize.width}px`,
-                maxWidth: `${windowSize.width}px`,
-                ...(windowSize.height !== null
-                  ? { height: `${windowSize.height}px` }
-                  : {}),
-              }
-            : undefined
-        }
+        style={{
+          width: `${windowSize.width}px`,
+          minWidth: `${windowSize.width}px`,
+          maxWidth: `${windowSize.width}px`,
+          ...(windowSize.height !== null
+            ? { height: `${windowSize.height}px` }
+            : {}),
+        }}
       >
-        {showSettings && (
-          <>
-            {(["n", "s", "e", "w", "ne", "nw", "se", "sw"] as const).map(
-              (edge) => (
-                <div
-                  key={edge}
-                  className={`window-resize-handle window-resize-${edge}`}
-                  onPointerDown={(e) => onResizePointerDown(edge, e)}
-                  onPointerMove={onResizePointerMove}
-                  onPointerUp={onResizePointerUp}
-                  onPointerCancel={onResizePointerUp}
-                  onDoubleClick={resetWindowSize}
-                  aria-hidden="true"
-                />
-              ),
-            )}
-          </>
-        )}
+        {(["n", "s", "e", "w", "ne", "nw", "se", "sw"] as const).map((edge) => (
+          <div
+            key={edge}
+            className={`window-resize-handle window-resize-${edge}`}
+            onPointerDown={(e) => onResizePointerDown(edge, e)}
+            onPointerMove={onResizePointerMove}
+            onPointerUp={onResizePointerUp}
+            onPointerCancel={onResizePointerUp}
+            onDoubleClick={resetWindowSize}
+            aria-hidden="true"
+          />
+        ))}
         <div className="window-ambient" aria-hidden="true" />
         <SignalBackdrop />
 
         {!showSettings && (
-          <>
-            <header className="title-bar" data-tauri-drag-region="deep">
-              <span className="title-bar-name">whisperlane</span>
-              <span className="title-bar-drag" />
-              <button
-                type="button"
-                className="title-bar-close"
-                aria-label="Close"
-                onClick={hideWindow}
-              >
-                <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
-                  <path
-                    d="M1 1 L9 9 M9 1 L1 9"
-                    stroke="currentColor"
-                    strokeWidth="1.2"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              </button>
-            </header>
-            <main className="content">
-              {settings === null && <p role="status">loading…</p>}
-              {error && (
-                <p role="alert" className="banner">
-                  {error}
-                </p>
-              )}
-              {showIntroduction && (
-                <FirstRun
-                  settings={settings}
-                  hotkey={hotkey}
-                  status={status}
-                  download={download}
-                  model={chosenModel}
-                  choices={{
-                    hotkeys,
-                    languages,
-                    devices,
-                    startWithWindows,
-                  }}
-                  change={{
-                    hotkey: chooseHotkey,
-                    language: chooseLanguage,
-                    microphone: (value) =>
-                      void chooseMicrophone(
-                        value === "system_default"
-                          ? { kind: "system_default" }
-                          : { kind: "device", id: value },
-                      ),
-                    startWithWindows: (next) => chooseStartWithWindows(next),
-                  }}
-                  onDownload={() =>
-                    chosenModel && downloadModel(chosenModel.id)
-                  }
-                  onDone={finishOnboarding}
-                />
-              )}
-            </main>
-          </>
+          <main className="first-run-shell">
+            {settings === null && <p role="status">loading…</p>}
+            {error && (
+              <p role="alert" className="banner">
+                {error}
+              </p>
+            )}
+            {showIntroduction && (
+              <FirstRun
+                settings={settings}
+                hotkey={hotkey}
+                status={status}
+                download={download}
+                model={chosenModel}
+                choices={{
+                  hotkeys,
+                  languages,
+                  devices,
+                  startWithWindows,
+                }}
+                change={{
+                  hotkey: chooseHotkey,
+                  language: chooseLanguage,
+                  microphone: (value) =>
+                    void chooseMicrophone(
+                      value === "system_default"
+                        ? { kind: "system_default" }
+                        : { kind: "device", id: value },
+                    ),
+                  startWithWindows: (next) => chooseStartWithWindows(next),
+                }}
+                onDownload={() =>
+                  chosenModel && downloadModel(chosenModel.id)
+                }
+                onDone={finishOnboarding}
+                onClose={hideWindow}
+                isLight={isLight}
+                micTesting={micTesting}
+                audioLevel={audioLevel}
+                onToggleMicTest={() => void toggleMicTest()}
+              />
+            )}
+          </main>
         )}
 
         {showSettings && settings && (
           <div className="settings-shell">
             <aside className="settings-sidebar">
               <div className="sidebar-brand" data-tauri-drag-region="deep">
-                <BrandWaveIcon />
-                <span className="sidebar-brand-name">whisperlane</span>
+                <img
+                  src={isLight ? lockupLight : lockupDark}
+                  alt="whisperlane"
+                  className="brand-lockup-img"
+                  draggable={false}
+                />
               </div>
 
               <nav className="sidebar-nav" aria-label="Settings categories">
@@ -1145,7 +1102,12 @@ function App() {
                 {showAboutCard && (
                   <section className="settings-card" aria-label="About whisperlane">
                     <div className="settings-card-icon">
-                      <InfoIcon />
+                      <img
+                        src={brandmarkGradient}
+                        alt=""
+                        className="about-brandmark-img"
+                        draggable={false}
+                      />
                     </div>
                     <div className="settings-card-body">
                       <h2 className="settings-card-title">whisperlane</h2>

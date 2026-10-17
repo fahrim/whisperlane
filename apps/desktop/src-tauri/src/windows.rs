@@ -816,6 +816,49 @@ pub fn quit_app(app: AppHandle) {
     app.exit(0);
 }
 
+/// Resizes the settings window around what it is actually showing.
+///
+/// A frameless window has no operating-system frame to make it look like
+/// it has a size, and a fixed one leaves either empty space or clipped
+/// content depending on what is in it. So the window takes the size its
+/// content measures, and the transparent margin the stylesheet draws the
+/// shadow in is added back here — the surface cannot know how far the
+/// shadow reaches.
+///
+/// The window grows about its centre so that a row appearing or a model
+/// finishing moves the content a little rather than shoving the whole
+/// window across the screen.
+#[tauri::command]
+pub fn fit_window(app: AppHandle, content_width: f64, content_height: f64, bleed: f64) {
+    let Some(window) = app.get_webview_window(MAIN) else {
+        return;
+    };
+    let Ok(scale) = window.scale_factor() else {
+        return;
+    };
+    let Some((_, (_, _, width, height))) = window_rect(&window) else {
+        return;
+    };
+    let wanted_width = ((content_width + bleed * 2.0) * scale).round().max(1.0) as u32;
+    let wanted_height = ((content_height + bleed * 2.0) * scale).round().max(1.0) as u32;
+    if width.round() as u32 == wanted_width && height.round() as u32 == wanted_height {
+        return;
+    }
+    let _ = window.set_size(tauri::PhysicalSize::new(wanted_width, wanted_height));
+    // Windows anchors a resized window at its top-left, which would walk
+    // the window down the screen each time the content grew. Moving it
+    // back by half the difference keeps the middle where the user left
+    // it.
+    let dx = (width - wanted_width as f64) / 2.0;
+    let dy = (height - wanted_height as f64) / 2.0;
+    if dx != 0.0 || dy != 0.0 {
+        let _ = window.set_position(tauri::PhysicalPosition::new(
+            ((width + dx) * scale).round() as i32,
+            ((height + dy) * scale).round() as i32,
+        ));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::settings_toggle_closes;

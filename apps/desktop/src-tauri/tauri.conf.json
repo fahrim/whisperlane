@@ -14,7 +14,11 @@
       {
         "title": "whisperlane",
         "width": 800,
-        "height": 600
+        "height": 600,
+        "decorations": false,
+        "transparent": true,
+        "resizable": false,
+        "shadow": false
       }
     ],
     "security": {

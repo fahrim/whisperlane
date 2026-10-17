@@ -1,0 +1,121 @@
+/* The window's own surface and control language.
+ *
+ * A second file from tokens.css on purpose. That file is the locked
+ * liquid-glass set and belongs to the pill (adr/009); glass is a material
+ * for a small floating surface, and the glass in it is chosen against a
+ * dark backdrop. The settings window is a large calm plane, and it has to
+ * be readable in a light room as well as a dark one — so it gets its own
+ * palette rather than a glass one that happens to be quiet.
+ *
+ * What is shared with the pill — spacing rhythm, radii, motion easing —
+ * still comes from tokens.css. This file adds only what the window needs
+ * that the glass never had: a light theme, and a text and control scale
+ * sized for reading rather than for a glance.
+ *
+ * Theme resolution, in order:
+ *   - the user's choice, when they have made one
+ *   - the system theme, otherwise, and it is live: changing the system
+ *     theme changes the window without a restart
+ * The choice lives on the document element as data-theme, which is what
+ * makes the override a single attribute rather than a second stylesheet.
+ */
+
+/* --- Dark: the resting value. ---------------------------------------
+   Warm-shifted near-black rather than pure grey, so the white text reads
+   as paper under a lamp instead of as text on a photograph of a screen. */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --surface-base: #17171b;
+  --surface-raised: #1e1e24;
+  --surface-sunken: #121216;
+  --surface-border: rgb(255 255 255 / 8%);
+  --surface-border-strong: rgb(255 255 255 / 14%);
+
+  --text-primary: #f2f2f5;
+  --text-secondary: #a8a8b4;
+  --text-tertiary: #74747f;
+
+  --control-bg: rgb(255 255 255 / 6%);
+  --control-bg-hover: rgb(255 255 255 / 10%);
+  --control-border: rgb(255 255 255 / 10%);
+
+  --focus-ring: 168 85 247;
+  --shadow-spread: 0 24px 48px -12px rgb(0 0 0 / 70%);
+}
+
+/* --- Light: the same structure, inverted. ---------------------------
+   Not a filter. Every value is chosen, because a light surface with dark
+   text at the same lightness ratio as dark-on-light is not neutral: it
+   reads as grey on grey. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --surface-base: #fbfbfd;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f2f2f6;
+  --surface-border: rgb(0 0 0 / 9%);
+  --surface-border-strong: rgb(0 0 0 / 16%);
+
+  --text-primary: #17171b;
+  --text-secondary: #55555f;
+  --text-tertiary: #85858f;
+
+  --control-bg: rgb(0 0 0 / 4%);
+  --control-bg-hover: rgb(0 0 0 / 7%);
+  --control-border: rgb(0 0 0 / 12%);
+
+  --focus-ring: 139 92 246;
+  --shadow-spread: 0 24px 48px -12px rgb(20 20 40 / 22%);
+}
+
+/* The system theme, when the user has not chosen one. Media rather than
+   a value, so it tracks the system live. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+
+    --surface-base: #fbfbfd;
+    --surface-raised: #ffffff;
+    --surface-sunken: #f2f2f6;
+    --surface-border: rgb(0 0 0 / 9%);
+    --surface-border-strong: rgb(0 0 0 / 16%);
+
+    --text-primary: #17171b;
+    --text-secondary: #55555f;
+    --text-tertiary: #85858f;
+
+    --control-bg: rgb(0 0 0 / 4%);
+    --control-bg-hover: rgb(0 0 0 / 7%);
+    --control-border: rgb(0 0 0 / 12%);
+
+    --focus-ring: 139 92 246;
+    --shadow-spread: 0 24px 48px -12px rgb(20 20 40 / 22%);
+  }
+}
+
+/* --- Reading scale. -------------------------------------------------
+   Sized for a window someone reads rather than glances at. The pill's
+   tokens carry glance-scale values and must not be borrowed here. */
+:root {
+  --text-body: 14px;
+  --text-title: 22px;
+  --text-label: 13px;
+  --text-caption: 12px;
+
+  --row-gap: 4px;
+  --section-gap: 28px;
+  --field-gap: 18px;
+  --page-padding: 28px;
+
+  --control-radius: 10px;
+  --window-radius: 14px;
+  /* Room around the window for its own shadow. The window is transparent
+     out here, so this is where the depth is drawn rather than by the
+     operating system, which gives frameless windows none. */
+  --window-bleed: 26px;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --fade: 180ms cubic-bezier(0.4, 0, 0.2, 1);
+}

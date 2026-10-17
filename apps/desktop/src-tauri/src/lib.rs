@@ -25,7 +25,10 @@ use settings::{
     set_microphone, set_model, SettingsState,
 };
 use stt::{get_stt_status, sweep_idle, SttState};
-use windows::{begin_pill_drag, continue_pill_drag, end_pill_drag, quit_app, set_pill_panel, toggle_settings};
+use windows::{
+    begin_pill_drag, continue_pill_drag, end_pill_drag, fit_window, quit_app, set_pill_panel,
+    toggle_settings,
+};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -67,7 +70,8 @@ pub fn run() {
             continue_pill_drag,
             end_pill_drag,
             quit_app,
-            complete_onboarding
+            complete_onboarding,
+            fit_window
         ])
         // The settings window is the app's only settings surface, so it
         // has to survive its own close button. Destroyed here, the window

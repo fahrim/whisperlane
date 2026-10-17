@@ -1,11 +1,20 @@
 /* The settings and first-run surface.
-
-   The page background belongs to this surface, never to the document
-   root: both windows load this bundle, and a background on `:root`
-   would fill the pill's transparent window and flatten its glass.
-   Token values live in tokens.css. */
+ *
+ *   The window has no operating-system frame, so everything a window
+ *   normally gets for free — a title bar, a border, depth, a place to
+ *   drag it — is drawn here instead. That is why this file opens with a
+ *   window rather than a page: the first thing to get right is the shape
+ *   the user sees, and the shape is the window.
+ *
+ *   Materials and the pill's locked tokens live in tokens.css; the
+ *   window's own palette, and the light theme it did not have, live in
+ *   surface.css. Both windows load this bundle, so a background here
+ *   belongs to the frame and never to the document root — a background
+ *   on the root would fill the pill's transparent window and flatten its
+ *   glass. */
 
 @import "./tokens.css";
+@import "./surface.css";
 
 html,
 body {
@@ -15,49 +24,144 @@ body {
 body {
   margin: 0;
   font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
-  font-size: 16px;
-  line-height: 24px;
+  font-size: var(--text-body);
+  line-height: 1.5;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
+  color: var(--text-primary);
+  /* The window is transparent so its corners and shadow can be drawn in
+     CSS. Nothing here paints the root, or that transparency is gone. */
+  background: transparent;
+  overflow: hidden;
 }
 
-.container {
-  box-sizing: border-box;
+/* The viewport of a frameless window: transparent all the way out, with
+   the bleed left empty for the shadow to occupy. */
+.window {
   min-height: 100vh;
-  padding: 40px 24px 64px;
+  padding: var(--window-bleed);
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  background: transparent;
+}
+
+/* The visible card. Everything the user reads sits inside this, so this is
+   where the surface colour, the radius and the depth are drawn — the
+   operating system supplies none of it to a frameless window. */
+.window-frame {
+  background: var(--surface-base);
+  border: 1px solid var(--surface-border);
+  border-radius: var(--window-radius);
+  box-shadow: var(--shadow-spread);
+  overflow: hidden;
+  width: 100%;
+  max-width: 560px;
+}
+
+/* --- Title bar ----------------------------------------------------- */
+
+.title-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 6px 0 14px;
+  border-bottom: 1px solid var(--surface-border);
+  background: var(--surface-sunken);
+}
+
+/* The drag handle is the empty space between the name and the close
+   button, not a layer across the whole bar. A layer would sit under the
+   name but over everything else, and a drag region swallows the press
+   before the button under it can see one — which is why the close button
+   did nothing when the region covered it. */
+.title-bar-drag {
+  flex: 1;
+  align-self: stretch;
+  cursor: grab;
+}
+
+.title-bar-drag:active {
+  cursor: grabbing;
+}
+
+.title-bar-name {
+  font-size: var(--text-caption);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+}
+
+.title-bar-close {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 26px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background var(--fade), color var(--fade);
+}
+
+.title-bar-close:hover {
+  background: var(--control-bg-hover);
+  color: var(--text-primary);
+}
+
+/* The close button is the one place a red is correct: it is the one
+   action here that discards rather than saves. */
+.title-bar-close:hover {
+  background: #c3373b;
+  color: #ffffff;
+}
+
+.title-bar-close:focus-visible {
+  outline: 2px solid rgb(var(--focus-ring));
+  outline-offset: 1px;
+}
+
+/* --- Content -------------------------------------------------------- */
+
+.content {
+  padding: var(--page-padding);
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  color: #0f0f0f;
-  background-color: #f6f6f6;
+  gap: var(--section-gap);
 }
 
 h1 {
   margin: 0;
-  font-size: 24px;
+  font-size: var(--text-title);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 
 h2 {
-  margin: 0 0 8px;
-  font-size: 15px;
+  margin: 0 0 var(--row-gap);
+  font-size: var(--text-label);
   font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--text-secondary);
 }
 
 .settings-lead {
   margin: 0;
   max-width: 46ch;
-  color: rgba(15, 15, 15, 0.7);
+  color: var(--text-secondary);
 }
 
 .settings-note {
-  margin: 4px 0 0;
-  font-size: 13px;
-  opacity: 0.7;
+  margin: var(--row-gap) 0 0;
+  font-size: var(--text-caption);
+  color: var(--text-tertiary);
 }
 
 section {
@@ -72,11 +176,23 @@ label {
 select,
 button {
   font: inherit;
-  border-radius: 8px;
-  border: 1px solid rgba(127, 127, 127, 0.35);
+  border-radius: var(--control-radius);
+  border: 1px solid var(--control-border);
   padding: 0.5em 0.8em;
-  color: inherit;
-  background-color: #ffffff;
+  color: var(--text-primary);
+  background-color: var(--control-bg);
+  transition: background var(--fade), border-color var(--fade);
+}
+
+select:hover,
+button:hover {
+  background-color: var(--control-bg-hover);
+}
+
+select:focus-visible,
+button:focus-visible {
+  outline: 2px solid rgb(var(--focus-ring));
+  outline-offset: 1px;
 }
 
 button {
@@ -84,13 +200,13 @@ button {
   margin: 4px 8px 4px 0;
 }
 
-button:hover {
-  border-color: #396cd8;
-}
-
 button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+[role="alert"] {
+  color: var(--accent-recording);
 }
 
 /* First run is one screen: one instruction, its chord, and honest model
@@ -99,70 +215,53 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  align-items: center;
   max-width: 520px;
-  margin: 0 auto;
-  padding: 48px 24px;
 }
 
 .first-run h1 {
-  font-size: 28px;
+  font-size: 24px;
 }
 
 .first-run-instruction {
   margin: 0;
-  font-size: 20px;
-  line-height: 32px;
+  font-size: 18px;
+  line-height: 1.7;
 }
 
 .first-run-instruction kbd {
   font: inherit;
   font-weight: 600;
   padding: 2px 8px;
-  border: 1px solid rgba(127, 127, 127, 0.4);
+  border: 1px solid var(--control-border);
   border-radius: 6px;
+  background: var(--control-bg);
   white-space: nowrap;
 }
 
 .first-run-hint,
 .first-run-footnote {
   margin: 0;
-  font-size: 14px;
-  opacity: 0.7;
+  font-size: var(--text-caption);
+  color: var(--text-tertiary);
 }
 
 .first-run-model,
 .first-run-state {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--text-label);
+  color: var(--text-secondary);
 }
 
 .first-run-transcript {
   margin: 0;
   padding: 12px 16px;
-  border-radius: 10px;
-  background: rgba(127, 127, 127, 0.12);
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
   max-width: 100%;
   overflow-wrap: anywhere;
 }
 
 .first-run-done {
   margin-top: 8px;
-}
-
-@media (prefers-color-scheme: dark) {
-  .container {
-    color: #f6f6f6;
-    background-color: #1c1c1e;
-  }
-
-  .settings-lead {
-    color: rgba(246, 246, 246, 0.7);
-  }
-
-  select,
-  button {
-    color: #ffffff;
-    background-color: #2c2c2e;
-  }
+  align-self: flex-start;
 }

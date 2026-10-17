@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { FirstRun } from "./FirstRun";
 import { deliveryNote, transcriptMatters } from "./delivery";
@@ -48,6 +48,42 @@ function App() {
       setError(String(e));
     }
   }
+
+  // The close button in the title bar and the operating system's own
+  // close must mean the same thing: the window goes away and the tray
+  // keeps the application alive. The core decides what happens on close,
+  // so this asks rather than hides.
+  async function hideWindow() {
+    try {
+      await invoke("toggle_settings");
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  // A frameless window has nothing to make it look the size it is, so it
+  // is sized to its content. Measured after layout, and again whenever the
+  // content changes, because a setting that adds a row must move the edge
+  // rather than be clipped by it.
+  const frameRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const frame = frameRef.current;
+    if (!frame) return;
+    const fit = () => {
+      const bleed = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue("--window-bleed"),
+      ) || 0;
+      void invoke("fit_window", {
+        contentWidth: frame.offsetWidth,
+        contentHeight: frame.offsetHeight,
+        bleed,
+      }).catch(() => {});
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(frame);
+    return () => observer.disconnect();
+  }, []);
 
   async function refreshModels() {
     try {
@@ -171,7 +207,23 @@ function App() {
   }, []);
 
   return (
-    <main className="container">
+    <div className="window">
+      <div className="window-frame" ref={frameRef}>
+        <header className="title-bar">
+          <span className="title-bar-name">whisperlane</span>
+          <span className="title-bar-drag" data-tauri-drag-region />
+          <button
+            type="button"
+            className="title-bar-close"
+            aria-label="Close"
+            onClick={hideWindow}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+              <path d="M1 1 L9 9 M9 1 L1 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+            </svg>
+          </button>
+        </header>
+        <main className="content">
       {/* Nothing is chosen until the saved settings answer which screen
           this launch is. Rendering the settings screen first would flash
           it at someone who has not been here before. */}
@@ -340,7 +392,9 @@ function App() {
       )}
       </>
       )}
-    </main>
+      </main>
+      </div>
+    </div>
   );
 }
 

@@ -6,6 +6,8 @@
 // a capability the core does not have. What it shows is real: the words
 // the last take produced, and where they went.
 
+import { LiquidGlassSurface } from "./LiquidGlassSurface";
+
 /** The document mark, at the size the header reads at. */
 function TextIcon() {
   return (
@@ -134,6 +136,7 @@ export function LastTakeCard({
   const shown = cleared || !text ? "" : text;
   return (
     <div className="last-take-card" role="region" aria-label="Last take">
+      <LiquidGlassSurface geometry="panel" />
       {/* Header: what this is, and the doors out of it. */}
       <div className="card-header">
         <div className="card-header-left">

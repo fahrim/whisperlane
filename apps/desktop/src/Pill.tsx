@@ -615,6 +615,7 @@ export function Pill() {
                 />
               ) : (
                 <div className="pill-popover" role="menu" aria-label="Quick options">
+                  <LiquidGlassSurface geometry="panel" />
                   <button
                     type="button"
                     className="pill-popover-item"

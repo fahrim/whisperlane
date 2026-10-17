@@ -28,8 +28,8 @@
 
 import type { ReactElement } from "react";
 
-/** The two geometries the surface is built for. */
-export type GlassGeometry = "capsule" | "orb";
+/** The geometries the surface is built for: capsule, orb, and rounded panel. */
+export type GlassGeometry = "capsule" | "orb" | "panel";
 
 /**
  * Geometry-specific displacement maps behind the lens, built once and shared.

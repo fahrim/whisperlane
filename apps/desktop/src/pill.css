@@ -270,7 +270,8 @@ body {
   visibility: visible;
 }
 
-/* Compact Liquid Glass Popover menu, the quick doors out of the app */
+/* Compact Liquid Glass Popover menu, the quick doors out of the app.
+   Material is carried by LiquidGlassSurface(geometry="panel"). */
 .pill-popover {
   box-sizing: border-box;
   position: relative;
@@ -280,15 +281,6 @@ body {
   flex-direction: column;
   gap: 2px;
   border-radius: 16px;
-  background: var(--droplet-surface-bg);
-  backdrop-filter: var(--glass-backdrop);
-  -webkit-backdrop-filter: var(--glass-backdrop);
-  box-shadow:
-    0 18px 40px -10px rgba(0, 0, 0, 0.75),
-    inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.85),
-    inset 0 6px 14px -2px rgba(255, 255, 255, 0.25),
-    inset 0 -3px 8px 0 rgba(139, 92, 246, 0.40),
-    inset 0 -1px 1px 0 rgba(255, 255, 255, 0.30);
   /* The spring always grows away from the pill, whichever edge it
      opened from. */
   transform-origin: top center;
@@ -297,21 +289,6 @@ body {
 
 .pill[data-panel="up"] .pill-popover {
   transform-origin: bottom center;
-}
-
-.pill-popover::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  border-radius: inherit;
-  padding: 1.25px;
-  background: var(--glass-rim-idle);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  pointer-events: none;
 }
 
 /* The panel keeps to the side of the pill that has room, so a pill
@@ -348,19 +325,21 @@ body {
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
-  transition: background 120ms ease;
+  transition: background 120ms ease, box-shadow 120ms ease;
 }
 
 .pill-popover-item:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.10);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.18);
 }
 
 .pill-popover-badge {
   font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.72);
-  padding: 2px 6px;
+  color: rgba(255, 255, 255, 0.78);
+  padding: 2px 7px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.10);
+  background: rgba(255, 255, 255, 0.09);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.20);
 }
 
 .pill-popover-divider {
@@ -368,7 +347,13 @@ body {
   z-index: 3;
   height: 1px;
   margin: 3px 6px;
-  background: rgba(255, 255, 255, 0.12);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.14) 20%,
+    rgba(255, 255, 255, 0.14) 80%,
+    transparent 100%
+  );
 }
 
 .pill-popover-quit {
@@ -376,12 +361,13 @@ body {
 }
 
 .pill-popover-quit:hover {
-  background: rgba(244, 63, 94, 0.20);
+  background: rgba(244, 63, 94, 0.18);
+  box-shadow: inset 0 1px 1px rgba(253, 164, 175, 0.25);
 }
 
 /* The Last Take card: header, words, and the two things worth doing
-   with the words. Same material as the pill, so it reads as part of it
-   rather than as a window that happened to open above. */
+   with the words. Same LiquidGlassSurface material as the pill, so it
+   reads as part of the same optical family. */
 .last-take-card {
   position: relative;
   box-sizing: border-box;
@@ -395,37 +381,12 @@ body {
   justify-content: space-between;
   gap: 10px;
   border-radius: 22px;
-  background: var(--droplet-surface-bg);
-  backdrop-filter: blur(28px) saturate(190%);
-  -webkit-backdrop-filter: blur(28px) saturate(190%);
-  box-shadow:
-    0 18px 40px -10px rgba(0, 0, 0, 0.75),
-    inset 0 1.5px 1px 0 rgba(255, 255, 255, 0.85),
-    inset 0 6px 14px -2px rgba(255, 255, 255, 0.25),
-    inset 0 -3px 8px 0 rgba(139, 92, 246, 0.40),
-    inset 0 -1px 1px 0 rgba(255, 255, 255, 0.30);
   transform-origin: top center;
   animation: pill-open 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .pill[data-panel="up"] .last-take-card {
   transform-origin: bottom center;
-}
-
-/* The specular rim, same cut as the pill's own. */
-.last-take-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 2;
-  border-radius: inherit;
-  padding: 1.25px;
-  background: var(--glass-rim-idle);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  pointer-events: none;
 }
 
 .card-header {
@@ -447,36 +408,45 @@ body {
 
 .card-icon {
   display: block;
-  color: rgba(255, 255, 255, 0.75);
+  color: rgba(255, 255, 255, 0.78);
 }
 
 .card-title {
   font-size: 12px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.88);
   white-space: nowrap;
 }
 
-/* The language the next take uses, which is the one honest thing the
-   card can offer: a take already taken cannot be re-done in another
-   language. */
-
+/* The language the next take uses, styled as a tactile mini glass capsule. */
 .card-language {
-  padding: 3px 10px;
+  padding: 3px 11px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(242, 238, 255, 0.18);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(255, 255, 255, 0.05) 100%
+  );
+  box-shadow:
+    inset 0 1px 1.5px rgba(255, 255, 255, 0.25),
+    0 2px 6px rgba(0, 0, 0, 0.20);
+  color: rgba(255, 255, 255, 0.88);
   font-family: inherit;
   font-size: 11px;
   line-height: 15px;
   white-space: nowrap;
   cursor: pointer;
-  transition: background var(--motion-smooth-fade);
+  transition: background var(--motion-smooth-fade), border-color var(--motion-smooth-fade);
 }
 
 .card-language:hover {
-  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(242, 238, 255, 0.28);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.18) 0%,
+    rgba(255, 255, 255, 0.08) 100%
+  );
 }
 
 .card-icon-button {
@@ -485,16 +455,22 @@ body {
   display: grid;
   place-items: center;
   padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.75);
+  border: 1px solid rgba(242, 238, 255, 0.14);
+  border-radius: 7px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.10) 0%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.20);
+  color: rgba(255, 255, 255, 0.80);
   cursor: pointer;
-  transition: background var(--motion-smooth-fade), opacity var(--motion-smooth-fade);
+  transition: background var(--motion-smooth-fade), opacity var(--motion-smooth-fade), border-color var(--motion-smooth-fade);
 }
 
 .card-icon-button:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(242, 238, 255, 0.26);
+  background: rgba(255, 255, 255, 0.15);
 }
 
 .card-icon-button:disabled {
@@ -510,7 +486,7 @@ body {
   max-height: 84px;
   overflow-y: auto;
   padding-left: 12px;
-  border-left: 2px solid rgba(255, 255, 255, 0.75);
+  border-left: 2px solid rgba(242, 238, 255, 0.78);
 }
 
 .card-text {
@@ -522,7 +498,7 @@ body {
 }
 
 .card-empty {
-  color: rgba(255, 255, 255, 0.38);
+  color: rgba(255, 255, 255, 0.42);
 }
 
 .card-footer {
@@ -535,25 +511,39 @@ body {
 }
 
 .card-chip {
-  height: 28px;
-  padding: 0 12px;
+  height: 30px;
+  padding: 0 13px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(242, 238, 255, 0.18);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.11) 0%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
+  box-shadow:
+    inset 0 1px 1.5px rgba(255, 255, 255, 0.26),
+    inset 0 -2px 5px rgba(139, 92, 246, 0.14),
+    0 3px 8px rgba(0, 0, 0, 0.24);
+  color: rgba(255, 255, 255, 0.88);
   font-family: inherit;
   font-size: 12px;
+  font-weight: 500;
   line-height: 16px;
   white-space: nowrap;
   cursor: pointer;
-  transition: background var(--motion-smooth-fade), opacity var(--motion-smooth-fade);
+  transition: background var(--motion-smooth-fade), opacity var(--motion-smooth-fade), border-color var(--motion-smooth-fade);
 }
 
 .card-chip:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(242, 238, 255, 0.30);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.17) 0%,
+    rgba(255, 255, 255, 0.07) 100%
+  );
 }
 
 .card-chip:disabled {
@@ -562,8 +552,16 @@ body {
 }
 
 .card-chip-primary {
-  border-color: rgba(255, 255, 255, 0.22);
-  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(242, 238, 255, 0.26);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.16) 0%,
+    rgba(196, 181, 253, 0.08) 100%
+  );
+  box-shadow:
+    inset 0 1px 2px rgba(255, 255, 255, 0.34),
+    inset 0 -2px 6px rgba(139, 92, 246, 0.20),
+    0 4px 10px rgba(0, 0, 0, 0.28);
 }
 
 @keyframes pill-open {

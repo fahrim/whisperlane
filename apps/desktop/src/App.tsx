@@ -297,7 +297,7 @@ function App() {
     width: number;
     height: number | null;
   }>({
-    width: 790,
+    width: 780,
     height: null,
   });
 
@@ -343,7 +343,7 @@ function App() {
     if (!session) return;
     const dx = event.screenX - session.startX;
     const dy = event.screenY - session.startY;
-    const maxW = Math.max(680, window.screen.availWidth - 80);
+    const maxW = Math.min(820, Math.max(540, window.screen.availWidth - 80));
     const maxH = Math.max(540, window.screen.availHeight - 80);
 
     setWindowSize((prev) => {
@@ -383,7 +383,7 @@ function App() {
   }
 
   function resetWindowSize() {
-    setWindowSize({ width: 790, height: null });
+    setWindowSize({ width: 780, height: null });
   }
 
   async function finishOnboarding() {

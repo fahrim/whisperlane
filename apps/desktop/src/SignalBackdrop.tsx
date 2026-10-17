@@ -270,17 +270,30 @@ export function SignalBackdrop() {
       ctx.restore();
     };
 
+    const started = performance.now();
+    const currentProgress = (now = performance.now()) => {
+      if (reduced) return 0;
+      const elapsed = (now - started) / 1000;
+      return (elapsed % tuning.seconds) / tuning.seconds;
+    };
+
     const resize = () => {
-      width = canvas.clientWidth || width;
-      height = canvas.clientHeight || height;
-      canvas.width = Math.round(width * dpr);
-      canvas.height = Math.round(height * dpr);
+      const nextWidth = canvas.clientWidth || width;
+      const nextHeight = canvas.clientHeight || height;
+      const targetWidth = Math.round(nextWidth * dpr);
+      const targetHeight = Math.round(nextHeight * dpr);
+      width = nextWidth;
+      height = nextHeight;
+      if (canvas.width !== targetWidth || canvas.height !== targetHeight) {
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+      }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       // Re-read on resize as well as on mount: a custom property edited
       // in the inspector only reaches the canvas the next time something
       // asks it to measure itself.
       readTuning();
-      if (reduced) draw(0);
+      draw(currentProgress());
     };
 
     resize();
@@ -290,16 +303,13 @@ export function SignalBackdrop() {
     if (reduced) {
       // One frame, held. The window must look like a finished window
       // whether or not the movement is wanted.
-      draw(0);
       return () => observer.disconnect();
     }
 
     let frame = 0;
     let running = false;
-    const started = performance.now();
     const render = (now: number) => {
-      const elapsed = (now - started) / 1000;
-      draw((elapsed % tuning.seconds) / tuning.seconds);
+      draw(currentProgress(now));
       frame = requestAnimationFrame(render);
     };
 

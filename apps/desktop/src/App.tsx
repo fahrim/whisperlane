@@ -302,9 +302,6 @@ function App() {
   });
 
   const hotkeyButtonRef = useRef<HTMLButtonElement | null>(null);
-  const micTestStreamRef = useRef<MediaStream | null>(null);
-  const micTestAudioCtxRef = useRef<AudioContext | null>(null);
-  const micTestRafRef = useRef<number>(0);
   const resizeSessionRef = useRef<{
     edge: "e" | "w" | "s" | "n" | "se" | "sw" | "ne" | "nw";
     startX: number;
@@ -489,6 +486,10 @@ function App() {
     try {
       setSettings(await invoke<Settings>("set_microphone", { microphone }));
       setAskMic(await invoke<boolean>("needs_microphone_choice"));
+      if (micTesting) {
+        const active = await invoke<boolean>("set_mic_test", { enabled: true });
+        setMicTesting(active);
+      }
     } catch (e) {
       setError(String(e));
     }
@@ -537,20 +538,9 @@ function App() {
   }
 
   function stopMicTest() {
-    if (micTestRafRef.current) {
-      cancelAnimationFrame(micTestRafRef.current);
-      micTestRafRef.current = 0;
-    }
-    if (micTestStreamRef.current) {
-      micTestStreamRef.current.getTracks().forEach((t) => t.stop());
-      micTestStreamRef.current = null;
-    }
-    if (micTestAudioCtxRef.current) {
-      void micTestAudioCtxRef.current.close().catch(() => {});
-      micTestAudioCtxRef.current = null;
-    }
     setMicTesting(false);
     setAudioLevel(0);
+    void invoke<boolean>("set_mic_test", { enabled: false }).catch(() => {});
   }
 
   async function toggleMicTest() {
@@ -559,34 +549,13 @@ function App() {
       return;
     }
     try {
-      setMicTesting(true);
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      micTestStreamRef.current = stream;
-      const ctx = new AudioContext();
-      micTestAudioCtxRef.current = ctx;
-      const source = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 256;
-      source.connect(analyser);
-      const buffer = new Float32Array(analyser.fftSize);
-      const tick = () => {
-        analyser.getFloatTimeDomainData(buffer);
-        let sum = 0;
-        for (let i = 0; i < buffer.length; i++) {
-          sum += buffer[i] * buffer[i];
-        }
-        const rms = Math.sqrt(sum / buffer.length);
-        const normalized = Math.min(1, rms / 0.07);
-        setAudioLevel(normalized);
-        micTestRafRef.current = requestAnimationFrame(tick);
-      };
-      micTestRafRef.current = requestAnimationFrame(tick);
-    } catch {
-      // Fallback: trigger a take or stop testing cleanly if WebAudio mic access is denied
+      const active = await invoke<boolean>("set_mic_test", { enabled: true });
+      setMicTesting(active);
+      if (!active) setAudioLevel(0);
+    } catch (e) {
       setMicTesting(false);
-      void invoke<PipelineStatus>("take_control", { command: "control" })
-        .then(setStatus)
-        .catch(() => {});
+      setAudioLevel(0);
+      setError(String(e));
     }
   }
 
@@ -594,9 +563,18 @@ function App() {
     const offLevel = listen<number>("audio-level", (event) => {
       setAudioLevel(event.payload);
     });
+    const offTestState = listen<boolean>("mic-test-state", (event) => {
+      setMicTesting(event.payload);
+      if (!event.payload) setAudioLevel(0);
+    });
+    const offVisibility = listen<boolean>("window-visibility", (event) => {
+      if (!event.payload) stopMicTest();
+    });
     return () => {
       stopMicTest();
       void offLevel.then((unlisten) => unlisten());
+      void offTestState.then((unlisten) => unlisten());
+      void offVisibility.then((unlisten) => unlisten());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -14,7 +14,7 @@ mod tray;
 mod windows;
 
 use audio::{
-    list_input_devices, needs_microphone_choice, reset_pipeline, take_control,
+    list_input_devices, needs_microphone_choice, reset_pipeline, set_mic_test, take_control,
 };
 use deliver::copy_last_text;
 use hotkey::{get_hotkey_label, list_hotkeys};
@@ -69,6 +69,7 @@ pub fn run() {
             set_model,
             ensure_model_ready,
             take_control,
+            set_mic_test,
             toggle_settings,
             is_settings_visible,
             set_pill_panel,

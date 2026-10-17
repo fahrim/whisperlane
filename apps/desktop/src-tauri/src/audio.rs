@@ -213,11 +213,23 @@ struct ActiveTake {
     stream_failed: Arc<AtomicBool>,
 }
 
+struct ActiveMicTest {
+    _stream: cpal::Stream,
+    active: Arc<AtomicBool>,
+}
+
+impl Drop for ActiveMicTest {
+    fn drop(&mut self) {
+        self.active.store(false, Ordering::SeqCst);
+    }
+}
+
 // cpal::Stream is !Send, so the live stream lives and dies on the audio
 // worker thread (spawned by run_listener), which is the only caller of
 // begin_take/end_take. The hook thread only queues edges.
 thread_local! {
     static ACTIVE_TAKE: RefCell<Option<ActiveTake>> = const { RefCell::new(None) };
+    static ACTIVE_TEST: RefCell<Option<ActiveMicTest>> = const { RefCell::new(None) };
 }
 
 fn pick_config(
@@ -342,6 +354,11 @@ pub enum Intent {
     Chord(HookEvent),
     /// A press of the pill's own control.
     Control(TakeCommand),
+    /// Starts or stops the settings surface's live microphone meter test.
+    MicTest {
+        enabled: bool,
+        reply: mpsc::SyncSender<Result<bool, String>>,
+    },
 }
 
 static INBOX: OnceLock<mpsc::Sender<Intent>> = OnceLock::new();
@@ -386,6 +403,16 @@ pub fn dispatch(app: &AppHandle, intent: Intent) {
     let event = match intent {
         Intent::Chord(event) => event,
         Intent::Control(command) => command.into(),
+        Intent::MicTest { enabled, reply } => {
+            let result = if enabled {
+                start_mic_test_inner(app)
+            } else {
+                stop_mic_test_inner(app);
+                Ok(false)
+            };
+            let _ = reply.send(result);
+            return;
+        }
     };
     match resolve_action(event, current_phase(app)) {
         ChordAction::Start => begin_take(app),
@@ -393,6 +420,85 @@ pub fn dispatch(app: &AppHandle, intent: Intent) {
         ChordAction::Cancel => cancel_take(app),
         ChordAction::Ignore => {}
     }
+}
+
+/// Starts or stops the settings surface's native microphone test.
+///
+/// Runs on the audio worker thread using `cpal` rather than WebView2's
+/// `getUserMedia`, so it tests the exact microphone chosen in settings
+/// and never raises a browser permission prompt.
+#[tauri::command]
+pub fn set_mic_test(enabled: bool) -> Result<bool, String> {
+    let (tx, rx) = mpsc::sync_channel(1);
+    if !send(Intent::MicTest { enabled, reply: tx }) {
+        return Err("audio worker is not running".to_string());
+    }
+    rx.recv()
+        .map_err(|_| "audio worker did not respond".to_string())?
+}
+
+fn stop_mic_test_inner(app: &AppHandle) {
+    let had_test = ACTIVE_TEST.with(|slot| slot.borrow_mut().take().is_some());
+    if had_test {
+        let _ = app.emit("audio-level", 0.0f32);
+        let _ = app.emit("mic-test-state", false);
+    }
+}
+
+fn start_mic_test_inner(app: &AppHandle) -> Result<bool, String> {
+    stop_mic_test_inner(app);
+    if current_phase(app) == Some(Phase::Listening) {
+        return Ok(false);
+    }
+    let host = cpal::default_host();
+    let device = select_input_device(&host, &crate::settings::microphone_of(app))?;
+    let (config, format) = pick_config(&device)?;
+    let channels = config.channels as usize;
+    let samples = Arc::new(Mutex::new(Vec::new()));
+    let stream_failed = Arc::new(AtomicBool::new(false));
+    let stream = spawn_stream(
+        &device,
+        config,
+        format,
+        Arc::clone(&samples),
+        channels,
+        Arc::clone(&stream_failed),
+    )?;
+    stream
+        .play()
+        .map_err(|e| format!("microphone unavailable: {e}"))?;
+    let active = Arc::new(AtomicBool::new(true));
+    ACTIVE_TEST.with(|slot| {
+        *slot.borrow_mut() = Some(ActiveMicTest {
+            _stream: stream,
+            active: Arc::clone(&active),
+        });
+    });
+    let _ = app.emit("mic-test-state", true);
+    let app_clone = app.clone();
+    std::thread::spawn(move || {
+        while active.load(Ordering::SeqCst) && !stream_failed.load(Ordering::SeqCst) {
+            std::thread::sleep(std::time::Duration::from_millis(LEVEL_TICK_MS));
+            if !active.load(Ordering::SeqCst) {
+                break;
+            }
+            let Ok(mut guard) = samples.try_lock() else {
+                continue;
+            };
+            if guard.is_empty() {
+                continue;
+            }
+            let level = rms_level(&guard);
+            guard.clear();
+            drop(guard);
+            let _ = app_clone.emit("audio-level", level);
+        }
+        let _ = app_clone.emit("audio-level", 0.0f32);
+        if stream_failed.load(Ordering::SeqCst) {
+            let _ = app_clone.emit("mic-test-state", false);
+        }
+    });
+    Ok(true)
 }
 
 /// The pill's control, and the settings surface's cancel button.
@@ -439,6 +545,7 @@ pub fn spawn_level_ticker(app: &AppHandle, samples: Arc<Mutex<Vec<f32>>>) {
 /// Hotkey pressed: open the microphone and start the take.
 /// A missing or unusable microphone fails loudly, never silently deaf.
 pub fn begin_take(app: &AppHandle) {
+    stop_mic_test_inner(app);
     // A new take clears the previous one, so the surface never shows or
     // copies a transcript and delivery note that belong to a finished take.
     crate::pipeline::clear_last_text(app);

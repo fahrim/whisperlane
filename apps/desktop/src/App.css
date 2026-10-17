@@ -76,11 +76,12 @@ body {
   background: var(--surface-sunken);
 }
 
-/* The drag handle is the empty space between the name and the close
-   button, not a layer across the whole bar. A layer would sit under the
-   name but over everything else, and a drag region swallows the press
-   before the button under it can see one — which is why the close button
-   did nothing when the region covered it. */
+/* The bar carries the drag region deeply, so the name drags as well as
+   the empty space — a user grabs the word, not the gap beside it. A
+   button inside a drag region still receives its own clicks: the
+   toolkit stops at anything it recognises as clickable, which is why the
+   close button needs nothing to keep the drag off it.
+   The span is only the flexible space between the two. */
 .title-bar-drag {
   flex: 1;
   align-self: stretch;

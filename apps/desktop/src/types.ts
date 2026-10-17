@@ -37,6 +37,13 @@ export interface Settings {
   model: string;
   /** Whether the one-screen introduction has been seen. */
   onboarded: boolean;
+  start_with_windows: boolean;
+  theme: "system" | "light" | "dark";
+}
+
+export interface ThemeChoice {
+  code: "system" | "light" | "dark";
+  label: string;
 }
 
 export interface ModelOption {

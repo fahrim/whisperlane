@@ -11,6 +11,7 @@ import type {
   ModelOption,
   PipelineStatus,
   Settings,
+  ThemeChoice,
 } from "./types";
 import "./App.css";
 
@@ -32,6 +33,9 @@ function App() {
   const [languages, setLanguages] = useState<LanguageChoice[]>([]);
   const [hotkeys, setHotkeys] = useState<HotkeyChoice[]>([]);
   const [devices, setDevices] = useState<InputDevice[]>([]);
+  const [themes, setThemes] = useState<ThemeChoice[]>([]);
+  const [startWithWindows, setStartWithWindows] = useState(false);
+  const [startBusy, setStartBusy] = useState(false);
   const [askMic, setAskMic] = useState(false);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [download, setDownload] = useState<Download | null>(null);
@@ -48,6 +52,18 @@ function App() {
       setError(String(e));
     }
   }
+
+  // The theme is applied to the document, not painted into components,
+  // so the whole surface follows one attribute and the stylesheet stays
+  // the only place that knows what dark looks like. Removing the
+  // attribute is what "follow the system" means — the stylesheet's media
+  // query then answers, which is why switching to the system theme is
+  // live without a reload.
+  useEffect(() => {
+    const value = settings?.theme ?? "system";
+    if (value === "system") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = value;
+  }, [settings?.theme]);
 
   // The close button in the title bar and the operating system's own
   // close must mean the same thing: the window goes away and the tray
@@ -145,6 +161,30 @@ function App() {
     }
   }
 
+  async function chooseTheme(code: string) {
+    try {
+      setSettings(await invoke<Settings>("set_theme", { theme: code }));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  // Read back from the system rather than assuming the click landed:
+  // the registration can be refused, and a checkbox that claims to be on
+  // when it is off is worse than one that says it failed.
+  async function chooseStartWithWindows(start: boolean) {
+    setStartBusy(true);
+    try {
+      await invoke<Settings>("set_start_with_windows", { start });
+      setStartWithWindows(await invoke<boolean>("is_start_with_windows"));
+    } catch (e) {
+      setStartWithWindows(await invoke<boolean>("is_start_with_windows").catch(() => start));
+      setError(String(e));
+    } finally {
+      setStartBusy(false);
+    }
+  }
+
   const live =
     status !== null &&
     (status.phase === "listening" || status.phase === "thinking");
@@ -191,6 +231,12 @@ function App() {
     invoke<boolean>("needs_microphone_choice")
       .then(setAskMic)
       .catch((e) => setError(String(e)));
+    invoke<ThemeChoice[]>("list_themes")
+      .then(setThemes)
+      .catch((e) => setError(String(e)));
+    invoke<boolean>("is_start_with_windows")
+      .then(setStartWithWindows)
+      .catch(() => {});
     refreshModels();
     poll();
     // First run brings the model down on its own, quietly, while the
@@ -209,9 +255,9 @@ function App() {
   return (
     <div className="window">
       <div className="window-frame" ref={frameRef}>
-        <header className="title-bar">
+        <header className="title-bar" data-tauri-drag-region="deep">
           <span className="title-bar-name">whisperlane</span>
-          <span className="title-bar-drag" data-tauri-drag-region />
+          <span className="title-bar-drag" />
           <button
             type="button"
             className="title-bar-close"
@@ -348,6 +394,32 @@ function App() {
           </select>
         </label>
         <p>language applies to the next take; the service reloads.</p>
+
+        <label>
+          theme:
+          <select
+            value={settings?.theme ?? "system"}
+            onChange={(e) => void chooseTheme(e.target.value)}
+          >
+            {themes.map((choice) => (
+              <option key={choice.code} value={choice.code}>
+                {choice.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p>matching the system keeps up with it as it changes.</p>
+
+        <label className="setting-row">
+          <span>start with Windows:</span>
+          <input
+            type="checkbox"
+            checked={startWithWindows}
+            disabled={startBusy}
+            onChange={(e) => void chooseStartWithWindows(e.target.checked)}
+          />
+        </label>
+        <p>so the chord is there when you want it. change it any time.</p>
       </section>
       <section aria-label="transcription service">
         <h2>speech model</h2>

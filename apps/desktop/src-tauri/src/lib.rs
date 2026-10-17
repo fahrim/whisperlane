@@ -21,8 +21,9 @@ use hotkey::{get_hotkey_label, list_hotkeys};
 use models::{download_model, ensure_model_ready, get_download, list_models, ModelState};
 use pipeline::{get_pipeline_state, PipelineState, PipelineStatus};
 use settings::{
-    complete_onboarding, get_settings, list_languages, load, set_hotkey, set_language,
-    set_microphone, set_model, SettingsState,
+    complete_onboarding, get_settings, is_start_with_windows, list_languages, list_themes, load,
+    set_hotkey, set_language, set_microphone, set_model, set_start_with_windows, set_theme,
+    SettingsState,
 };
 use stt::{get_stt_status, sweep_idle, SttState};
 use windows::{
@@ -39,6 +40,10 @@ pub fn run() {
         .device_event_filter(tauri::DeviceEventFilter::Always)
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        // Starts with Windows when the user has asked it to. The chord is
+        // the product: a dictation tool that is not running cannot be
+        // dictated to, and the user should not have to find it first.
+        .plugin(tauri_plugin_autostart::Builder::new().build())
         .manage(PipelineState(std::sync::Mutex::new(
             PipelineStatus::default(),
         )))
@@ -71,7 +76,11 @@ pub fn run() {
             end_pill_drag,
             quit_app,
             complete_onboarding,
-            fit_window
+            fit_window,
+            set_start_with_windows,
+            is_start_with_windows,
+            set_theme,
+            list_themes
         ])
         // The settings window is the app's only settings surface, so it
         // has to survive its own close button. Destroyed here, the window

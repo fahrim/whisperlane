@@ -14,6 +14,7 @@ use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
+use tauri_plugin_autostart::ManagerExt;
 
 use crate::hotkey::{apply_binding, Hotkey};
 use crate::pipeline::set_phase;
@@ -96,6 +97,40 @@ impl Microphone {
     }
 }
 
+/// Which theme the window uses.
+///
+/// The system is the default and not merely a fallback: a preference
+/// nobody asked for should not be one the user has to undo, and the
+/// operating system already knows what the room looks like.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Theme {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl Theme {
+    pub const ALL: [Theme; 3] = [Theme::System, Theme::Light, Theme::Dark];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Theme::System => "Match the system",
+            Theme::Light => "Light",
+            Theme::Dark => "Dark",
+        }
+    }
+
+    pub fn code(self) -> &'static str {
+        match self {
+            Theme::System => "system",
+            Theme::Light => "light",
+            Theme::Dark => "dark",
+        }
+    }
+}
+
 /// The persisted set. Unknown or missing fields fall back to defaults so
 /// a settings file written by another version still loads.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -115,6 +150,15 @@ pub struct Settings {
     /// every launch and every reload, which is the one thing "first
     /// run" must never do.
     pub onboarded: bool,
+    /// Whether whisperlane starts with Windows.
+    ///
+    /// The chord is the whole product, and a dictation tool that is not
+    /// running cannot be dictated to. Asked once on first run and
+    /// changeable afterwards, because a preference asked once and then
+    /// impossible to find is a preference the user has lost.
+    pub start_with_windows: bool,
+    /// Whether the window follows the system theme or the user's own.
+    pub theme: Theme,
 }
 
 impl Default for Settings {
@@ -128,6 +172,8 @@ impl Default for Settings {
             microphone: Microphone::SystemDefault,
             model: crate::models::ModelChoice::DEFAULT.id.to_string(),
             onboarded: false,
+            start_with_windows: false,
+            theme: Theme::System,
         }
     }
 }
@@ -270,6 +316,70 @@ pub fn set_hotkey(app: AppHandle, hotkey: Hotkey) -> Settings {
     updated
 }
 
+/// Starts with Windows, or stops.
+///
+/// The registration is changed first and the answer recorded second, so a
+/// registry that refused leaves the setting saying what is actually
+/// true rather than what the user asked for. A preference that lies
+/// about its own state is worse than one that failed to save.
+#[tauri::command]
+pub fn set_start_with_windows(app: AppHandle, start: bool) -> Result<Settings, String> {
+    let manager = app.autolaunch();
+    let outcome = if start {
+        manager.enable()
+    } else {
+        manager.disable()
+    };
+    if let Err(e) = outcome {
+        return Err(format!("could not change start with Windows: {e}"));
+    }
+    let updated = persist(&app, |settings| settings.start_with_windows = start);
+    if let Ok(path) = settings_path(&app) {
+        let _ = write_settings(&path, &updated);
+    }
+    Ok(updated)
+}
+
+/// Whether the application is actually registered to start with Windows.
+///
+/// Read from the system rather than from the setting, so a registration
+/// removed by hand — or refused by the operating system — is seen as
+/// what it is.
+#[tauri::command]
+pub fn is_start_with_windows(app: AppHandle) -> bool {
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+/// Sets the window theme and applies it to the document.
+#[tauri::command]
+pub fn set_theme(app: AppHandle, theme: Theme) -> Settings {
+    let updated = persist(&app, |settings| settings.theme = theme);
+    if let Ok(path) = settings_path(&app) {
+        let _ = write_settings(&path, &updated);
+    }
+    updated
+}
+
+/// One offered theme, as the settings surface needs it.
+#[derive(Debug, Clone, Serialize)]
+pub struct ThemeChoice {
+    pub code: &'static str,
+    pub label: &'static str,
+}
+
+/// The offered themes come from the core, so the choice list lives in
+/// exactly one place and the interface never restates it.
+#[tauri::command]
+pub fn list_themes() -> Vec<ThemeChoice> {
+    Theme::ALL
+        .iter()
+        .map(|theme| ThemeChoice {
+            code: theme.code(),
+            label: theme.label(),
+        })
+        .collect()
+}
+
 /// Chooses the dictation microphone. The choice takes effect on the next
 /// take; a running take is never disturbed.
 #[tauri::command]
@@ -353,6 +463,8 @@ mod tests {
             microphone: Microphone::Device("Headset".to_string()),
             model: "base-q5_1".to_string(),
             onboarded: true,
+            start_with_windows: true,
+            theme: Theme::Dark,
         };
         write_settings(&path, &settings).unwrap();
         assert_eq!(read_settings(&path), settings);
@@ -381,6 +493,27 @@ mod tests {
         std::fs::write(&path, "{}").unwrap();
         assert_eq!(read_settings(&path), Settings::default());
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn the_new_preferences_default_to_asking_rather_than_doing() {
+        // Starting with Windows is a decision the user makes, so the
+        // default is off until they make it. The theme follows the system
+        // by default, because the operating system already knows and a
+        // preference nobody asked for should not be one to undo.
+        let fresh = Settings::default();
+        assert!(!fresh.start_with_windows);
+        assert_eq!(fresh.theme, Theme::System);
+    }
+
+    #[test]
+    fn every_offered_theme_names_itself_and_its_code() {
+        let choices = list_themes();
+        assert_eq!(choices.len(), Theme::ALL.len());
+        assert_eq!(choices[0].code, "system");
+        for choice in &choices {
+            assert!(!choice.label.is_empty());
+        }
     }
 
     #[test]

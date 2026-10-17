@@ -316,6 +316,21 @@ pub fn set_hotkey(app: AppHandle, hotkey: Hotkey) -> Settings {
     updated
 }
 
+/// Whether a startup entry may be written from this build at all.
+///
+/// The plugin records the path of whatever executable is running. For an
+/// installed build that is the installed application and the entry is
+/// exactly right. For a development build it is a file inside the
+/// project — one that a rebuild replaces and a clean deletes — and it
+/// loads a page from a server that is not running, so the next logon
+/// opens a broken window that nobody asked for and that only disappears
+/// when the project folder does.
+///
+/// The build is the whole difference, so the build is what is checked.
+fn may_register_startup() -> bool {
+    !cfg!(debug_assertions)
+}
+
 /// Starts with Windows, or stops.
 ///
 /// The registration is changed first and the answer recorded second, so a
@@ -324,6 +339,12 @@ pub fn set_hotkey(app: AppHandle, hotkey: Hotkey) -> Settings {
 /// about its own state is worse than one that failed to save.
 #[tauri::command]
 pub fn set_start_with_windows(app: AppHandle, start: bool) -> Result<Settings, String> {
+    if start && !may_register_startup() {
+        return Err(
+            "this is a development build, so it will not register itself to start with Windows"
+                .to_string(),
+        );
+    }
     let manager = app.autolaunch();
     let outcome = if start {
         manager.enable()
@@ -493,6 +514,14 @@ mod tests {
         std::fs::write(&path, "{}").unwrap();
         assert_eq!(read_settings(&path), Settings::default());
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_development_build_never_registers_itself_to_start() {
+        // The tests run in a debug build, so this asserts the rule as it
+        // applies to every test run: a build that would point a startup
+        // entry at a file inside the project refuses to write one.
+        assert!(!may_register_startup());
     }
 
     #[test]

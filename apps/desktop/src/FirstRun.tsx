@@ -41,7 +41,7 @@ export interface FirstRunProps {
     hotkey: (code: string) => void;
     language: (code: string) => void;
     microphone: (value: string) => void;
-    startWithWindows: (next: boolean) => void;
+    startWithWindows: (next: boolean) => Promise<boolean>;
   };
   onDownload: () => void;
   onDone: () => void;
@@ -90,9 +90,13 @@ export function FirstRun({
     choices.startWithWindows ? "yes" : null,
   );
 
+  // The answer is only taken once the system has taken it too. Marking it
+  // chosen first would leave the screen saying yes over a registration
+  // that was refused — a question that reports an answer nobody gave.
   function answerStartup(code: string) {
-    setAnswer(code);
-    change.startWithWindows(code === "yes");
+    void change.startWithWindows(code === "yes").then((took) => {
+      setAnswer(took ? code : null);
+    });
   }
 
   return (

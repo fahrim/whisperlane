@@ -197,15 +197,19 @@ function App() {
 
   // Read back from the system rather than assuming the click landed:
   // the registration can be refused, and a checkbox that claims to be on
-  // when it is off is worse than one that says it failed.
-  async function chooseStartWithWindows(start: boolean) {
+  // when it is off is worse than one that says it failed. Answers with
+  // whether it took, so a question on the first screen cannot keep a
+  // choice the operating system declined.
+  async function chooseStartWithWindows(start: boolean): Promise<boolean> {
     setStartBusy(true);
     try {
       await invoke<Settings>("set_start_with_windows", { start });
       setStartWithWindows(await invoke<boolean>("is_start_with_windows"));
+      return true;
     } catch (e) {
       setStartWithWindows(await invoke<boolean>("is_start_with_windows").catch(() => start));
       setError(String(e));
+      return false;
     } finally {
       setStartBusy(false);
     }
@@ -346,6 +350,14 @@ function App() {
           this launch is. Rendering the settings screen first would flash
           it at someone who has not been here before. */}
       {settings === null && <p role="status">loading…</p>}
+      {/* Above both screens, because the first screen is where a refusal
+          arrives: answering the startup question there and being told
+          nothing would look like a control that does nothing. */}
+      {error && (
+        <p role="alert" className="banner">
+          {error}
+        </p>
+      )}
       {showIntroduction && (
         <FirstRun
           settings={settings}
@@ -368,7 +380,7 @@ function App() {
                   ? { kind: "system_default" }
                   : { kind: "device", id: value },
               ),
-            startWithWindows: (next) => void chooseStartWithWindows(next),
+            startWithWindows: (next) => chooseStartWithWindows(next),
           }}
           onDownload={() =>
             chosenModel && downloadModel(chosenModel.id)
@@ -378,7 +390,6 @@ function App() {
       )}
       {showSettings && (
       <>
-      {error && <p role="alert" className="banner">{error}</p>}
       {live && (
         <p role="status" className="banner">
           Listening — press {hotkey} again to insert, Escape to discard.

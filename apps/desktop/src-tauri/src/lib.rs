@@ -104,6 +104,25 @@ pub fn run() {
             let saved = load(app.handle());
             app.manage(SettingsState(std::sync::Mutex::new(saved.clone())));
             hotkey::apply_binding(saved.hotkey);
+
+            // A launch is not a request to be looked at. The window is
+            // declared hidden and stays that way for everyone who has seen
+            // the introduction: the product lives in the tray, and opening
+            // its window unasked at every launch is the opposite of
+            // invisible. Starting with Windows makes it more pointed
+            // still — that is a request to be ready at logon, not to put
+            // a window on someone's screen while they sit down.
+            //
+            // Shown here rather than left visible and hidden a moment
+            // later, because a window that appears and is then taken away
+            // is a flash, and at logon a flash is the first thing anyone
+            // sees of the product.
+            if !saved.onboarded
+                && let Some(main) = app.get_webview_window(windows::MAIN)
+            {
+                let _ = main.show();
+            }
+
             tray::build(app.handle())?;
             windows::build_pill(app.handle())?;
             app.manage(windows::CursorPassthrough(Default::default()));

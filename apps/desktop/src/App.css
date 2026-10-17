@@ -266,6 +266,15 @@ section {
   padding-right: 2.4em;
 }
 
+/* The list that opens is drawn by the engine rather than by the page, so
+   it inherits none of the surface and arrives in the platform's own light
+   colours: a white box over a dark window, with the chosen option
+   indistinguishable from the rest until it is hovered. */
+.picker option {
+  background-color: var(--surface-raised);
+  color: var(--text-primary);
+}
+
 .picker::after {
   content: "";
   position: absolute;

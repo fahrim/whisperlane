@@ -41,15 +41,34 @@ function App() {
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [download, setDownload] = useState<Download | null>(null);
 
-  // Derived from the saved settings rather than remembered here. Held in
-  // state, the introduction would come back on every reload, and a
-  // "first run" that repeats is not one.
-  const firstRun = settings !== null && !settings.onboarded;
+  // Held while the introduction is being closed, for the reason given
+  // below it.
+  const [leaving, setLeaving] = useState(false);
 
+  // Which screen this window is showing. The introduction is derived from
+  // the saved settings rather than remembered here: held in state it would
+  // come back on every reload, and a "first run" that repeats is not one.
+  //
+  // While closing, the introduction stays up. Blanking the window for the
+  // moment between the click and the window going away is its own kind of
+  // flicker, and so is showing the settings screen — which is the thing
+  // being avoided — for the same moment.
+  const showIntroduction =
+    settings !== null && (!settings.onboarded || leaving);
+  const showSettings = settings !== null && settings.onboarded && !leaving;
+
+  // Finishing the introduction closes the window rather than swapping it
+  // for the settings screen. The window exists for onboarding and the
+  // occasional setting, so handing someone the full list the moment they
+  // have finished setting up is the product insisting on being looked at;
+  // it belongs in the tray, and settings are one right-click away.
   async function finishOnboarding() {
+    setLeaving(true);
     try {
       setSettings(await invoke<Settings>("complete_onboarding"));
+      await invoke("toggle_settings");
     } catch (e) {
+      setLeaving(false);
       setError(String(e));
     }
   }
@@ -317,7 +336,7 @@ function App() {
           this launch is. Rendering the settings screen first would flash
           it at someone who has not been here before. */}
       {settings === null && <p role="status">loading…</p>}
-      {settings !== null && firstRun && (
+      {showIntroduction && (
         <FirstRun
           settings={settings}
           hotkey={hotkey}
@@ -347,7 +366,7 @@ function App() {
           onDone={finishOnboarding}
         />
       )}
-      {settings !== null && !firstRun && (
+      {showSettings && (
       <>
       {error && <p role="alert" className="banner">{error}</p>}
       {live && (

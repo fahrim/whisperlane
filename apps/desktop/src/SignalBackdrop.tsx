@@ -95,11 +95,6 @@ const LOOP_SAMPLES = VOICE.length;
  * home together. No smaller value closes both.
  */
 const LOOP_TURN = Math.PI * 10;
-/** Seconds for one loop. Slow on purpose: this is a backdrop, not a meter. */
-const LOOP_SECONDS = 18;
-/** The whole field's opacity. Low on purpose; see the note at the top. */
-const FIELD_ALPHA = 0.32;
-
 /** A flatter bell than the pill's, so the field reaches both edges. */
 const ENVELOPE_EXPONENT = 0.5;
 
@@ -148,6 +143,26 @@ export function SignalBackdrop() {
     const dpr = window.devicePixelRatio || 1;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+    // Every number that decides what this looks like is a custom property
+    // rather than a constant, so it can be moved while looking at it. A
+    // backdrop's whole difficulty is that the right value for it is found
+    // by eye, against a real window, with the real text on it.
+    const tuning = { alpha: 0.32, seconds: 18, center: 0.58, spread: 0.13, scale: 0.11 };
+    const readTuning = () => {
+      const style = getComputedStyle(canvas);
+      const read = (name: string, key: keyof typeof tuning, fallback: number) => {
+        const parsed = parseFloat(style.getPropertyValue(name));
+        if (Number.isFinite(parsed)) tuning[key] = parsed;
+        else tuning[key] = fallback;
+      };
+      read("--signal-alpha", "alpha", 0.32);
+      read("--signal-loop", "seconds", 18);
+      read("--signal-center", "center", 0.58);
+      read("--signal-spread", "spread", 0.13);
+      read("--signal-scale", "scale", 0.11);
+    };
+    readTuning();
+
     const draw = (progress: number) => {
       const t = progress * LOOP_TURN;
       // Sampled with a wrap, so the last frame and the first are the same
@@ -164,17 +179,17 @@ export function SignalBackdrop() {
       ctx.clearRect(0, 0, width, height);
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
-      ctx.globalAlpha = FIELD_ALPHA;
+      ctx.globalAlpha = tuning.alpha;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
 
-      const centerY = height * 0.58;
+      const centerY = height * tuning.center;
       // A field rather than a line: the ribbons sit far apart vertically
       // so the motion fills the surface instead of crossing it.
-      const spread = height * 0.13;
+      const spread = height * tuning.spread;
       // Displacement grows with the surface but is capped, so a taller
       // window does not turn the wave into a slow ocean swell.
-      const scale = Math.min(width * 0.11, height * 0.06, 66);
+      const scale = Math.min(width * tuning.scale, height * 0.06, 66);
 
       RIBBONS.forEach((ribbon, index) => {
         const bandY = centerY + (index - (RIBBONS.length - 1) / 2) * spread;
@@ -218,6 +233,10 @@ export function SignalBackdrop() {
       canvas.width = Math.round(width * dpr);
       canvas.height = Math.round(height * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      // Re-read on resize as well as on mount: a custom property edited
+      // in the inspector only reaches the canvas the next time something
+      // asks it to measure itself.
+      readTuning();
       if (reduced) draw(0);
     };
 
@@ -237,7 +256,7 @@ export function SignalBackdrop() {
     const started = performance.now();
     const render = (now: number) => {
       const elapsed = (now - started) / 1000;
-      draw((elapsed % LOOP_SECONDS) / LOOP_SECONDS);
+      draw((elapsed % tuning.seconds) / tuning.seconds);
       frame = requestAnimationFrame(render);
     };
 

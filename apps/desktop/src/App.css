@@ -74,6 +74,26 @@ body {
    reading: a field that faded to nothing behind every label would be a
    decoration nobody looks at, and one drawn at full strength behind them
    would be a form nobody can read. */
+/* The signal's shape and speed, as custom properties rather than as
+   numbers in the drawing code. Every one of them is found by eye, against
+   a real window with the real text on it, and a number buried in a
+   drawing function can only be found by rebuilding. */
+:root {
+  /* How present the field is. Lower reads as depth; higher reads as a
+     background that is showing off. */
+  --signal-alpha: 0.32;
+  /* Seconds for one loop. Slow on purpose: this is a backdrop, not a
+     meter, and the loop is long enough that the motion never announces
+     itself as a loop. */
+  --signal-loop: 18;
+  /* How far down the surface the field sits, and how far apart the
+     ribbons are stacked. */
+  --signal-center: 0.58;
+  --signal-spread: 0.13;
+  /* How far a ribbon travels from its band. */
+  --signal-scale: 0.11;
+}
+
 .signal-backdrop {
   position: absolute;
   inset: 0;

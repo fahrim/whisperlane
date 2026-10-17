@@ -114,7 +114,7 @@ function App() {
         contentWidth: frame.offsetWidth,
         contentHeight: frame.offsetHeight,
         bleed,
-      }).catch(() => {});
+      }).catch(() => { });
     };
     fit();
     const observer = new ResizeObserver(fit);
@@ -319,7 +319,7 @@ function App() {
       .catch((e) => setError(String(e)));
     invoke<boolean>("is_start_with_windows")
       .then(setStartWithWindows)
-      .catch(() => {});
+      .catch(() => { });
     refreshModels();
     poll();
     const timer = setInterval(poll, 1000);
@@ -348,224 +348,224 @@ function App() {
           </button>
         </header>
         <main className="content">
-      {/* Nothing is chosen until the saved settings answer which screen
+          {/* Nothing is chosen until the saved settings answer which screen
           this launch is. Rendering the settings screen first would flash
           it at someone who has not been here before. */}
-      {settings === null && <p role="status">loading…</p>}
-      {/* Above both screens, because the first screen is where a refusal
+          {settings === null && <p role="status">loading…</p>}
+          {/* Above both screens, because the first screen is where a refusal
           arrives: answering the startup question there and being told
           nothing would look like a control that does nothing. */}
-      {error && (
-        <p role="alert" className="banner">
-          {error}
-        </p>
-      )}
-      {showIntroduction && (
-        <FirstRun
-          settings={settings}
-          hotkey={hotkey}
-          status={status}
-          download={download}
-          model={chosenModel}
-          choices={{
-            hotkeys,
-            languages,
-            devices,
-            startWithWindows,
-          }}
-          change={{
-            hotkey: chooseHotkey,
-            language: chooseLanguage,
-            microphone: (value) =>
-              void chooseMicrophone(
-                value === "system_default"
-                  ? { kind: "system_default" }
-                  : { kind: "device", id: value },
-              ),
-            startWithWindows: (next) => chooseStartWithWindows(next),
-          }}
-          onDownload={() =>
-            chosenModel && downloadModel(chosenModel.id)
-          }
-          onDone={finishOnboarding}
-        />
-      )}
-      {showSettings && (
-      <>
-      {live && (
-        <p role="status" className="banner">
-          Listening — press {hotkey} again to insert, Escape to discard.
-        </p>
-      )}
-      <p className="settings-lead">
-        Hold <kbd>{hotkey}</kbd> to talk, or tap it to keep talking.
-        Your words go wherever the cursor is.
-      </p>
-
-      <section aria-label="dictation">
-        <h2>Dictation</h2>
-        <div className="field">
-          <span className="field-text">
-            <span className="field-label">Hold to talk</span>
-          </span>
-          <Picker
-            label="Hold to talk"
-            value={settings.hotkey}
-            options={hotkeys}
-            onChange={chooseHotkey}
-          />
-        </div>
-        <div className="field">
-          <span className="field-text">
-            <span className="field-label">Microphone</span>
-            {askMic && (
-              <span className="field-hint">pick the one you speak into</span>
-            )}
-          </span>
-          <Picker
-            label="Microphone"
-            value={
-              settings.microphone.kind === "device"
-                ? (settings.microphone.id ?? "")
-                : "system_default"
-            }
-            options={[
-              { code: "system_default", label: "System default" },
-              ...devices.map((device) => ({ code: device.id, label: device.label })),
-            ]}
-            onChange={(value) =>
-              void chooseMicrophone(
-                value === "system_default"
-                  ? { kind: "system_default" }
-                  : { kind: "device", id: value },
-              )
-            }
-          />
-        </div>
-        <div className="field">
-          <span className="field-text">
-            <span className="field-label">Language</span>
-            <span className="field-hint">applies to the next take</span>
-          </span>
-          <Picker
-            label="Language"
-            value={settings.language}
-            options={languages}
-            onChange={chooseLanguage}
-          />
-        </div>
-      </section>
-
-      <section aria-label="speech model">
-        <h2>Speech model</h2>
-        <div className="field">
-          <span className="field-text">
-            <span className="field-label">Model</span>
-            <span className="field-hint">
-              bigger hears more, but answers slower
-            </span>
-          </span>
-          <span className="field-control">
-            <Picker
-              label="Model"
-              value={settings.model}
-              options={modelOptions.map((option) => ({
-                code: option.id,
-                label: option.label,
-              }))}
-              onChange={chooseModel}
-            />
-            {canDownload && chosenModel && (
-              <button
-                type="button"
-                className="download-button"
-                aria-label={`Download the speech model, ${chosenModel.size_mb} MB`}
-                onClick={() => downloadModel(chosenModel.id)}
-              >
-                <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
-                  <path
-                    d="M8 2.5 V10 M4.6 7.2 L8 10.6 L11.4 7.2 M2.8 13 H13.2"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
-            )}
-          </span>
-        </div>
-        {modelLine && <p className="field-status">{modelLine}</p>}
-        {download?.error && (
-          <p role="alert" className="field-status">
-            {download.error}
-          </p>
-        )}
-      </section>
-
-      <section aria-label="appearance">
-        <h2>Appearance</h2>
-        <div className="field">
-          <span className="field-text">
-            <span className="field-label">Theme</span>
-            <span className="field-hint">
-              following the system keeps up as it changes
-            </span>
-          </span>
-          <Picker
-            label="Theme"
-            value={settings.theme}
-            options={themes}
-            onChange={chooseTheme}
-          />
-        </div>
-      </section>
-
-      <section aria-label="startup">
-        <h2>Startup</h2>
-        <div className="field">
-          <span className="field-text">
-            <span className="field-label">Start with Windows</span>
-            <span className="field-hint">
-              so the chord is there when you want it
-            </span>
-          </span>
-          <Switch
-            checked={startWithWindows}
-            disabled={startBusy}
-            label="Start with Windows"
-            onChange={(next) => void chooseStartWithWindows(next)}
-          />
-        </div>
-      </section>
-
-      {status !== null &&
-        transcriptMatters(status.last_text, status.delivery) && (
-          <section aria-label="last take">
-            <h2>Last take</h2>
-            <p className="last-take-text">{status.last_text}</p>
-            <p className="field-status" role="status">
-              {deliveryNote(status.delivery, status.detail)}
+          {error && (
+            <p role="alert" className="banner">
+              {error}
             </p>
-            <div className="field-status-row">
-              <span />
-              <button
-                type="button"
-                onClick={() =>
-                  invoke<PipelineStatus>("copy_last_text")
-                    .then(setStatus)
-                    .catch((e) => setError(String(e)))
-                }
-              >
-                {status.delivery === "clipboard" ? "Copy again" : "Copy to clipboard"}
-              </button>
-            </div>
-          </section>
-        )}
-      </>
-      )}
-      </main>
+          )}
+          {showIntroduction && (
+            <FirstRun
+              settings={settings}
+              hotkey={hotkey}
+              status={status}
+              download={download}
+              model={chosenModel}
+              choices={{
+                hotkeys,
+                languages,
+                devices,
+                startWithWindows,
+              }}
+              change={{
+                hotkey: chooseHotkey,
+                language: chooseLanguage,
+                microphone: (value) =>
+                  void chooseMicrophone(
+                    value === "system_default"
+                      ? { kind: "system_default" }
+                      : { kind: "device", id: value },
+                  ),
+                startWithWindows: (next) => chooseStartWithWindows(next),
+              }}
+              onDownload={() =>
+                chosenModel && downloadModel(chosenModel.id)
+              }
+              onDone={finishOnboarding}
+            />
+          )}
+          {showSettings && (
+            <>
+              {live && (
+                <p role="status" className="banner">
+                  Listening — press {hotkey} again to insert, Escape to discard.
+                </p>
+              )}
+              <p className="settings-lead">
+                Hold <kbd>{hotkey}</kbd> to talk, or tap it to keep talking.
+                Your words go wherever the cursor is.
+              </p>
+
+              <section aria-label="dictation">
+                <h2>Dictation</h2>
+                <div className="field">
+                  <span className="field-text">
+                    <span className="field-label">Hold to talk</span>
+                  </span>
+                  <Picker
+                    label="Hold to talk"
+                    value={settings.hotkey}
+                    options={hotkeys}
+                    onChange={chooseHotkey}
+                  />
+                </div>
+                <div className="field">
+                  <span className="field-text">
+                    <span className="field-label">Microphone</span>
+                    {askMic && (
+                      <span className="field-hint">pick the one you speak into</span>
+                    )}
+                  </span>
+                  <Picker
+                    label="Microphone"
+                    value={
+                      settings.microphone.kind === "device"
+                        ? (settings.microphone.id ?? "")
+                        : "system_default"
+                    }
+                    options={[
+                      { code: "system_default", label: "System default" },
+                      ...devices.map((device) => ({ code: device.id, label: device.label })),
+                    ]}
+                    onChange={(value) =>
+                      void chooseMicrophone(
+                        value === "system_default"
+                          ? { kind: "system_default" }
+                          : { kind: "device", id: value },
+                      )
+                    }
+                  />
+                </div>
+                <div className="field">
+                  <span className="field-text">
+                    <span className="field-label">Language</span>
+                    <span className="field-hint">applies to the next take</span>
+                  </span>
+                  <Picker
+                    label="Language"
+                    value={settings.language}
+                    options={languages}
+                    onChange={chooseLanguage}
+                  />
+                </div>
+              </section>
+
+              <section aria-label="speech model">
+                <h2>Speech model</h2>
+                <div className="field">
+                  <span className="field-text">
+                    <span className="field-label">Model</span>
+                    <span className="field-hint">
+                      bigger hears more, but answers slower
+                    </span>
+                  </span>
+                  <span className="field-control">
+                    <Picker
+                      label="Model"
+                      value={settings.model}
+                      options={modelOptions.map((option) => ({
+                        code: option.id,
+                        label: option.label,
+                      }))}
+                      onChange={chooseModel}
+                    />
+                    {canDownload && chosenModel && (
+                      <button
+                        type="button"
+                        className="download-button"
+                        aria-label={`Download the speech model, ${chosenModel.size_mb} MB`}
+                        onClick={() => downloadModel(chosenModel.id)}
+                      >
+                        <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+                          <path
+                            d="M8 2.5 V10 M4.6 7.2 L8 10.6 L11.4 7.2 M2.8 13 H13.2"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      </button>
+                    )}
+                  </span>
+                </div>
+                {modelLine && <p className="field-status">{modelLine}</p>}
+                {download?.error && (
+                  <p role="alert" className="field-status">
+                    {download.error}
+                  </p>
+                )}
+              </section>
+
+              <section aria-label="appearance">
+                <h2>Appearance</h2>
+                <div className="field">
+                  <span className="field-text">
+                    <span className="field-label">Theme</span>
+                    <span className="field-hint">
+                      following the system keeps up as it changes
+                    </span>
+                  </span>
+                  <Picker
+                    label="Theme"
+                    value={settings.theme}
+                    options={themes}
+                    onChange={chooseTheme}
+                  />
+                </div>
+              </section>
+
+              <section aria-label="startup">
+                <h2>Startup</h2>
+                <div className="field">
+                  <span className="field-text">
+                    <span className="field-label">Start with Windows</span>
+                    <span className="field-hint">
+                      so the chord is there when you want it
+                    </span>
+                  </span>
+                  <Switch
+                    checked={startWithWindows}
+                    disabled={startBusy}
+                    label="Start with Windows"
+                    onChange={(next) => void chooseStartWithWindows(next)}
+                  />
+                </div>
+              </section>
+
+              {status !== null &&
+                transcriptMatters(status.last_text, status.delivery) && (
+                  <section aria-label="last take">
+                    <h2>Last take</h2>
+                    <p className="last-take-text">{status.last_text}</p>
+                    <p className="field-status" role="status">
+                      {deliveryNote(status.delivery, status.detail)}
+                    </p>
+                    <div className="field-status-row">
+                      <span />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          invoke<PipelineStatus>("copy_last_text")
+                            .then(setStatus)
+                            .catch((e) => setError(String(e)))
+                        }
+                      >
+                        {status.delivery === "clipboard" ? "Copy again" : "Copy to clipboard"}
+                      </button>
+                    </div>
+                  </section>
+                )}
+            </>
+          )}
+        </main>
       </div>
     </div>
   );

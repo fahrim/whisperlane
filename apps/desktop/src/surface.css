@@ -41,6 +41,15 @@
   --control-bg-hover: rgb(255 255 255 / 10%);
   --control-border: rgb(255 255 255 / 10%);
 
+  /* A failure the user has to notice. Not the pill's recording accent —
+     glass is for the pill (adr/009) and a red borrowed from it would tie
+     "wrong" to the same colour as "listening". */
+  --danger: #ff8a85;
+  --danger-fill: #c3373b;
+
+  --switch-on: rgb(168 85 247);
+  --switch-off: rgb(255 255 255 / 14%);
+
   --focus-ring: 168 85 247;
   --shadow-spread: 0 24px 48px -12px rgb(0 0 0 / 70%);
 }
@@ -66,6 +75,12 @@
   --control-bg-hover: rgb(0 0 0 / 7%);
   --control-border: rgb(0 0 0 / 12%);
 
+  --danger: #c3373b;
+  --danger-fill: #c3373b;
+
+  --switch-on: rgb(139 92 246);
+  --switch-off: rgb(0 0 0 / 16%);
+
   --focus-ring: 139 92 246;
   --shadow-spread: 0 24px 48px -12px rgb(20 20 40 / 22%);
 }
@@ -89,6 +104,12 @@
     --control-bg: rgb(0 0 0 / 4%);
     --control-bg-hover: rgb(0 0 0 / 7%);
     --control-border: rgb(0 0 0 / 12%);
+
+    --danger: #c3373b;
+    --danger-fill: #c3373b;
+
+    --switch-on: rgb(139 92 246);
+    --switch-off: rgb(0 0 0 / 16%);
 
     --focus-ring: 139 92 246;
     --shadow-spread: 0 24px 48px -12px rgb(20 20 40 / 22%);

@@ -120,7 +120,7 @@ body {
 /* The close button is the one place a red is correct: it is the one
    action here that discards rather than saves. */
 .title-bar-close:hover {
-  background: #c3373b;
+  background: var(--danger-fill);
   color: #ffffff;
 }
 
@@ -138,40 +138,146 @@ body {
   gap: var(--section-gap);
 }
 
-h1 {
-  margin: 0;
-  font-size: var(--text-title);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
 h2 {
-  margin: 0 0 var(--row-gap);
+  margin: 0;
   font-size: var(--text-label);
   font-weight: 600;
   letter-spacing: 0.01em;
   color: var(--text-secondary);
 }
 
+/* What the product is, said once. The title bar already carries the name,
+   so repeating it here as a heading would only add a line the user has to
+   read past. */
 .settings-lead {
   margin: 0;
-  max-width: 46ch;
+  max-width: 52ch;
   color: var(--text-secondary);
 }
 
-.settings-note {
-  margin: var(--row-gap) 0 0;
+.settings-lead kbd {
+  font: inherit;
+  font-weight: 600;
+  padding: 1px 7px;
+  border: 1px solid var(--control-border);
+  border-radius: 6px;
+  background: var(--control-bg);
+  white-space: nowrap;
+}
+
+/* Something to act on — a refused change, or dictation in progress. Lifted
+   off the surface so it is a separate thing rather than another line in a
+   column of black ones; the colour then only has to say what kind of thing
+   it is. */
+.banner {
+  margin: 0;
+  padding: 9px 12px;
+  border-radius: var(--control-radius);
+  background: var(--surface-raised);
+  border: 1px solid var(--surface-border-strong);
+  font-size: var(--text-caption);
+}
+
+/* After .banner, so it wins on equal weight and the banner's own colour
+   rule cannot stop the text reading as a failure. */
+[role="alert"] {
+  color: var(--danger);
+}
+
+/* Sections are a column of fields with a heading, not a wall of controls:
+   the heading is what lets a person looking for one setting stop reading. */
+section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--field-gap);
+}
+
+/* One setting: what it is on the left, how to change it on the right.
+   The label wraps the whole row, so clicking the words focuses the
+   control, which is what makes a long label feel like part of the control
+   rather than a caption beside it.
+
+   The control column is a fixed width rather than `auto`. Left to size
+   itself, a select grows to the longest option in the list — a keyboard
+   shortcut is a long option — and the label is what gets squeezed until
+   its words break one per line. Fixed, every control ends on the same
+   edge and the labels keep their room. */
+.field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 252px;
+  align-items: center;
+  column-gap: 16px;
+}
+
+.field-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.field-label {
+  color: var(--text-primary);
+}
+
+/* The hint lives under the label rather than under the control. Under the
+   control it would sit far from the words it qualifies, and a row whose
+   meaning is in its second line is a row twice as tall for nothing. */
+.field-hint,
+.field-status {
   font-size: var(--text-caption);
   color: var(--text-tertiary);
 }
 
-section {
-  max-width: 46ch;
+.field-status {
+  margin: 0;
 }
 
-label {
-  display: block;
-  margin-bottom: 10px;
+.field-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.last-take-text {
+  margin: 0;
+  padding: 10px 13px;
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  overflow-wrap: anywhere;
+}
+
+/* --- Controls --------------------------------------------------------
+   Drawn here rather than taken from the platform, because the platform's
+   dropdown arrow belongs to a dialog from the nineteen-nineties and this
+   is a surface drawn to look quiet. Both controls are in controls.tsx. */
+
+.picker {
+  position: relative;
+  display: inline-flex;
+  width: 100%;
+  min-width: 0;
+}
+
+.picker select {
+  appearance: none;
+  width: 100%;
+  padding-right: 2.4em;
+}
+
+.picker::after {
+  content: "";
+  position: absolute;
+  right: 13px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -4px;
+  border-right: 1.5px solid var(--text-tertiary);
+  border-bottom: 1.5px solid var(--text-tertiary);
+  transform: rotate(45deg);
+  pointer-events: none;
 }
 
 select,
@@ -179,7 +285,7 @@ button {
   font: inherit;
   border-radius: var(--control-radius);
   border: 1px solid var(--control-border);
-  padding: 0.5em 0.8em;
+  padding: 0.45em 0.8em;
   color: var(--text-primary);
   background-color: var(--control-bg);
   transition: background var(--fade), border-color var(--fade);
@@ -198,7 +304,7 @@ button:focus-visible {
 
 button {
   cursor: pointer;
-  margin: 4px 8px 4px 0;
+  font-size: var(--text-label);
 }
 
 button:disabled {
@@ -206,8 +312,41 @@ button:disabled {
   cursor: default;
 }
 
-[role="alert"] {
-  color: var(--accent-recording);
+/* A switch states the setting and offers to change it, where a checkbox
+   asks whether a box is ticked. The knob travels rather than appearing, so
+   the change reads as the same object being moved. */
+.switch {
+  position: relative;
+  width: 42px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--switch-off);
+  box-shadow: inset 0 0 0 1px var(--control-border);
+  cursor: pointer;
+  transition: background var(--fade);
+}
+
+.switch[aria-checked="true"] {
+  background: var(--switch-on);
+}
+
+.switch-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 35%);
+  transition: transform var(--fade) var(--ease-out);
+}
+
+.switch[aria-checked="true"] .switch-knob {
+  transform: translateX(16px);
 }
 
 /* First run is one screen: one instruction, its chord, and honest model
@@ -220,7 +359,10 @@ button:disabled {
 }
 
 .first-run h1 {
-  font-size: 24px;
+  margin: 0;
+  font-size: var(--text-title);
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .first-run-instruction {

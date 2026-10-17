@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { FirstRun } from "./FirstRun";
+import { Picker, Switch } from "./controls";
 import { deliveryNote, transcriptMatters } from "./delivery";
 import type {
   Download,
@@ -110,9 +111,19 @@ function App() {
     }
   }
 
+  // Choosing a model is the request for it. The three separate download
+  // buttons this replaces asked the same question twice: "which model" and
+  // "now get it", in two controls, which is how a window ends up offering
+  // a gigabyte of choices as three buttons of equal weight. Picking the
+  // model fetches it; a button is left only for the case where that fetch
+  // failed, and it says so.
   async function chooseModel(id: string) {
     try {
       setSettings(await invoke<Settings>("set_model", { model: id }));
+      const chosen = modelOptions.find((option) => option.id === id);
+      if (chosen && !chosen.present && !download?.running) {
+        setDownload(await invoke<Download>("download_model", { id }));
+      }
       await refreshModels();
     } catch (e) {
       setError(String(e));
@@ -196,6 +207,38 @@ function App() {
     modelOptions.find((option) => option.id === settings?.model) ??
     modelOptions.find((option) => option.is_default) ??
     null;
+
+  // One line saying what the model is doing, in the only language a
+  // settings window should use for it. The engine's backend name and
+  // whether that name has been verified by launching the binary are
+  // diagnostics: true, but not the user's business, and shown here they
+  // read as though something were wrong.
+  //
+  // An idle engine reads as ready, because it is: the model is on disk and
+  // the service starts on the first take. "Getting ready" is kept for a
+  // start already in progress, because a window that says it about a
+  // service that has not begun to start is reporting on nothing.
+  const modelLine = (() => {
+    if (download?.running) {
+      const progress =
+        download.percent !== null ? ` · ${download.percent}%` : "";
+      return `downloading${progress} · ${download.received_mb} of ${download.total_mb} MB`;
+    }
+    if (!chosenModel) return null;
+    if (!chosenModel.present) return `${chosenModel.size_mb} MB · not downloaded`;
+    if (!stt) return null;
+    if (stt.service === "failed")
+      return stt.detail ?? "the engine could not start";
+    if (stt.service === "starting") return "getting ready…";
+    return `${chosenModel.size_mb} MB · ready`;
+  })();
+
+  // Offered whenever the model is absent and nothing is on its way, so a
+  // button on this row always means the same thing: fetch it. Choosing a
+  // model already starts this, which leaves the button for the fetch that
+  // did not finish.
+  const retryDownload =
+    chosenModel !== null && !chosenModel.present && !download?.running;
 
   useEffect(() => {
     let stop = false;
@@ -289,80 +332,49 @@ function App() {
       )}
       {settings !== null && !firstRun && (
       <>
-      <h1>whisperlane</h1>
-      <p className="settings-lead">
-        Hold <strong>{hotkey}</strong> to talk, or tap it to keep talking.
-        Your words go wherever the cursor is.
-      </p>
-      {error && <p role="alert">state error: {error}</p>}
+      {error && <p role="alert" className="banner">{error}</p>}
       {live && (
-        <p role="status">
+        <p role="status" className="banner">
           Listening — press {hotkey} again to insert, Escape to discard.
         </p>
       )}
-      <section aria-label="settings">
-        <h2>settings</h2>
-        <label>
-          hotkey:{" "}
-          <select
-            value={settings?.hotkey ?? ""}
-            onChange={(e) => chooseHotkey(e.target.value)}
-          >
+      <p className="settings-lead">
+        Hold <kbd>{hotkey}</kbd> to talk, or tap it to keep talking.
+        Your words go wherever the cursor is.
+      </p>
+
+      <section aria-label="dictation">
+        <h2>Dictation</h2>
+        <label className="field">
+          <span className="field-text">
+            <span className="field-label">Hold to talk</span>
+          </span>
+          <Picker value={settings.hotkey} onChange={chooseHotkey}>
             {hotkeys.map((choice) => (
               <option key={choice.code} value={choice.code}>
                 {choice.label}
               </option>
             ))}
-          </select>
+          </Picker>
         </label>
-        <label>
-          model:{" "}
-          <select
-            value={settings?.model ?? ""}
-            onChange={(e) => chooseModel(e.target.value)}
-          >
-            {modelOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label} ({option.size_mb} MB
-                {option.present ? "" : ", not downloaded"})
-              </option>
-            ))}
-          </select>
-        </label>
-        {modelOptions
-          .filter((option) => !option.present)
-          .map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              disabled={download?.running}
-              onClick={() => downloadModel(option.id)}
-            >
-              download {option.label} ({option.size_mb} MB)
-            </button>
-          ))}
-        {download?.running && (
-          <p>
-            downloading {download.model}: {download.received_mb} /{" "}
-            {download.total_mb} MB
-            {download.percent !== null ? ` (${download.percent}%)` : ""} —
-            dictation stays available
-          </p>
-        )}
-        {download?.error && <p role="alert">download failed: {download.error}</p>}
-        <label>
-          microphone:{" "}
-          <select
+        <label className="field">
+          <span className="field-text">
+            <span className="field-label">Microphone</span>
+            {askMic && (
+              <span className="field-hint">pick the one you speak into</span>
+            )}
+          </span>
+          <Picker
             value={
-              settings?.microphone.kind === "device"
+              settings.microphone.kind === "device"
                 ? (settings.microphone.id ?? "")
                 : "system_default"
             }
-            onChange={(e) =>
-              chooseMicrophone(
-                e.target.value === "system_default"
+            onChange={(value) =>
+              void chooseMicrophone(
+                value === "system_default"
                   ? { kind: "system_default" }
-                  : { kind: "device", id: e.target.value },
+                  : { kind: "device", id: value },
               )
             }
           >
@@ -372,96 +384,117 @@ function App() {
                 {device.label}
               </option>
             ))}
-          </select>
+          </Picker>
         </label>
-        {askMic && (
-          <p>
-            dictation works with the system default right now — pick the
-            microphone you actually speak into.
-          </p>
-        )}
-        <label>
-          language:{" "}
-          <select
-            value={settings?.language ?? ""}
-            onChange={(e) => chooseLanguage(e.target.value)}
-          >
+        <label className="field">
+          <span className="field-text">
+            <span className="field-label">Language</span>
+            <span className="field-hint">applies to the next take</span>
+          </span>
+          <Picker value={settings.language} onChange={chooseLanguage}>
             {languages.map((choice) => (
               <option key={choice.code} value={choice.code}>
                 {choice.label}
               </option>
             ))}
-          </select>
+          </Picker>
         </label>
-        <p>language applies to the next take; the service reloads.</p>
+      </section>
 
-        <label>
-          theme:
-          <select
-            value={settings?.theme ?? "system"}
-            onChange={(e) => void chooseTheme(e.target.value)}
-          >
+      <section aria-label="speech model">
+        <h2>Speech model</h2>
+        <label className="field">
+          <span className="field-text">
+            <span className="field-label">Model</span>
+            <span className="field-hint">
+              bigger hears more, but answers slower
+            </span>
+          </span>
+          <Picker value={settings.model} onChange={chooseModel}>
+            {modelOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </Picker>
+        </label>
+        {modelLine && (
+          <div className="field-status-row">
+            <p className="field-status">{modelLine}</p>
+            {retryDownload && chosenModel && (
+              <button type="button" onClick={() => downloadModel(chosenModel.id)}>
+                Download
+              </button>
+            )}
+          </div>
+        )}
+        {download?.error && (
+          <p role="alert" className="field-status">
+            {download.error}
+          </p>
+        )}
+      </section>
+
+      <section aria-label="appearance">
+        <h2>Appearance</h2>
+        <label className="field">
+          <span className="field-text">
+            <span className="field-label">Theme</span>
+            <span className="field-hint">
+              following the system keeps up as it changes
+            </span>
+          </span>
+          <Picker value={settings.theme} onChange={chooseTheme}>
             {themes.map((choice) => (
               <option key={choice.code} value={choice.code}>
                 {choice.label}
               </option>
             ))}
-          </select>
+          </Picker>
         </label>
-        <p>matching the system keeps up with it as it changes.</p>
+      </section>
 
-        <label className="setting-row">
-          <span>start with Windows:</span>
-          <input
-            type="checkbox"
+      <section aria-label="startup">
+        <h2>Startup</h2>
+        <div className="field">
+          <span className="field-text">
+            <span className="field-label">Start with Windows</span>
+            <span className="field-hint">
+              so the chord is there when you want it
+            </span>
+          </span>
+          <Switch
             checked={startWithWindows}
             disabled={startBusy}
-            onChange={(e) => void chooseStartWithWindows(e.target.checked)}
+            label="Start with Windows"
+            onChange={(next) => void chooseStartWithWindows(next)}
           />
-        </label>
-        <p>so the chord is there when you want it. change it any time.</p>
+        </div>
       </section>
-      <section aria-label="transcription service">
-        <h2>speech model</h2>
-        {stt ? (
-          <>
-            <p>
-              {stt.model_present
-                ? `Ready, transcribing on the ${stt.backend} path`
-                : "Not downloaded yet — dictation needs it before the first take."}
-            </p>
-            <p className="settings-note">
-              The backend is {stt.backend_verified
-                ? "confirmed by launching the engine"
-                : "reported by the runtime, not yet confirmed"}
-              .
-            </p>
-            {stt.detail && <p>{stt.detail}</p>}
-          </>
-        ) : (
-          <p>loading service state…</p>
-        )}
-      </section>
+
       {status !== null &&
         transcriptMatters(status.last_text, status.delivery) && (
-        <section aria-label="last take">
-          <h2>last take</h2>
-          <p>
-            <strong>{status.last_text}</strong>
-          </p>
-          <p role="status">{deliveryNote(status.delivery, status.detail)}</p>
-          <button
-            type="button"
-            onClick={() =>
-              invoke<PipelineStatus>("copy_last_text")
-                .then(setStatus)
-                .catch((e) => setError(String(e)))
-            }
-          >
-            {status.delivery === "clipboard" ? "copy again" : "copy to clipboard"}
-          </button>
-        </section>
-      )}
+          <section aria-label="last take">
+            <h2>Last take</h2>
+            <p className="last-take-text">{status.last_text}</p>
+            <p className="field-status" role="status">
+              {deliveryNote(status.delivery, status.detail)}
+            </p>
+            <div className="field-status-row">
+              <span />
+              <button
+                type="button"
+                onClick={() =>
+                  invoke<PipelineStatus>("copy_last_text")
+                    .then(setStatus)
+                    .catch((e) => setError(String(e)))
+                }
+              >
+                {status.delivery === "clipboard" ? "Copy again" : "Copy to clipboard"}
+              </button>
+            </div>
+          </section>
+        )}
       </>
       )}
       </main>

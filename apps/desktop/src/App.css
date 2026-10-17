@@ -249,49 +249,15 @@ section {
 }
 
 /* --- Controls --------------------------------------------------------
-   Drawn here rather than taken from the platform, because the platform's
-   dropdown arrow belongs to a dialog from the nineteen-nineties and this
-   is a surface drawn to look quiet. Both controls are in controls.tsx. */
+   Drawn here rather than taken from the platform. The window is frameless
+   and sized to its content, and a native dropdown ignores both: it paints
+   its list outside the window and loses the bottom of it at the edge. All
+   three controls are in controls.tsx. */
 
-.picker {
-  position: relative;
-  display: inline-flex;
-  width: 100%;
-  min-width: 0;
-}
-
-.picker select {
-  appearance: none;
-  width: 100%;
-  padding-right: 2.4em;
-}
-
-/* The list that opens is drawn by the engine rather than by the page, so
-   it inherits none of the surface and arrives in the platform's own light
-   colours: a white box over a dark window, with the chosen option
-   indistinguishable from the rest until it is hovered. */
-.picker option {
-  background-color: var(--surface-raised);
-  color: var(--text-primary);
-}
-
-.picker::after {
-  content: "";
-  position: absolute;
-  right: 13px;
-  top: 50%;
-  width: 6px;
-  height: 6px;
-  margin-top: -4px;
-  border-right: 1.5px solid var(--text-tertiary);
-  border-bottom: 1.5px solid var(--text-tertiary);
-  transform: rotate(45deg);
-  pointer-events: none;
-}
-
-select,
 button {
   font: inherit;
+  font-size: var(--text-label);
+  cursor: pointer;
   border-radius: var(--control-radius);
   border: 1px solid var(--control-border);
   padding: 0.45em 0.8em;
@@ -300,25 +266,106 @@ button {
   transition: background var(--fade), border-color var(--fade);
 }
 
-select:hover,
 button:hover {
   background-color: var(--control-bg-hover);
 }
 
-select:focus-visible,
 button:focus-visible {
   outline: 2px solid rgb(var(--focus-ring));
   outline-offset: 1px;
 }
 
-button {
-  cursor: pointer;
-  font-size: var(--text-label);
-}
-
 button:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.picker {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.picker-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+}
+
+.picker-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Two lines meeting at a point, rather than the platform's arrow. */
+.picker-chevron {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin: -4px 2px 0 0;
+  border-right: 1.5px solid var(--text-tertiary);
+  border-bottom: 1.5px solid var(--text-tertiary);
+  transform: rotate(45deg);
+  transition: transform var(--fade) var(--ease-out);
+}
+
+.picker-chevron-open {
+  margin-top: 4px;
+  transform: rotate(-135deg);
+}
+
+/* Fixed, because the frame clips overflow and this must not be clipped by
+   it — but sized and placed to stay inside the window's own bounds, since
+   a webview cannot paint past them. The numbers come from measuring what
+   is left below the field. */
+.picker-list {
+  position: fixed;
+  z-index: 20;
+  min-width: 190px;
+  padding: 4px;
+  border-radius: var(--control-radius);
+  border: 1px solid var(--surface-border-strong);
+  background: var(--surface-raised);
+  box-shadow: 0 12px 28px -8px rgb(0 0 0 / 55%);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.picker-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.picker-option-active {
+  background: var(--control-bg-hover);
+  color: var(--text-primary);
+}
+
+.picker-option[aria-selected="true"] {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* The chosen answer is marked by the row it is on rather than by colour,
+   so it survives a theme where that colour means something else. */
+.picker-tick {
+  flex: none;
+  width: 6px;
+  height: 10px;
+  margin: -3px 2px 0 0;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
 }
 
 /* A switch states the setting and offers to change it, where a checkbox

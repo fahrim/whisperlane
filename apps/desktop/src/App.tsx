@@ -381,19 +381,18 @@ function App() {
 
       <section aria-label="dictation">
         <h2>Dictation</h2>
-        <label className="field">
+        <div className="field">
           <span className="field-text">
             <span className="field-label">Hold to talk</span>
           </span>
-          <Picker value={settings.hotkey} onChange={chooseHotkey}>
-            {hotkeys.map((choice) => (
-              <option key={choice.code} value={choice.code}>
-                {choice.label}
-              </option>
-            ))}
-          </Picker>
-        </label>
-        <label className="field">
+          <Picker
+            label="Hold to talk"
+            value={settings.hotkey}
+            options={hotkeys}
+            onChange={chooseHotkey}
+          />
+        </div>
+        <div className="field">
           <span className="field-text">
             <span className="field-label">Microphone</span>
             {askMic && (
@@ -401,11 +400,16 @@ function App() {
             )}
           </span>
           <Picker
+            label="Microphone"
             value={
               settings.microphone.kind === "device"
                 ? (settings.microphone.id ?? "")
                 : "system_default"
             }
+            options={[
+              { code: "system_default", label: "System default" },
+              ...devices.map((device) => ({ code: device.id, label: device.label })),
+            ]}
             onChange={(value) =>
               void chooseMicrophone(
                 value === "system_default"
@@ -413,47 +417,41 @@ function App() {
                   : { kind: "device", id: value },
               )
             }
-          >
-            <option value="system_default">System default</option>
-            {devices.map((device) => (
-              <option key={device.id} value={device.id}>
-                {device.label}
-              </option>
-            ))}
-          </Picker>
-        </label>
-        <label className="field">
+          />
+        </div>
+        <div className="field">
           <span className="field-text">
             <span className="field-label">Language</span>
             <span className="field-hint">applies to the next take</span>
           </span>
-          <Picker value={settings.language} onChange={chooseLanguage}>
-            {languages.map((choice) => (
-              <option key={choice.code} value={choice.code}>
-                {choice.label}
-              </option>
-            ))}
-          </Picker>
-        </label>
+          <Picker
+            label="Language"
+            value={settings.language}
+            options={languages}
+            onChange={chooseLanguage}
+          />
+        </div>
       </section>
 
       <section aria-label="speech model">
         <h2>Speech model</h2>
-        <label className="field">
+        <div className="field">
           <span className="field-text">
             <span className="field-label">Model</span>
             <span className="field-hint">
               bigger hears more, but answers slower
             </span>
           </span>
-          <Picker value={settings.model} onChange={chooseModel}>
-            {modelOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-          </Picker>
-        </label>
+          <Picker
+            label="Model"
+            value={settings.model}
+            options={modelOptions.map((option) => ({
+              code: option.id,
+              label: option.label,
+            }))}
+            onChange={chooseModel}
+          />
+        </div>
         {modelLine && (
           <div className="field-status-row">
             <p className="field-status">{modelLine}</p>
@@ -473,21 +471,20 @@ function App() {
 
       <section aria-label="appearance">
         <h2>Appearance</h2>
-        <label className="field">
+        <div className="field">
           <span className="field-text">
             <span className="field-label">Theme</span>
             <span className="field-hint">
               following the system keeps up as it changes
             </span>
           </span>
-          <Picker value={settings.theme} onChange={chooseTheme}>
-            {themes.map((choice) => (
-              <option key={choice.code} value={choice.code}>
-                {choice.label}
-              </option>
-            ))}
-          </Picker>
-        </label>
+          <Picker
+            label="Theme"
+            value={settings.theme}
+            options={themes}
+            onChange={chooseTheme}
+          />
+        </div>
       </section>
 
       <section aria-label="startup">

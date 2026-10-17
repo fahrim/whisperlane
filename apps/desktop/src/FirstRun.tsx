@@ -123,50 +123,49 @@ export function FirstRun({
 
       <section aria-label="dictation">
         <h2>Dictation</h2>
-        <label className="field">
+        <div className="field">
           <span className="field-text">
             <span className="field-label">Hold to talk</span>
           </span>
-          <Picker value={settings.hotkey} onChange={change.hotkey}>
-            {choices.hotkeys.map((choice) => (
-              <option key={choice.code} value={choice.code}>
-                {choice.label}
-              </option>
-            ))}
-          </Picker>
-        </label>
-        <label className="field">
+          <Picker
+            label="Hold to talk"
+            value={settings.hotkey}
+            options={choices.hotkeys}
+            onChange={change.hotkey}
+          />
+        </div>
+        <div className="field">
           <span className="field-text">
             <span className="field-label">Microphone</span>
           </span>
           <Picker
+            label="Microphone"
             value={
               settings.microphone.kind === "device"
                 ? (settings.microphone.id ?? "")
                 : "system_default"
             }
+            options={[
+              { code: "system_default", label: "System default" },
+              ...choices.devices.map((device) => ({
+                code: device.id,
+                label: device.label,
+              })),
+            ]}
             onChange={change.microphone}
-          >
-            <option value="system_default">System default</option>
-            {choices.devices.map((device) => (
-              <option key={device.id} value={device.id}>
-                {device.label}
-              </option>
-            ))}
-          </Picker>
-        </label>
-        <label className="field">
+          />
+        </div>
+        <div className="field">
           <span className="field-text">
             <span className="field-label">Language</span>
           </span>
-          <Picker value={settings.language} onChange={change.language}>
-            {choices.languages.map((choice) => (
-              <option key={choice.code} value={choice.code}>
-                {choice.label}
-              </option>
-            ))}
-          </Picker>
-        </label>
+          <Picker
+            label="Language"
+            value={settings.language}
+            options={choices.languages}
+            onChange={change.language}
+          />
+        </div>
       </section>
 
       <div className="first-run-foot">

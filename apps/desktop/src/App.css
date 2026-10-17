@@ -349,13 +349,19 @@ button:disabled {
   transform: translateX(16px);
 }
 
-/* First run is one screen: one instruction, its chord, and honest model
-   progress behind it. Everything else waits for the take. */
+/* --- First run --------------------------------------------------------
+   One screen, in the same language as the settings window it leads to:
+   the same field rows, the same headings, the same controls. A first run
+   drawn differently would be a screen the user has to learn twice.
+
+   What differs is what it holds. The instruction is the heading, because
+   it is the only thing here that is not a choice, and it is what the
+   window is for. */
+
 .first-run {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  max-width: 520px;
+  gap: var(--section-gap);
 }
 
 .first-run h1 {
@@ -363,18 +369,21 @@ button:disabled {
   font-size: var(--text-title);
   font-weight: 600;
   letter-spacing: -0.01em;
+  line-height: 1.45;
 }
 
+/* The chord is the longest thing on this screen and it cannot be broken
+   across lines, so it needs the room. A measure set for the words around
+   it would push it onto a line of its own, and three lines read as three
+   instructions where there is one. */
 .first-run-instruction {
-  margin: 0;
-  font-size: 18px;
-  line-height: 1.7;
+  max-width: none;
 }
 
 .first-run-instruction kbd {
   font: inherit;
   font-weight: 600;
-  padding: 2px 8px;
+  padding: 1px 7px;
   border: 1px solid var(--control-border);
   border-radius: 6px;
   background: var(--control-bg);
@@ -383,13 +392,13 @@ button:disabled {
 
 .first-run-hint,
 .first-run-footnote {
-  margin: 0;
+  margin: -14px 0 0;
   font-size: var(--text-caption);
   color: var(--text-tertiary);
 }
 
-.first-run-model,
-.first-run-state {
+.first-run-state,
+.first-run-model {
   margin: 0;
   font-size: var(--text-label);
   color: var(--text-secondary);
@@ -397,14 +406,96 @@ button:disabled {
 
 .first-run-transcript {
   margin: 0;
-  padding: 12px 16px;
+  padding: 10px 13px;
   border-radius: var(--control-radius);
   background: var(--control-bg);
-  max-width: 100%;
   overflow-wrap: anywhere;
 }
 
+/* Everything below the questions: what the model is doing, the way on,
+   and where settings live afterwards. Separated from the questions so the
+   questions read as a block rather than as more rows to scroll. */
+.first-run-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+  padding-top: 4px;
+  border-top: 1px solid var(--surface-border);
+}
+
+.first-run-model {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .first-run-done {
-  margin-top: 8px;
+  align-self: stretch;
+  margin: 4px 0 0;
+  /* The one filled button in the product. On a screen whose whole job is
+     to be read and answered, an action drawn like the fields above it
+     reads as another field; this is the way out, so it is the one thing
+     that looks pressable. */
+  background: var(--accent-fill);
+  border-color: transparent;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.first-run-done:hover {
+  background: var(--accent-fill-hover);
+}
+
+/* Until the startup question is answered there is no action to offer, so
+   it stops being the filled button and goes back to being a shape like
+   the fields above it. Half a purple reads as a live button that is
+   briefly unhappy, which is not what is happening. */
+.first-run-done:disabled {
+  opacity: 1;
+  background: var(--control-bg);
+  border-color: var(--control-border);
+  color: var(--text-tertiary);
+  font-weight: 400;
+  cursor: default;
+}
+
+/* --- Segmented choice -------------------------------------------------
+   The pill picks with segments (pill.css, and the glass behind it stays
+   there). This is the same idea on a flat surface: two answers, both on
+   screen, neither of them a default someone else picked. */
+
+/* Sized to its options rather than to the column. Stretched to the full
+   width it stops reading as two choices and starts reading as one long
+   field with two labels in it — the one thing a question must not look
+   like. */
+.segmented {
+  display: inline-flex;
   align-self: flex-start;
+  padding: 3px;
+  border-radius: calc(var(--control-radius) + 3px);
+  background: var(--surface-sunken);
+  border: 1px solid var(--control-border);
+}
+
+.segment {
+  border: none;
+  background: transparent;
+  padding: 0.4em 0.9em;
+  color: var(--text-secondary);
+  border-radius: var(--control-radius);
+}
+
+.segment:hover {
+  background: var(--control-bg-hover);
+  color: var(--text-primary);
+}
+
+/* The chosen answer sits on the surface rather than on a tint of it, so
+   the eye finds it as an object and not as a slightly darker rectangle. */
+.segment[aria-checked="true"] {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 18%);
 }

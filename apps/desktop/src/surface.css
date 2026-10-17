@@ -50,6 +50,11 @@
   --switch-on: rgb(168 85 247);
   --switch-off: rgb(255 255 255 / 14%);
 
+  /* The filled action. Darker than the focus ring so white text on it
+     clears the contrast a small label needs in either theme. */
+  --accent-fill: rgb(109 40 217);
+  --accent-fill-hover: rgb(91 33 182);
+
   --focus-ring: 168 85 247;
   --shadow-spread: 0 24px 48px -12px rgb(0 0 0 / 70%);
 }
@@ -81,6 +86,9 @@
   --switch-on: rgb(139 92 246);
   --switch-off: rgb(0 0 0 / 16%);
 
+  --accent-fill: rgb(109 40 217);
+  --accent-fill-hover: rgb(91 33 182);
+
   --focus-ring: 139 92 246;
   --shadow-spread: 0 24px 48px -12px rgb(20 20 40 / 22%);
 }
@@ -110,6 +118,9 @@
 
     --switch-on: rgb(139 92 246);
     --switch-off: rgb(0 0 0 / 16%);
+
+    --accent-fill: rgb(109 40 217);
+    --accent-fill-hover: rgb(91 33 182);
 
     --focus-ring: 139 92 246;
     --shadow-spread: 0 24px 48px -12px rgb(20 20 40 / 22%);

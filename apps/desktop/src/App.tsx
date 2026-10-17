@@ -319,11 +319,28 @@ function App() {
       {settings === null && <p role="status">loading…</p>}
       {settings !== null && firstRun && (
         <FirstRun
+          settings={settings}
           hotkey={hotkey}
-          settings={settings ?? { language: "…", hotkey, microphone: { kind: "system_default" }, model: "" }}
           status={status}
           download={download}
           model={chosenModel}
+          choices={{
+            hotkeys,
+            languages,
+            devices,
+            startWithWindows,
+          }}
+          change={{
+            hotkey: chooseHotkey,
+            language: chooseLanguage,
+            microphone: (value) =>
+              void chooseMicrophone(
+                value === "system_default"
+                  ? { kind: "system_default" }
+                  : { kind: "device", id: value },
+              ),
+            startWithWindows: (next) => void chooseStartWithWindows(next),
+          }}
           onDownload={() =>
             chosenModel && downloadModel(chosenModel.id)
           }

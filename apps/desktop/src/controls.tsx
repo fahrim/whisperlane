@@ -57,3 +57,40 @@ export function Switch({ checked, label, disabled, onChange }: SwitchProps) {
     </button>
   );
 }
+
+export interface SegmentProps {
+  value: string;
+  options: { code: string; label: string }[];
+  onChange: (next: string) => void;
+}
+
+/**
+ * One setting with a small number of answers, all of them on screen.
+ *
+ * Not a switch: a switch states where the setting is, and this is asked
+ * because the answer is not known yet. A switch sitting at its default
+ * reads as an answer nobody gave. These two buttons say so.
+ *
+ * Arrow keys are not wired, which a radiogroup is expected to have. Tab
+ * reaches each button and Space picks it, so the pair is operable without
+ * them; a two-answer question does not earn the arrow-key handling that a
+ * long list would.
+ */
+export function Segmented({ value, options, onChange }: SegmentProps) {
+  return (
+    <div className="segmented" role="radiogroup">
+      {options.map((option) => (
+        <button
+          key={option.code}
+          type="button"
+          role="radio"
+          aria-checked={option.code === value}
+          className="segment"
+          onClick={() => onChange(option.code)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  );
+}

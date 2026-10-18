@@ -771,31 +771,90 @@ export function Pill() {
                     <span>Language</span>
                     <span className="pill-popover-badge">{currentLangLabel}</span>
                   </button>
-                  <button
-                    type="button"
-                    className="pill-popover-item"
-                    role="menuitem"
-                    onClick={() => {
-                      setPanel(null);
-                      void invoke("toggle_settings").catch((e) =>
-                        setError(String(e)),
-                      );
-                    }}
-                  >
-                    <span>Settings...</span>
-                  </button>
                   <div className="pill-popover-divider" />
-                  <button
-                    type="button"
-                    className="pill-popover-item pill-popover-quit"
-                    role="menuitem"
-                    onClick={() => {
-                      setPanel(null);
-                      void invoke("quit_app").catch((e) => setError(String(e)));
-                    }}
-                  >
-                    <span>Quit</span>
-                  </button>
+                  <div className="pill-popover-footer" role="group" aria-label="App actions">
+                    <button
+                      type="button"
+                      className="pill-popover-action"
+                      role="menuitem"
+                      aria-label="Settings"
+                      title="Settings"
+                      onClick={() => {
+                        setPanel(null);
+                        void invoke("toggle_settings").catch((e) =>
+                          setError(String(e)),
+                        );
+                      }}
+                    >
+                      <svg
+                        width="15"
+                        height="15"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      className="pill-popover-action"
+                      role="menuitem"
+                      aria-label="Minimize"
+                      title="Minimize to tray"
+                      onClick={() => {
+                        setPanel(null);
+                        void invoke("minimize_pill").catch((e) =>
+                          setError(String(e)),
+                        );
+                      }}
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                    </button>
+                    <button
+                      type="button"
+                      className="pill-popover-action pill-popover-action-quit"
+                      role="menuitem"
+                      aria-label="Quit"
+                      title="Quit whisperlane"
+                      onClick={() => {
+                        setPanel(null);
+                        void invoke("quit_app").catch((e) => setError(String(e)));
+                      }}
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

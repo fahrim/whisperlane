@@ -1328,6 +1328,14 @@ pub fn quit_app(app: AppHandle) {
     app.exit(0);
 }
 
+/// Minimizes the pill overlay by hiding it to the tray.
+#[tauri::command]
+pub fn minimize_pill(app: AppHandle) {
+    if let Some(pill) = app.get_webview_window(PILL) {
+        let _ = pill.hide();
+    }
+}
+
 /// Resizes the settings window around what it is actually showing.
 ///
 /// A frameless window has no operating-system frame to make it look like

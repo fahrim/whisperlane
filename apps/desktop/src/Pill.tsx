@@ -553,7 +553,7 @@ export function Pill() {
   // slow machine degrades its sample rate instead of queueing IPC calls.
   // Unchanged frames are deduplicated by hash in Rust and cost no upload.
   useEffect(() => {
-    if (phase === "idle" || !liveGlass) return;
+    if (!liveGlass) return;
     let frame = 0;
     const tick = () => {
       syncBlurRegion(false);
@@ -561,7 +561,7 @@ export function Pill() {
     };
     frame = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(frame);
-  }, [liveGlass, phase, syncBlurRegion]);
+  }, [liveGlass, syncBlurRegion]);
 
   async function press(command: TakeCommand) {
     try {

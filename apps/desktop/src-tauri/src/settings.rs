@@ -461,6 +461,10 @@ pub fn complete_onboarding(app: AppHandle) -> Settings {
     if let Ok(path) = settings_path(&app) {
         let _ = write_settings(&path, &updated);
     }
+    if let Some(pill) = app.get_webview_window(crate::windows::PILL) {
+        let _ = pill.show();
+        let _ = pill.unminimize();
+    }
     updated
 }
 

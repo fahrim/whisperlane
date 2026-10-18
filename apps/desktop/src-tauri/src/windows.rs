@@ -1153,13 +1153,11 @@ pub struct CursorPassthrough(pub std::sync::atomic::AtomicBool);
 
 /// Whether the pill rests on screen for a phase.
 ///
-/// Idle means quiet, so the pill hides and the tray is the home. Every
-/// other phase has something to say, including the terminal ones: the
-/// transcript and the reason stay readable there until the next take
-/// replaces them, which is what keeps the user from ever wondering
-/// whether their text was inserted.
-pub fn pill_visible_in(phase: Option<Phase>) -> bool {
-    !matches!(phase, None | Some(Phase::Idle))
+/// The pill stays visible on screen in all phases — including idle — so
+/// the user sees that Whisperlane is running and ready, rather than
+/// silently hiding away in the system tray.
+pub fn pill_visible_in(_phase: Option<Phase>) -> bool {
+    true
 }
 
 /// Where a pill of this size rests on a screen: centred, near the
@@ -1197,7 +1195,7 @@ fn pill_url(glass_probe: bool) -> WebviewUrl {
 /// Borderless, above everything, and never focusable: an overlay that
 /// took focus would starve the global chord and would become the
 /// destination for the very text it exists to announce. It starts
-/// hidden, because resting quietly is the tray's job, not the pill's.
+/// visible so the user immediately knows the app has launched and is ready.
 ///
 /// Transparent because the material is painted outside the pill's own
 /// edge. A window that paints its own background would cut the glow and
@@ -1229,7 +1227,7 @@ pub fn build_pill(app: &AppHandle) -> tauri::Result<()> {
         .always_on_top(true)
         .skip_taskbar(true)
         .focusable(false)
-        .visible(false)
+        .visible(true)
         .build()?;
     // The room around the pill passes the pointer through from the very
     // first moment, so nothing underneath is ever unreachable by it.
@@ -1401,10 +1399,9 @@ mod tests {
     const AURA_SECONDARY_INSET: f64 = 28.0;
 
     #[test]
-    fn idle_is_quiet_and_every_other_phase_is_shown() {
-        // Idle and a pipeline with no state yet both rest hidden.
-        assert!(!pill_visible_in(None));
-        assert!(!pill_visible_in(Some(Phase::Idle)));
+    fn every_phase_including_idle_is_shown() {
+        assert!(pill_visible_in(None));
+        assert!(pill_visible_in(Some(Phase::Idle)));
         for phase in [
             Phase::Listening,
             Phase::Thinking,

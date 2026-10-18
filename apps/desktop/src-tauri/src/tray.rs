@@ -9,7 +9,7 @@
 use std::sync::OnceLock;
 
 use tauri::{
-    AppHandle,
+    AppHandle, Manager,
     menu::{Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
@@ -51,6 +51,7 @@ pub fn status_art_for(phase: Option<Phase>) -> &'static [u8] {
     }
 }
 
+const SHOW_PILL: &str = "show_pill";
 const START: &str = "start";
 const SETTINGS: &str = "settings";
 const QUIT: &str = "quit";
@@ -97,6 +98,7 @@ pub fn status_line(phase: Option<Phase>) -> &'static str {
 /// Creates the tray icon and its menu.
 pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let status = MenuItem::with_id(app, "status", status_line(None), false, None::<&str>)?;
+    let show_pill = MenuItem::with_id(app, SHOW_PILL, "Show Pill", true, None::<&str>)?;
     let start = MenuItem::with_id(app, START, "Start dictating", true, Some(chord_hint()))?;
     let settings = MenuItem::with_id(app, SETTINGS, "Settings…", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, QUIT, "Quit whisperlane", true, None::<&str>)?;
@@ -104,7 +106,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     let last_rule = PredefinedMenuItem::separator(app)?;
     let menu = Menu::with_items(
         app,
-        &[&status, &first_rule, &start, &settings, &last_rule, &quit],
+        &[&status, &first_rule, &show_pill, &start, &settings, &last_rule, &quit],
     )?;
     // Stored before the tray exists, so the very first phase change
     // already has something to rewrite.
@@ -121,6 +123,12 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         .menu(&menu)
         .on_menu_event(|app, event| match event.id.as_ref() {
             QUIT => app.exit(0),
+            SHOW_PILL => {
+                if let Some(pill) = app.get_webview_window(crate::windows::PILL) {
+                    let _ = pill.show();
+                    let _ = pill.unminimize();
+                }
+            }
             // The same command the pill's three-dot control calls, so
             // there is one path to settings rather than two.
             SETTINGS => crate::windows::toggle_settings(app.clone()),
@@ -138,9 +146,26 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
                 ..
             } = event
             {
-                // The tray's home is settings: the pill is the face, and
-                // the tray is where the occasional setting is reached.
-                crate::windows::toggle_settings(tray.app_handle().clone());
+                let pill = tray.app_handle().get_webview_window(crate::windows::PILL);
+                let is_pill_visible = pill
+                    .as_ref()
+                    .and_then(|w| w.is_visible().ok())
+                    .unwrap_or(false);
+                let is_pill_minimized = pill
+                    .as_ref()
+                    .and_then(|w| w.is_minimized().ok())
+                    .unwrap_or(false);
+
+                if !is_pill_visible || is_pill_minimized {
+                    if let Some(w) = pill {
+                        let _ = w.show();
+                        let _ = w.unminimize();
+                    }
+                } else {
+                    // Pill is already visible on screen, so clicking the tray
+                    // manages the settings surface.
+                    crate::windows::toggle_settings(tray.app_handle().clone());
+                }
             }
         })
         .build(app)?;

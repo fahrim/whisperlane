@@ -109,18 +109,9 @@ pub fn run() {
             app.manage(SettingsState(std::sync::Mutex::new(saved.clone())));
             hotkey::apply_binding(saved.hotkey);
 
-            // A launch is not a request to be looked at. The window is
-            // declared hidden and stays that way for everyone who has seen
-            // the introduction: the product lives in the tray, and opening
-            // its window unasked at every launch is the opposite of
-            // invisible. Starting with Windows makes it more pointed
-            // still — that is a request to be ready at logon, not to put
-            // a window on someone's screen while they sit down.
-            //
-            // Shown here rather than left visible and hidden a moment
-            // later, because a window that appears and is then taken away
-            // is a flash, and at logon a flash is the first thing anyone
-            // sees of the product.
+            // When onboarded, the settings window stays hidden at launch,
+            // while the pill is built visible so the user immediately sees
+            // Whisperlane is running in its idle / ready state.
             if saved.onboarded {
                 windows::set_settings_visible(app.handle(), false);
             } else {

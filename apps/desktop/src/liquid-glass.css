@@ -78,27 +78,24 @@
     0 12px 30px -10px rgb(var(--lgs-violet) / 14%);
 }
 
-/* 1b — Desktop backdrop snapshot. On Windows 11, WebView2's CSS
+/* 1b — Desktop backdrop WebGL shader surface. On Windows 11, WebView2's CSS
    `backdrop-filter` cannot sample native OS windows behind a transparent
    HWND, and `DwmEnableBlurBehindWindow` no longer runs an Aero Gaussian
-   shader. By painting the cropped desktop snapshot inside `.lgs-desktop`
-   (with a 14px outer bleed clipped to `border-radius: inherit`), both the
-   controlled Gaussian blur and the SVG meniscus displacement lens bend the
-   actual desktop pixels underneath the capsule and panels. */
+   shader. Instead, `.lgs-desktop-canvas` renders a WebGL fragment shader over
+   the captured desktop RGBA texture (`WDA_EXCLUDEFROMCAPTURE`), performing
+   SDF rounded-rect meniscus lens refraction, R/G/B chromatic dispersion,
+   Gaussian blur, and caustic edge highlights directly on the GPU. */
 .lgs-desktop {
   overflow: hidden;
 }
 
 .lgs-desktop-canvas {
   position: absolute;
-  left: 0;
-  top: 0;
-  width: var(--lgs-bg-w, 0px);
-  height: var(--lgs-bg-h, 0px);
-  transform: translate3d(var(--lgs-offset-x, 0px), var(--lgs-offset-y, 0px), 0);
-  filter: blur(4.2px) saturate(118%);
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
   pointer-events: none;
-  will-change: transform;
 }
 
 .lgs-orb .lgs-desktop,
@@ -152,20 +149,13 @@
     );
 }
 
-/* 5 — The lens. Applies subtle geometry-specific SVG displacement
-   (`#lgs-lens-capsule` and `#lgs-lens-orb`) to bend in-document backdrop
-   light (`.pill-aura` and panel shadows) along the curved meniscus rim,
-   working in tandem with the localized Windows DWM `HRGN` desktop blur
-   (`set_pill_blur_region`). When `?glass-probe=1` is active, it switches
-   to the higher-gain probe filters over the high-contrast test pattern. */
+/* 5 — The lens. For the capsule and panels, refraction and chromatic
+   dispersion are computed on the GPU by `.lgs-desktop-canvas`'s WebGL
+   fragment shader rather than CPU-bound SVG `backdrop-filter: url(#...)`.
+   The SVG displacement filter remains active on `.lgs-orb` and when
+   `?glass-probe=1` is active over the in-DOM test pattern. */
 .lgs-lens {
   display: none;
-}
-
-.lgs-capsule .lgs-lens {
-  display: block;
-  backdrop-filter: url(#lgs-lens-capsule);
-  -webkit-backdrop-filter: url(#lgs-lens-capsule);
 }
 
 .lgs-orb .lgs-lens {

@@ -16,6 +16,10 @@ import {
   LiquidGlassSurface,
   LiquidLensDefs,
 } from "./LiquidGlassSurface";
+import {
+  parseBackdropPacket,
+  renderLiquidGlassCanvas,
+} from "./liquidGlassWebGL";
 import { LiquidWaveform, type WaveState } from "./LiquidWaveform";
 import type {
   LanguageChoice,
@@ -249,57 +253,35 @@ export function Pill() {
 
   const applyBackdropPacket = useCallback(
     (raw: ArrayBuffer | Uint8Array | null | undefined) => {
-      if (!raw) return;
+      const packet = parseBackdropPacket(raw);
+      if (!packet) return;
       const pillEl = pillBoxRef.current;
       if (!pillEl) return;
-      const buf =
-        raw instanceof Uint8Array
-          ? raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength)
-          : raw;
-      if (!buf || buf.byteLength < 24) return;
 
-      const view = new DataView(buf, 0, 24);
-      const cropX = view.getFloat32(0, true);
-      const cropY = view.getFloat32(4, true);
-      const cropW = view.getFloat32(8, true);
-      const cropH = view.getFloat32(12, true);
-      const outW = view.getUint32(16, true);
-      const outH = view.getUint32(20, true);
-      const pixelBytes = outW * outH * 4;
-      if (outW === 0 || outH === 0 || buf.byteLength < 24 + pixelBytes) return;
-
-      const root = pillEl.closest(".pill") as HTMLElement | null;
-      if (root) {
-        root.style.setProperty("--lgs-bg-w", `${cropW}px`);
-        root.style.setProperty("--lgs-bg-h", `${cropH}px`);
-        const rgba = new Uint8ClampedArray(buf as ArrayBuffer, 24, pixelBytes);
-        const imageData = new ImageData(rgba, outW, outH);
-        const canvases =
-          root.querySelectorAll<HTMLCanvasElement>(".lgs-desktop-canvas");
-        for (const canvas of canvases) {
-          if (canvas.width !== outW) canvas.width = outW;
-          if (canvas.height !== outH) canvas.height = outH;
-          const ctx = canvas.getContext("2d");
-          ctx?.putImageData(imageData, 0, 0);
-        }
+      const pillCanvas =
+        pillEl.querySelector<HTMLCanvasElement>(".lgs-desktop-canvas");
+      if (pillCanvas) {
+        const latestPill = pillEl.getBoundingClientRect();
+        renderLiquidGlassCanvas(pillCanvas, packet, latestPill, 28);
       }
-
-      const latestPill = pillEl.getBoundingClientRect();
-      pillEl.style.setProperty("--lgs-offset-x", `${cropX - latestPill.left}px`);
-      pillEl.style.setProperty("--lgs-offset-y", `${cropY - latestPill.top}px`);
 
       const panelSurface = panelRef.current
         ?.firstElementChild as HTMLElement | null;
       if (panelSurface) {
-        const latestPanel = panelSurface.getBoundingClientRect();
-        panelSurface.style.setProperty(
-          "--lgs-offset-x",
-          `${cropX - latestPanel.left}px`,
-        );
-        panelSurface.style.setProperty(
-          "--lgs-offset-y",
-          `${cropY - latestPanel.top}px`,
-        );
+        const panelCanvas =
+          panelSurface.querySelector<HTMLCanvasElement>(".lgs-desktop-canvas");
+        if (panelCanvas) {
+          const latestPanel = panelSurface.getBoundingClientRect();
+          const panelRadius = panelSurface.classList.contains("last-take-card")
+            ? 22
+            : 16;
+          renderLiquidGlassCanvas(
+            panelCanvas,
+            packet,
+            latestPanel,
+            panelRadius,
+          );
+        }
       }
     },
     [],

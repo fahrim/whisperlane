@@ -22,7 +22,7 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, SetWindowDisplayAffinity, SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER,
-    WDA_EXCLUDEFROMCAPTURE,
+    WDA_EXCLUDEFROMCAPTURE, WDA_NONE,
 };
 
 use crate::pipeline::Phase;
@@ -477,7 +477,6 @@ pub fn continue_pill_drag(
     if let (Some(px), Some(py), Some(pw), Some(ph), Ok(hwnd)) =
         (pill_x, pill_y, pill_w, pill_h, window.hwnd())
     {
-        ensure_pill_excluded_from_capture(HWND(hwnd.0));
         let crop_pad = 16.0;
         let crop_log_x = (px - crop_pad).floor();
         let crop_log_y = (py - crop_pad).floor();
@@ -488,6 +487,7 @@ pub fn continue_pill_drag(
         let phys_w = (crop_log_w * scale).round().max(2.0) as i32;
         let phys_h = (crop_log_h * scale).round().max(2.0) as i32;
         if let Some(packet) = capture_crop_rgba_packet(
+            Some(HWND(hwnd.0)),
             crop_log_x, crop_log_y, crop_log_w, crop_log_h, phys_x, phys_y, phys_w, phys_h, true,
         ) {
             return Response::new(packet);
@@ -665,7 +665,6 @@ pub fn set_pill_panel(app: AppHandle, required_height: f64) -> Option<PanelPlace
 }
 
 static LAST_BACKDROP_HASH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-static EXCLUDED_PILL_HWND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 
 /// `[hwnd, pill l/t/r/b, pill radius, panel l/t/r/b, panel diameter]` in
 /// physical pixels — the last shape handed to `DwmEnableBlurBehindWindow`.
@@ -676,23 +675,28 @@ fn invalidate_backdrop_hash() {
     LAST_BACKDROP_HASH.store(0, Ordering::Relaxed);
 }
 
-/// Marks the pill window with `WDA_EXCLUDEFROMCAPTURE` (`0x11`, Windows 10
-/// 2004+ / Windows 11) so DWM keeps the pill 100% visible on the monitor
-/// while excluding it in GPU hardware from desktop capture reads (`BitBlt`,
-/// DXGI, WGC). This eliminates self-capture in a single OS call across all
-/// monitors and DPI scales.
-fn ensure_pill_excluded_from_capture(hwnd: HWND) {
-    let raw = hwnd.0 as isize;
-    if raw == 0 || EXCLUDED_PILL_HWND.load(Ordering::Relaxed) == raw {
+/// Briefly marks the pill window with `WDA_EXCLUDEFROMCAPTURE` only for the
+/// duration of a single `BitBlt` backdrop read, then restores `WDA_NONE`.
+///
+/// A permanent exclusion hides the pill from every OS capture path —
+/// Snipping Tool, Win+Shift+S, Game Bar, screen sharing — so the pill
+/// vanishes the moment a capture overlay opens. Keeping the window normally
+/// capturable and excluding it only around our own `BitBlt` preserves
+/// self-capture-free glass while leaving screenshots alone.
+fn set_pill_capture_excluded(hwnd: HWND, excluded: bool) {
+    if hwnd.0.is_null() {
         return;
     }
     if std::env::var("WHISPERLANE_GLASS_PROBE").as_deref() == Ok("1") {
         return;
     }
     // SAFETY: `hwnd` is our own pill WebView2 window handle.
-    if unsafe { SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE) }.is_ok() {
-        EXCLUDED_PILL_HWND.store(raw, Ordering::Relaxed);
-    }
+    let affinity = if excluded {
+        WDA_EXCLUDEFROMCAPTURE
+    } else {
+        WDA_NONE
+    };
+    let _ = unsafe { SetWindowDisplayAffinity(hwnd, affinity) };
 }
 
 /// Binary packet layout returned over `tauri::ipc::Response`:
@@ -830,6 +834,7 @@ fn encode_downsampled_rgba_packet(
 }
 
 fn capture_crop_rgba_packet(
+    pill_hwnd: Option<HWND>,
     crop_log_x: f64,
     crop_log_y: f64,
     crop_log_w: f64,
@@ -846,14 +851,16 @@ fn capture_crop_rgba_packet(
     let mut pool_guard = CAPTURE_POOL.lock().ok()?;
 
     // SAFETY: Win32 GDI crop capture of `(x, y, w, h)` via persistent reusable DIB section.
-    // Because the pill window carries `WDA_EXCLUDEFROMCAPTURE`, DWM composites the screen
-    // without the pill in GPU hardware without any self-capture flickering or DXGI locks.
-    unsafe {
+    // The pill is excluded from capture only around our own `BitBlt`, then
+    // restored to `WDA_NONE` so OS capture tools keep seeing it.
+    if let Some(hwnd) = pill_hwnd {
+        set_pill_capture_excluded(hwnd, true);
+    }
+    let result = unsafe {
         let screen_dc = GetDC(HWND(std::ptr::null_mut()));
         if screen_dc.is_invalid() {
-            return None;
-        }
-
+            None
+        } else {
         let pool = pool_guard.get_or_insert_with(|| {
             let mem_dc = CreateCompatibleDC(screen_dc);
             CapturePool {
@@ -911,9 +918,8 @@ fn capture_crop_rgba_packet(
 
         if pool.dib.is_invalid() || pool.bits_ptr.is_null() {
             let _ = ReleaseDC(HWND(std::ptr::null_mut()), screen_dc);
-            return None;
-        }
-
+            None
+        } else {
         let blt_ok = BitBlt(pool.mem_dc, 0, 0, w, h, screen_dc, x, y, SRCCOPY).is_ok();
         let _ = GdiFlush();
         let _ = ReleaseDC(HWND(std::ptr::null_mut()), screen_dc);
@@ -936,13 +942,20 @@ fn capture_crop_rgba_packet(
         } else {
             None
         }
+        }
+        }
+    };
+    if let Some(hwnd) = pill_hwnd {
+        set_pill_capture_excluded(hwnd, false);
     }
+    result
 }
 
 /// Applies native Windows DWM region clipping strictly inside the pill's
-/// rounded capsule (and its open panel, if any), ensures `WDA_EXCLUDEFROMCAPTURE`
-/// is set on `pill_hwnd`, and returns a raw binary `tauri::ipc::Response`
-/// containing the 2x-downsampled RGBA desktop crop underneath the pill.
+/// rounded capsule (and its open panel, if any), and returns a raw binary
+/// `tauri::ipc::Response` containing the 2x-downsampled RGBA desktop crop
+/// underneath the pill. The pill stays capturable (`WDA_NONE`) except around
+/// our own `BitBlt`, so Snipping Tool and friends keep seeing it.
 #[tauri::command]
 pub fn set_pill_blur_region(
     app: AppHandle,
@@ -968,8 +981,6 @@ pub fn set_pill_blur_region(
     if scale <= 0.0 || pill_w <= 0.0 || pill_h <= 0.0 {
         return Response::new(Vec::new());
     }
-
-    ensure_pill_excluded_from_capture(HWND(hwnd.0));
 
     let left = (pill_x * scale).round() as i32;
     let top = (pill_y * scale).round() as i32;
@@ -1078,6 +1089,7 @@ pub fn set_pill_blur_region(
     let phys_h = (crop_log_h * scale).round().max(2.0) as i32;
 
     let packet = capture_crop_rgba_packet(
+        Some(HWND(hwnd.0)),
         crop_log_x,
         crop_log_y,
         crop_log_w,
@@ -1231,10 +1243,12 @@ pub fn build_pill(app: &AppHandle) -> tauri::Result<()> {
         .build()?;
     // The room around the pill passes the pointer through from the very
     // first moment, so nothing underneath is ever unreachable by it.
+    // The pill stays capturable (WDA_NONE) so screenshots keep seeing it;
+    // capture exclusion is applied only around our own BitBlt reads.
     if let Some(window) = app.get_webview_window(PILL) {
         let _ = window.set_ignore_cursor_events(true);
         if let Ok(hwnd) = window.hwnd() {
-            ensure_pill_excluded_from_capture(HWND(hwnd.0));
+            set_pill_capture_excluded(HWND(hwnd.0), false);
         }
     }
     Ok(())

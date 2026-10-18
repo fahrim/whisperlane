@@ -192,6 +192,24 @@ export function Picker({
     } else if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       choose(options[active].code);
+    } else if (
+      event.key.length === 1 &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.altKey
+    ) {
+      const char = event.key.toLowerCase();
+      const nextIndex = options.findIndex(
+        (opt, idx) => idx > active && opt.label.toLowerCase().startsWith(char),
+      );
+      const matchIndex =
+        nextIndex !== -1
+          ? nextIndex
+          : options.findIndex((opt) => opt.label.toLowerCase().startsWith(char));
+      if (matchIndex !== -1) {
+        event.preventDefault();
+        setActive(matchIndex);
+      }
     }
   }
 

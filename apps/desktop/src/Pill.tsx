@@ -536,14 +536,23 @@ export function Pill() {
 
   // Continuously sample the live desktop behind the pill while visible so
   // switching windows (Alt+Tab), moving other windows underneath the pill,
-  // or scrolling behind it adapts the glass backdrop in real time. Hash
-  // deduplication in Rust makes unchanged frames a zero-allocation no-op.
+  // or scrolling behind it adapts the glass backdrop in real time.
+  //
+  // Driven by `requestAnimationFrame` rather than a fixed interval: sampling
+  // is aligned with the display's refresh (60/120/144 Hz), stops on its own
+  // when the webview is hidden or occluded, and `blurBusyRef` provides
+  // backpressure — a frame whose capture is still in flight is skipped, so a
+  // slow machine degrades its sample rate instead of queueing IPC calls.
+  // Unchanged frames are deduplicated by hash in Rust and cost no upload.
   useEffect(() => {
     if (phase === "idle") return;
-    const timer = window.setInterval(() => {
+    let frame = 0;
+    const tick = () => {
       syncBlurRegion(false);
-    }, 33);
-    return () => window.clearInterval(timer);
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
   }, [phase, syncBlurRegion]);
 
   async function press(command: TakeCommand) {

@@ -17,8 +17,8 @@ use windows::Win32::Graphics::Dwm::{
 use windows::Win32::Graphics::Gdi::{
     BitBlt, CombineRgn, CreateCompatibleDC, CreateDIBSection, CreateRoundRectRgn, DeleteDC,
     DeleteObject, EnumDisplayMonitors, GdiFlush, GetDC, GetMonitorInfoW, ReleaseDC, SelectObject,
-    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HDC, HMONITOR, MONITORINFO, RGN_OR,
-    SRCCOPY,
+    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP, HDC, HMONITOR, MONITORINFO,
+    RGN_OR, SRCCOPY,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetCursorPos, SetWindowDisplayAffinity, SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER,
@@ -667,6 +667,11 @@ pub fn set_pill_panel(app: AppHandle, required_height: f64) -> Option<PanelPlace
 static LAST_BACKDROP_HASH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static EXCLUDED_PILL_HWND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
 
+/// `[hwnd, pill l/t/r/b, pill radius, panel l/t/r/b, panel diameter]` in
+/// physical pixels — the last shape handed to `DwmEnableBlurBehindWindow`.
+type RegionKey = [isize; 11];
+static LAST_BLUR_REGION: Mutex<Option<RegionKey>> = Mutex::new(None);
+
 fn invalidate_backdrop_hash() {
     LAST_BACKDROP_HASH.store(0, Ordering::Relaxed);
 }
@@ -702,6 +707,32 @@ fn ensure_pill_excluded_from_capture(hwnd: HWND) {
 /// When `force` is `false` and the 64-bit FNV-1a content hash matches the
 /// previous frame, returns `Some(Vec::new())` (`0` bytes) so the frontend
 /// skips canvas updates completely.
+struct CapturePool {
+    mem_dc: HDC,
+    dib: HBITMAP,
+    bits_ptr: *mut std::ffi::c_void,
+    capacity_w: i32,
+    capacity_h: i32,
+    packet_buf: Vec<u8>,
+}
+
+unsafe impl Send for CapturePool {}
+
+impl Drop for CapturePool {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.dib.is_invalid() {
+                let _ = DeleteObject(self.dib);
+            }
+            if !self.mem_dc.is_invalid() {
+                let _ = DeleteDC(self.mem_dc);
+            }
+        }
+    }
+}
+
+static CAPTURE_POOL: Mutex<Option<CapturePool>> = Mutex::new(None);
+
 fn encode_downsampled_rgba_packet(
     bgra: &[u8],
     src_w: usize,
@@ -712,36 +743,46 @@ fn encode_downsampled_rgba_packet(
     crop_log_w: f64,
     crop_log_h: f64,
     force: bool,
+    out_buf: &mut Vec<u8>,
 ) -> Option<Vec<u8>> {
     if src_w == 0 || src_h == 0 || bgra.len() < src_h.saturating_sub(1) * src_stride + src_w * 4 {
         return None;
     }
-    let out_w = (src_w / 2).max(1);
-    let out_h = (src_h / 2).max(1);
+    // Balanced 2x area-downsampling: preserves fine desktop details and
+    // high-frequency contrast for crisp meniscus lens refraction while cutting
+    // memory bandwidth by 75% compared to native raw captures.
+    const SCALE: usize = 2;
+    let out_w = (src_w / SCALE).max(1);
+    let out_h = (src_h / SCALE).max(1);
     let rgba_bytes = out_w * out_h * 4;
-    let mut packet = vec![0u8; 24 + rgba_bytes];
-    packet[0..4].copy_from_slice(&(crop_log_x as f32).to_le_bytes());
-    packet[4..8].copy_from_slice(&(crop_log_y as f32).to_le_bytes());
-    packet[8..12].copy_from_slice(&(crop_log_w as f32).to_le_bytes());
-    packet[12..16].copy_from_slice(&(crop_log_h as f32).to_le_bytes());
-    packet[16..20].copy_from_slice(&(out_w as u32).to_le_bytes());
-    packet[20..24].copy_from_slice(&(out_h as u32).to_le_bytes());
+    let total_bytes = 24 + rgba_bytes;
+
+    out_buf.resize(total_bytes, 0);
+    out_buf[0..4].copy_from_slice(&(crop_log_x as f32).to_le_bytes());
+    out_buf[4..8].copy_from_slice(&(crop_log_y as f32).to_le_bytes());
+    out_buf[8..12].copy_from_slice(&(crop_log_w as f32).to_le_bytes());
+    out_buf[12..16].copy_from_slice(&(crop_log_h as f32).to_le_bytes());
+    out_buf[16..20].copy_from_slice(&(out_w as u32).to_le_bytes());
+    out_buf[20..24].copy_from_slice(&(out_h as u32).to_le_bytes());
 
     let mut hash: u64 = 0xcbf29ce484222325;
     for out_row in 0..out_h {
-        let src_y0 = (out_row * 2).min(src_h - 1);
+        let src_y0 = out_row * SCALE;
         let src_y1 = (src_y0 + 1).min(src_h - 1);
         let row0 = src_y0 * src_stride;
         let row1 = src_y1 * src_stride;
         let dst_row = 24 + out_row * out_w * 4;
+
         for out_col in 0..out_w {
-            let src_x0 = (out_col * 2).min(src_w - 1);
+            let src_x0 = out_col * SCALE;
             let src_x1 = (src_x0 + 1).min(src_w - 1);
+
             let p00 = row0 + src_x0 * 4;
             let p01 = row0 + src_x1 * 4;
             let p10 = row1 + src_x0 * 4;
             let p11 = row1 + src_x1 * 4;
 
+            // 2x2 box average:
             let b = ((bgra[p00] as u32
                 + bgra[p01] as u32
                 + bgra[p10] as u32
@@ -762,10 +803,10 @@ fn encode_downsampled_rgba_packet(
                 >> 2) as u8;
 
             let d = dst_row + out_col * 4;
-            packet[d] = r;
-            packet[d + 1] = g;
-            packet[d + 2] = b;
-            packet[d + 3] = 255;
+            out_buf[d] = r;
+            out_buf[d + 1] = g;
+            out_buf[d + 2] = b;
+            out_buf[d + 3] = 255;
 
             if (out_col & 1) == 0 {
                 let packed = (((r >> 2) as u64) << 16)
@@ -785,7 +826,7 @@ fn encode_downsampled_rgba_packet(
     if !force && prev_hash == combined_hash && prev_hash != 0 {
         return Some(Vec::new());
     }
-    Some(packet)
+    Some(out_buf.clone())
 }
 
 fn capture_crop_rgba_packet(
@@ -802,75 +843,99 @@ fn capture_crop_rgba_packet(
     if w <= 0 || h <= 0 {
         return None;
     }
-    // SAFETY: Standard Win32 GDI crop capture of `(x, y, w, h)` into a top-down
-    // 32-bit DIB section. Because the pill window carries
-    // `WDA_EXCLUDEFROMCAPTURE`, DWM composites the screen without the pill in
-    // GPU hardware.
+    let mut pool_guard = CAPTURE_POOL.lock().ok()?;
+
+    // SAFETY: Win32 GDI crop capture of `(x, y, w, h)` via persistent reusable DIB section.
+    // Because the pill window carries `WDA_EXCLUDEFROMCAPTURE`, DWM composites the screen
+    // without the pill in GPU hardware without any self-capture flickering or DXGI locks.
     unsafe {
         let screen_dc = GetDC(HWND(std::ptr::null_mut()));
         if screen_dc.is_invalid() {
             return None;
         }
-        let mem_dc = CreateCompatibleDC(screen_dc);
-        if mem_dc.is_invalid() {
-            let _ = ReleaseDC(HWND(std::ptr::null_mut()), screen_dc);
-            return None;
+
+        let pool = pool_guard.get_or_insert_with(|| {
+            let mem_dc = CreateCompatibleDC(screen_dc);
+            CapturePool {
+                mem_dc,
+                dib: HBITMAP::default(),
+                bits_ptr: std::ptr::null_mut(),
+                capacity_w: 0,
+                capacity_h: 0,
+                packet_buf: Vec::with_capacity(64 * 1024),
+            }
+        });
+
+        if pool.mem_dc.is_invalid() {
+            pool.mem_dc = CreateCompatibleDC(screen_dc);
         }
-        let bmi = BITMAPINFO {
-            bmiHeader: BITMAPINFOHEADER {
-                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: w,
-                biHeight: -h,
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB.0,
+
+        // Reallocate the persistent DIB section only if requested dimensions exceed capacity.
+        if pool.dib.is_invalid() || w > pool.capacity_w || h > pool.capacity_h {
+            if !pool.dib.is_invalid() {
+                let _ = DeleteObject(pool.dib);
+                pool.dib = HBITMAP::default();
+            }
+            let new_cap_w = w.max(pool.capacity_w).max(512);
+            let new_cap_h = h.max(pool.capacity_h).max(384);
+            let bmi = BITMAPINFO {
+                bmiHeader: BITMAPINFOHEADER {
+                    biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                    biWidth: new_cap_w,
+                    biHeight: -new_cap_h,
+                    biPlanes: 1,
+                    biBitCount: 32,
+                    biCompression: BI_RGB.0,
+                    ..Default::default()
+                },
                 ..Default::default()
-            },
-            ..Default::default()
-        };
-        let mut bits_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
-        let Ok(dib) = CreateDIBSection(
-            screen_dc,
-            &bmi,
-            DIB_RGB_COLORS,
-            &raw mut bits_ptr,
-            None,
-            0,
-        ) else {
-            let _ = DeleteDC(mem_dc);
-            let _ = ReleaseDC(HWND(std::ptr::null_mut()), screen_dc);
-            return None;
-        };
-        if dib.is_invalid() || bits_ptr.is_null() {
-            let _ = DeleteDC(mem_dc);
+            };
+            let mut bits_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+            if let Ok(dib) = CreateDIBSection(
+                screen_dc,
+                &bmi,
+                DIB_RGB_COLORS,
+                &raw mut bits_ptr,
+                None,
+                0,
+            ) {
+                if !dib.is_invalid() && !bits_ptr.is_null() {
+                    let _ = SelectObject(pool.mem_dc, dib);
+                    pool.dib = dib;
+                    pool.bits_ptr = bits_ptr;
+                    pool.capacity_w = new_cap_w;
+                    pool.capacity_h = new_cap_h;
+                }
+            }
+        }
+
+        if pool.dib.is_invalid() || pool.bits_ptr.is_null() {
             let _ = ReleaseDC(HWND(std::ptr::null_mut()), screen_dc);
             return None;
         }
-        let old = SelectObject(mem_dc, dib);
-        let blt_ok = BitBlt(mem_dc, 0, 0, w, h, screen_dc, x, y, SRCCOPY).is_ok();
+
+        let blt_ok = BitBlt(pool.mem_dc, 0, 0, w, h, screen_dc, x, y, SRCCOPY).is_ok();
         let _ = GdiFlush();
-        let byte_len = (w as usize) * (h as usize) * 4;
-        let out = if blt_ok {
-            let slice = std::slice::from_raw_parts(bits_ptr as *const u8, byte_len);
+        let _ = ReleaseDC(HWND(std::ptr::null_mut()), screen_dc);
+
+        if blt_ok {
+            let byte_len = (pool.capacity_w as usize) * (h as usize) * 4;
+            let slice = std::slice::from_raw_parts(pool.bits_ptr as *const u8, byte_len);
             encode_downsampled_rgba_packet(
                 slice,
                 w as usize,
                 h as usize,
-                (w as usize) * 4,
+                (pool.capacity_w as usize) * 4,
                 crop_log_x,
                 crop_log_y,
                 crop_log_w,
                 crop_log_h,
                 force,
+                &mut pool.packet_buf,
             )
         } else {
             None
-        };
-        let _ = SelectObject(mem_dc, old);
-        let _ = DeleteObject(dib);
-        let _ = DeleteDC(mem_dc);
-        let _ = ReleaseDC(HWND(std::ptr::null_mut()), screen_dc);
-        out
+        }
     }
 }
 
@@ -916,25 +981,61 @@ pub fn set_pill_blur_region(
     let mut log_max_x = pill_x + pill_w;
     let mut log_max_y = pill_y + pill_h;
 
+    // Physical panel rect + corner diameter, when a panel is open.
+    let mut panel_phys = [0i32; 5];
+    if let (Some(px), Some(py), Some(pw), Some(ph)) = (panel_x, panel_y, panel_w, panel_h) {
+        if pw > 0.0 && ph > 0.0 {
+            log_min_x = log_min_x.min(px);
+            log_min_y = log_min_y.min(py);
+            log_max_x = log_max_x.max(px + pw);
+            log_max_y = log_max_y.max(py + ph);
+            panel_phys = [
+                (px * scale).round() as i32,
+                (py * scale).round() as i32,
+                ((px + pw) * scale).round() as i32,
+                ((py + ph) * scale).round() as i32,
+                ((panel_r.unwrap_or(20.0) * 2.0) * scale).round() as i32,
+            ];
+        }
+    }
+
+    // The sampling loop calls this every display frame; the region itself
+    // only changes when the pill or panel geometry does. Rebuilding the HRGN
+    // and re-submitting it to DWM is skipped unless the shape moved.
+    let region_key: RegionKey = [
+        hwnd.0 as isize,
+        left as isize,
+        top as isize,
+        right as isize,
+        bottom as isize,
+        radius as isize,
+        panel_phys[0] as isize,
+        panel_phys[1] as isize,
+        panel_phys[2] as isize,
+        panel_phys[3] as isize,
+        panel_phys[4] as isize,
+    ];
+    let region_changed = LAST_BLUR_REGION
+        .lock()
+        .map(|mut last| {
+            if *last == Some(region_key) {
+                false
+            } else {
+                *last = Some(region_key);
+                true
+            }
+        })
+        .unwrap_or(true);
+
     // SAFETY: Win32 GDI region and DWM calls operate on our own HWND; any
     // created HRGN is deleted immediately after DwmEnableBlurBehindWindow
     // copies it.
-    unsafe {
-        let pill_rgn = CreateRoundRectRgn(left, top, right, bottom, radius, radius);
-        if !pill_rgn.is_invalid() {
-            if let (Some(px), Some(py), Some(pw), Some(ph)) = (panel_x, panel_y, panel_w, panel_h)
-            {
-                if pw > 0.0 && ph > 0.0 {
-                    log_min_x = log_min_x.min(px);
-                    log_min_y = log_min_y.min(py);
-                    log_max_x = log_max_x.max(px + pw);
-                    log_max_y = log_max_y.max(py + ph);
-
-                    let p_left = (px * scale).round() as i32;
-                    let p_top = (py * scale).round() as i32;
-                    let p_right = ((px + pw) * scale).round() as i32;
-                    let p_bottom = ((py + ph) * scale).round() as i32;
-                    let p_diam = ((panel_r.unwrap_or(20.0) * 2.0) * scale).round() as i32;
+    if region_changed {
+        unsafe {
+            let pill_rgn = CreateRoundRectRgn(left, top, right, bottom, radius, radius);
+            if !pill_rgn.is_invalid() {
+                let [p_left, p_top, p_right, p_bottom, p_diam] = panel_phys;
+                if p_right > p_left && p_bottom > p_top {
                     let panel_rgn =
                         CreateRoundRectRgn(p_left, p_top, p_right, p_bottom, p_diam, p_diam);
                     if !panel_rgn.is_invalid() {
@@ -942,16 +1043,16 @@ pub fn set_pill_blur_region(
                         let _ = DeleteObject(panel_rgn);
                     }
                 }
-            }
 
-            let bb = DWM_BLURBEHIND {
-                dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
-                fEnable: true.into(),
-                hRgnBlur: pill_rgn,
-                fTransitionOnMaximized: false.into(),
-            };
-            let _ = DwmEnableBlurBehindWindow(HWND(hwnd.0), &bb);
-            let _ = DeleteObject(pill_rgn);
+                let bb = DWM_BLURBEHIND {
+                    dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
+                    fEnable: true.into(),
+                    hRgnBlur: pill_rgn,
+                    fTransitionOnMaximized: false.into(),
+                };
+                let _ = DwmEnableBlurBehindWindow(HWND(hwnd.0), &bb);
+                let _ = DeleteObject(pill_rgn);
+            }
         }
     }
 
@@ -1606,6 +1707,7 @@ mod tests {
     fn live_crop_capture_produces_valid_rgba_binary_packet() {
         invalidate_backdrop_hash();
         let synthetic_bgra = vec![128u8; 320 * 88 * 4];
+        let mut buf = Vec::new();
         let packet = encode_downsampled_rgba_packet(
             &synthetic_bgra,
             320,
@@ -1616,6 +1718,7 @@ mod tests {
             352.0,
             88.0,
             true,
+            &mut buf,
         )
         .expect("RGBA packet encoding should succeed");
         let w = u32::from_le_bytes(packet[16..20].try_into().unwrap());
@@ -1634,6 +1737,7 @@ mod tests {
             352.0,
             88.0,
             false,
+            &mut buf,
         )
         .expect("unchanged frame should return empty delta Vec");
         assert!(delta.is_empty());

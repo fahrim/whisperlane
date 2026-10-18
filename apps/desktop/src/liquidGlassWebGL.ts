@@ -56,7 +56,7 @@ uniform float u_blurPx;
 
 vec3 sampleBlurred(vec2 baseUV, vec2 stepUV) {
   // 13-tap 2-ring isotropic Gaussian disk kernel leveraging hardware bilinear
-  // filtering for smooth, real-time backdrop blur.
+  // filtering for silky-smooth, premium backdrop blur and meniscus refraction.
   vec3 sum = texture2D(u_tex, baseUV).rgb * 0.22;
 
   vec2 r1 = stepUV * 0.52;
@@ -171,7 +171,7 @@ function getOrInitGlState(canvas: HTMLCanvasElement): GlState | null {
     antialias: false,
     depth: false,
     stencil: false,
-    preserveDrawingBuffer: false,
+    preserveDrawingBuffer: true,
     powerPreference: "high-performance",
   });
   if (!gl) {

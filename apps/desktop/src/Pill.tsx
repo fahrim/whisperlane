@@ -238,6 +238,7 @@ export function Pill() {
   const phase: Phase = status?.phase ?? "idle";
   const isRecording = phase === "listening";
   const isProcessing = phase === "thinking";
+  const liveGlass = (settings?.glass ?? "live") !== "performance";
   const pillBoxRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const copiedTimer = useRef<number | null>(null);
@@ -319,16 +320,17 @@ export function Pill() {
         panelH: panelRect ? panelRect.height : null,
         panelR: panelRect ? panelRadius : null,
         force,
+        capture: liveGlass,
       })
         .then((packet) => {
-          applyBackdropPacket(packet);
+          if (liveGlass) applyBackdropPacket(packet);
         })
         .catch(() => {})
         .finally(() => {
           blurBusyRef.current = false;
         });
     },
-    [applyBackdropPacket, panel, placement],
+    [applyBackdropPacket, liveGlass, panel, placement],
   );
 
   /**
@@ -388,7 +390,9 @@ export function Pill() {
     // stopped.
     if (dragBusy.current) return;
     dragBusy.current = true;
-    const pillRect = pillBoxRef.current?.getBoundingClientRect();
+    const pillRect = liveGlass
+      ? pillBoxRef.current?.getBoundingClientRect()
+      : null;
     void invoke<ArrayBuffer>("continue_pill_drag", {
       pillX: pillRect ? pillRect.left : null,
       pillY: pillRect ? pillRect.top : null,
@@ -396,7 +400,7 @@ export function Pill() {
       pillH: pillRect ? pillRect.height : null,
     })
       .then((packet) => {
-        applyBackdropPacket(packet);
+        if (liveGlass) applyBackdropPacket(packet);
       })
       .catch(() => {})
       .finally(() => {
@@ -434,6 +438,9 @@ export function Pill() {
     const unlistenLevel = listen<number>("audio-level", (event) => {
       if (alive) setAudioLevel(event.payload);
     });
+    const unlistenSettings = listen<Settings>("settings-changed", (event) => {
+      if (alive) setSettings(event.payload);
+    });
     invoke<PipelineStatus>("get_pipeline_state")
       .then((state) => {
         if (alive) setStatus(state);
@@ -453,6 +460,7 @@ export function Pill() {
       alive = false;
       void unlisten.then((off) => off());
       void unlistenLevel.then((off) => off());
+      void unlistenSettings.then((off) => off());
     };
   }, []);
 
@@ -545,7 +553,7 @@ export function Pill() {
   // slow machine degrades its sample rate instead of queueing IPC calls.
   // Unchanged frames are deduplicated by hash in Rust and cost no upload.
   useEffect(() => {
-    if (phase === "idle") return;
+    if (phase === "idle" || !liveGlass) return;
     let frame = 0;
     const tick = () => {
       syncBlurRegion(false);
@@ -553,7 +561,7 @@ export function Pill() {
     };
     frame = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(frame);
-  }, [phase, syncBlurRegion]);
+  }, [liveGlass, phase, syncBlurRegion]);
 
   async function press(command: TakeCommand) {
     try {
@@ -608,6 +616,7 @@ export function Pill() {
       data-phase={phase}
       data-panel={placement ?? undefined}
       data-align={alignEnd ? "end" : "start"}
+      data-glass={liveGlass ? "live" : "performance"}
       data-glass-probe={GLASS_PROBE ? "" : undefined}
     >
       <LiquidRefraction />

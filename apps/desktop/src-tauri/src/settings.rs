@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_autostart::ManagerExt;
 
 use crate::hotkey::{apply_binding, Hotkey};
@@ -131,6 +131,21 @@ impl Theme {
     }
 }
 
+/// How the pill's glass is drawn.
+///
+/// `Live` samples the desktop under the pill every display frame and
+/// refracts it on the GPU — the product's intended look. `Performance`
+/// stops the sampling entirely (no screen capture, no IPC, no WebGL
+/// uploads) and paints a static frosted material instead, for machines
+/// where the live glass costs more than it is worth.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum GlassMode {
+    #[default]
+    Live,
+    Performance,
+}
+
 /// The persisted set. Unknown or missing fields fall back to defaults so
 /// a settings file written by another version still loads.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -159,6 +174,8 @@ pub struct Settings {
     pub start_with_windows: bool,
     /// Whether the window follows the system theme or the user's own.
     pub theme: Theme,
+    /// Live desktop glass, or the static performance material.
+    pub glass: GlassMode,
 }
 
 impl Default for Settings {
@@ -174,6 +191,7 @@ impl Default for Settings {
             onboarded: false,
             start_with_windows: false,
             theme: Theme::System,
+            glass: GlassMode::Live,
         }
     }
 }
@@ -381,6 +399,25 @@ pub fn set_theme(app: AppHandle, theme: Theme) -> Settings {
     updated
 }
 
+/// Event every window receives when a setting another window renders
+/// has changed. The payload is the whole updated `Settings`.
+pub const SETTINGS_CHANGED: &str = "settings-changed";
+
+/// Switches between live desktop glass and performance mode.
+///
+/// Broadcast as well as returned: the change is made in the settings
+/// window, but it is the pill window that has to stop (or resume)
+/// sampling the desktop, and it must do so without a restart.
+#[tauri::command]
+pub fn set_glass_mode(app: AppHandle, glass: GlassMode) -> Settings {
+    let updated = persist(&app, |settings| settings.glass = glass);
+    if let Ok(path) = settings_path(&app) {
+        let _ = write_settings(&path, &updated);
+    }
+    let _ = app.emit(SETTINGS_CHANGED, &updated);
+    updated
+}
+
 /// One offered theme, as the settings surface needs it.
 #[derive(Debug, Clone, Serialize)]
 pub struct ThemeChoice {
@@ -486,6 +523,7 @@ mod tests {
             onboarded: true,
             start_with_windows: true,
             theme: Theme::Dark,
+            glass: GlassMode::Performance,
         };
         write_settings(&path, &settings).unwrap();
         assert_eq!(read_settings(&path), settings);
@@ -561,6 +599,20 @@ mod tests {
         };
         write_settings(&path, &seen).unwrap();
         assert!(read_settings(&path).onboarded, "a second run must not");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn live_glass_is_the_default_and_older_files_keep_it() {
+        // Performance mode is an opt-out for weak machines, never the
+        // first impression; a file written before the setting existed
+        // loads with the live glass.
+        assert_eq!(Settings::default().glass, GlassMode::Live);
+        let path = std::env::temp_dir().join("whisperlane-settings-glass.json");
+        std::fs::write(&path, r#"{"theme":"dark"}"#).unwrap();
+        assert_eq!(read_settings(&path).glass, GlassMode::Live);
+        std::fs::write(&path, r#"{"glass":"performance"}"#).unwrap();
+        assert_eq!(read_settings(&path).glass, GlassMode::Performance);
         let _ = std::fs::remove_file(&path);
     }
 

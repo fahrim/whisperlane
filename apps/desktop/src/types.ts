@@ -39,6 +39,8 @@ export interface Settings {
   onboarded: boolean;
   start_with_windows: boolean;
   theme: "system" | "light" | "dark";
+  /** Live desktop-refracting glass, or the static performance material. */
+  glass: "live" | "performance";
 }
 
 export interface ThemeChoice {

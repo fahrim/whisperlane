@@ -99,6 +99,7 @@
 }
 
 .lgs-orb .lgs-desktop,
+.pill[data-glass="performance"] .lgs-desktop,
 .pill[data-glass-probe] .lgs-desktop {
   display: none;
 }
@@ -126,6 +127,29 @@
     );
   backdrop-filter: blur(4.5px) saturate(135%);
   -webkit-backdrop-filter: blur(4.5px) saturate(135%);
+}
+
+/* Performance mode: no desktop capture canvas sits underneath, so the body
+   carries a denser frosted navy-indigo material with soft ambient bloom to
+   keep contrast and optical depth at zero CPU/GPU sampling cost. */
+.pill[data-glass="performance"] .lgs-body {
+  background:
+    radial-gradient(
+      120% 190% at 22% 0%,
+      rgb(124 102 220 / 28%) 0%,
+      transparent 62%
+    ),
+    radial-gradient(
+      115% 170% at 84% 100%,
+      rgb(56 152 236 / 22%) 0%,
+      transparent 60%
+    ),
+    linear-gradient(
+      180deg,
+      rgb(var(--lgs-body-high) / 84%) 0%,
+      rgb(var(--lgs-body-mid) / 89%) 52%,
+      rgb(var(--lgs-body-low) / 93%) 100%
+    );
 }
 
 /* 4 — Inner volume. Smooth, continuous depth from the curved walls into

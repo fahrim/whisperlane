@@ -956,6 +956,7 @@ pub fn set_pill_blur_region(
     panel_h: Option<f64>,
     panel_r: Option<f64>,
     force: Option<bool>,
+    capture: Option<bool>,
 ) -> Response {
     let Some(window) = app.get_webview_window(PILL) else {
         return Response::new(Vec::new());
@@ -1054,6 +1055,12 @@ pub fn set_pill_blur_region(
                 let _ = DeleteObject(pill_rgn);
             }
         }
+    }
+
+    // Performance mode: the region above still follows the shape, but the
+    // desktop is never read — no BitBlt, no encode, no payload.
+    if capture == Some(false) {
+        return Response::new(Vec::new());
     }
 
     let Some(((win_phys_x, win_phys_y), _)) = window_rect(&window) else {

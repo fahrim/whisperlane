@@ -22,8 +22,8 @@ use models::{download_model, ensure_model_ready, get_download, list_models, Mode
 use pipeline::{get_pipeline_state, PipelineState, PipelineStatus};
 use settings::{
     complete_onboarding, get_settings, is_start_with_windows, list_languages, list_themes, load,
-    set_hotkey, set_language, set_microphone, set_model, set_start_with_windows, set_theme,
-    SettingsState,
+    set_glass_mode, set_hotkey, set_language, set_microphone, set_model, set_start_with_windows,
+    set_theme, SettingsState,
 };
 use stt::{get_stt_status, sweep_idle, SttState};
 use windows::{
@@ -83,6 +83,7 @@ pub fn run() {
             set_start_with_windows,
             is_start_with_windows,
             set_theme,
+            set_glass_mode,
             list_themes
         ])
         // The settings window is the app's only settings surface, so it

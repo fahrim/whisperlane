@@ -497,6 +497,15 @@ function App() {
     }
   }
 
+  async function chooseGlass(live: boolean) {
+    const glass = live ? "live" : "performance";
+    try {
+      setSettings(await invoke<Settings>("set_glass_mode", { glass }));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   async function chooseStartWithWindows(start: boolean): Promise<boolean> {
     setStartBusy(true);
     try {
@@ -1038,40 +1047,65 @@ function App() {
                 )}
 
                 {showAppearanceCard && (
-                  <section
-                    className="settings-card settings-card-inline"
-                    aria-label="Appearance"
-                  >
-                    <div className="settings-card-icon">
-                      <SunIcon />
-                    </div>
-                    <div className="settings-card-body">
-                      <h2 className="settings-card-title">Appearance</h2>
-                      <p className="settings-card-desc">
-                        Choose how the app looks.
-                      </p>
-                    </div>
-                    <div className="settings-card-inline-control">
-                      <Picker
-                        label="Appearance"
-                        leadingIcon={
-                          settings.theme === "light" ? (
-                            <SunIcon size={15} />
-                          ) : (
-                            <MoonIcon />
-                          )
-                        }
-                        value={settings.theme}
-                        options={themes}
-                        onChange={chooseTheme}
-                        renderValue={(selected) =>
-                          settings.theme === "system"
-                            ? "Dark"
-                            : (selected?.label ?? "Dark")
-                        }
-                      />
-                    </div>
-                  </section>
+                  <>
+                    <section
+                      className="settings-card settings-card-inline"
+                      aria-label="Appearance"
+                    >
+                      <div className="settings-card-icon">
+                        <SunIcon />
+                      </div>
+                      <div className="settings-card-body">
+                        <h2 className="settings-card-title">Appearance</h2>
+                        <p className="settings-card-desc">
+                          Choose how the app looks.
+                        </p>
+                      </div>
+                      <div className="settings-card-inline-control">
+                        <Picker
+                          label="Appearance"
+                          leadingIcon={
+                            settings.theme === "light" ? (
+                              <SunIcon size={15} />
+                            ) : (
+                              <MoonIcon />
+                            )
+                          }
+                          value={settings.theme}
+                          options={themes}
+                          onChange={chooseTheme}
+                          renderValue={(selected) =>
+                            settings.theme === "system"
+                              ? "Dark"
+                              : (selected?.label ?? "Dark")
+                          }
+                        />
+                      </div>
+                    </section>
+
+                    <section
+                      className="settings-card settings-card-inline"
+                      aria-label="Live liquid glass"
+                    >
+                      <div className="settings-card-icon">
+                        <SparklesIcon />
+                      </div>
+                      <div className="settings-card-body">
+                        <h2 className="settings-card-title">Live liquid glass</h2>
+                        <p className="settings-card-desc">
+                          Real-time GPU lens refraction over the desktop. Turn off
+                          for a static frosted glass performance mode on slower machines.
+                        </p>
+                      </div>
+                      <div className="settings-card-inline-control">
+                        <Switch
+                          checked={(settings.glass ?? "live") !== "performance"}
+                          label="Live liquid glass"
+                          onChange={(next) => void chooseGlass(next)}
+                        />
+                      </div>
+                    </section>
+                  </>
                 )}
 
                 {showStartupCard && (

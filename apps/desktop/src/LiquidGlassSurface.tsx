@@ -167,8 +167,8 @@ export function LiquidLensDefs(): ReactElement {
       <defs>
         {(
           [
-            ["lgs-lens-capsule", capsuleHref, 11],
-            ["lgs-lens-orb", orbHref, 6],
+            ["lgs-lens-capsule", capsuleHref, 9],
+            ["lgs-lens-orb", orbHref, 5],
             ["lgs-probe-lens", capsuleHref, 26],
             ["lgs-probe-orb-lens", orbHref, 14],
           ] as const
@@ -220,6 +220,9 @@ export function LiquidGlassSurface({
   return (
     <div className={`lgs lgs-${geometry}`} aria-hidden="true">
       <div className="lgs-shadow" />
+      <div className="lgs-desktop">
+        {geometry !== "orb" && <canvas className="lgs-desktop-canvas" />}
+      </div>
       <div className="lgs-body" />
       <div className="lgs-tint" />
       <div className="lgs-volume" />

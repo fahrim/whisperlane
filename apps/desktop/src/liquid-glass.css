@@ -78,48 +78,77 @@
     0 12px 30px -10px rgb(var(--lgs-violet) / 14%);
 }
 
-/* 2 — Translucent body. A continuous, smooth navy-indigo glass body with
-   no abrupt dark horizontal band in the middle. */
+/* 1b — Desktop backdrop snapshot. On Windows 11, WebView2's CSS
+   `backdrop-filter` cannot sample native OS windows behind a transparent
+   HWND, and `DwmEnableBlurBehindWindow` no longer runs an Aero Gaussian
+   shader. By painting the cropped desktop snapshot inside `.lgs-desktop`
+   (with a 14px outer bleed clipped to `border-radius: inherit`), both the
+   controlled Gaussian blur and the SVG meniscus displacement lens bend the
+   actual desktop pixels underneath the capsule and panels. */
+.lgs-desktop {
+  overflow: hidden;
+}
+
+.lgs-desktop-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: var(--lgs-bg-w, 0px);
+  height: var(--lgs-bg-h, 0px);
+  transform: translate3d(var(--lgs-offset-x, 0px), var(--lgs-offset-y, 0px), 0);
+  filter: blur(4.2px) saturate(118%);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.lgs-orb .lgs-desktop,
+.pill[data-glass-probe] .lgs-desktop {
+  display: none;
+}
+
+/* 2 — Translucent body. A genuinely translucent navy-indigo liquid glass
+   body so the blurred desktop underneath remains clearly discernible
+   while preserving text contrast and droplet depth. */
 .lgs-body {
   background:
     radial-gradient(
       120% 180% at 25% 0%,
-      rgb(96 78 180 / 22%) 0%,
+      rgb(96 78 180 / 16%) 0%,
       transparent 60%
     ),
     radial-gradient(
       110% 160% at 82% 100%,
-      rgb(56 130 220 / 16%) 0%,
+      rgb(56 130 220 / 12%) 0%,
       transparent 58%
     ),
     linear-gradient(
       180deg,
-      rgb(var(--lgs-body-high) / 54%) 0%,
-      rgb(var(--lgs-body-mid) / 64%) 50%,
-      rgb(var(--lgs-body-low) / 72%) 100%
+      rgb(var(--lgs-body-high) / 34%) 0%,
+      rgb(var(--lgs-body-mid) / 42%) 50%,
+      rgb(var(--lgs-body-low) / 50%) 100%
     );
-  backdrop-filter: blur(22px) saturate(160%);
-  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  backdrop-filter: blur(4.5px) saturate(135%);
+  -webkit-backdrop-filter: blur(4.5px) saturate(135%);
 }
 
 /* 4 — Inner volume. Smooth, continuous depth from the curved walls into
-   the calm dark-indigo interior — no narrow center stripe, so every
-   inset shadow and gradient feather-blends seamlessly to the center. */
+   the calm dark-indigo interior — light enough to let the background
+   show through the center of the droplet. */
 .lgs-volume {
   background:
     radial-gradient(
       90% 120% at 50% 52%,
-      rgb(var(--lgs-deep) / 36%) 0%,
-      rgb(var(--lgs-deep) / 14%) 58%,
+      rgb(var(--lgs-deep) / 22%) 0%,
+      rgb(var(--lgs-deep) / 8%) 58%,
       transparent 90%
     ),
     linear-gradient(
       180deg,
-      rgb(255 255 255 / 10%) 0%,
-      rgb(196 181 253 / 3%) 26%,
+      rgb(255 255 255 / 8%) 0%,
+      rgb(196 181 253 / 2%) 26%,
       transparent 52%,
-      rgb(var(--lgs-violet) / 8%) 86%,
-      rgb(var(--lgs-blue) / 12%) 100%
+      rgb(var(--lgs-violet) / 6%) 86%,
+      rgb(var(--lgs-blue) / 10%) 100%
     );
 }
 
@@ -432,30 +461,30 @@
   background:
     radial-gradient(
       110% 120% at 22% 0%,
-      rgb(96 78 180 / 24%) 0%,
+      rgb(96 78 180 / 16%) 0%,
       transparent 58%
     ),
     radial-gradient(
       100% 110% at 88% 100%,
-      rgb(56 130 220 / 16%) 0%,
+      rgb(56 130 220 / 12%) 0%,
       transparent 56%
     ),
     linear-gradient(
       180deg,
-      rgb(var(--lgs-body-high) / 68%) 0%,
-      rgb(var(--lgs-body-mid) / 78%) 52%,
-      rgb(var(--lgs-body-low) / 84%) 100%
+      rgb(var(--lgs-body-high) / 38%) 0%,
+      rgb(var(--lgs-body-mid) / 46%) 52%,
+      rgb(var(--lgs-body-low) / 54%) 100%
     );
-  backdrop-filter: blur(26px) saturate(170%);
-  -webkit-backdrop-filter: blur(26px) saturate(170%);
+  backdrop-filter: blur(8px) saturate(140%);
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
 }
 
 .lgs-panel .lgs-volume {
   background:
     radial-gradient(
       84% 84% at 50% 54%,
-      rgb(var(--lgs-deep) / 34%) 0%,
-      rgb(var(--lgs-deep) / 14%) 62%,
+      rgb(var(--lgs-deep) / 20%) 0%,
+      rgb(var(--lgs-deep) / 8%) 62%,
       transparent 92%
     ),
     linear-gradient(
@@ -633,6 +662,7 @@
     background: rgb(20 21 30 / 96%);
   }
 
+  .lgs-desktop,
   .lgs-volume,
   .lgs-lens,
   .lgs-bevel,
@@ -648,6 +678,7 @@
     background: rgb(20 21 30 / 96%);
   }
 
+  .lgs-desktop,
   .lgs-volume,
   .lgs-lens,
   .lgs-bevel,

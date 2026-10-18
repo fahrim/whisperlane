@@ -8,16 +8,22 @@ use std::sync::atomic::Ordering;
 use std::sync::Mutex;
 
 use serde::Serialize;
+use tauri::ipc::Response;
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindowBuilder};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, POINT, RECT};
 use windows::Win32::Graphics::Dwm::{
     DwmEnableBlurBehindWindow, DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND,
 };
 use windows::Win32::Graphics::Gdi::{
-    CombineRgn, CreateRoundRectRgn, DeleteObject, EnumDisplayMonitors, GetMonitorInfoW, HDC,
-    HMONITOR, MONITORINFO, RGN_OR,
+    BitBlt, CombineRgn, CreateCompatibleDC, CreateDIBSection, CreateRoundRectRgn, DeleteDC,
+    DeleteObject, EnumDisplayMonitors, GdiFlush, GetDC, GetMonitorInfoW, ReleaseDC, SelectObject,
+    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HDC, HMONITOR, MONITORINFO, RGN_OR,
+    SRCCOPY,
 };
-use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetCursorPos, SetWindowDisplayAffinity, SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER,
+    WDA_EXCLUDEFROMCAPTURE,
+};
 
 use crate::pipeline::Phase;
 
@@ -410,6 +416,7 @@ pub fn begin_pill_drag(app: AppHandle) {
     else {
         return;
     };
+    invalidate_backdrop_hash();
     if let Some(state) = app.try_state::<PillDrag>() {
         *state.0.lock().expect("pill drag poisoned") = Some(DragState {
             window: (x, y),
@@ -422,16 +429,34 @@ pub fn begin_pill_drag(app: AppHandle) {
 /// Moves the pill to wherever the pointer has taken it.
 ///
 /// The cursor is read here rather than passed in from the interface, so
+/// Moves the pill to wherever the pointer has taken it, and returns the
+/// fresh live desktop backdrop at the new position in the same IPC round-trip.
+///
+/// The cursor is read here rather than passed in from the interface, so
 /// the position that gets clamped and the position that was measured are
-/// the same reading. Returns where the window ended up.
+/// the same reading.
 #[tauri::command]
-pub fn continue_pill_drag(app: AppHandle) -> Option<(f64, f64)> {
-    let window = app.get_webview_window(PILL)?;
-    let cursor = cursor_on_screen()?;
-    let state = app.try_state::<PillDrag>()?;
+pub fn continue_pill_drag(
+    app: AppHandle,
+    pill_x: Option<f64>,
+    pill_y: Option<f64>,
+    pill_w: Option<f64>,
+    pill_h: Option<f64>,
+) -> Response {
+    let Some(window) = app.get_webview_window(PILL) else {
+        return Response::new(Vec::new());
+    };
+    let Some(cursor) = cursor_on_screen() else {
+        return Response::new(Vec::new());
+    };
+    let Some(state) = app.try_state::<PillDrag>() else {
+        return Response::new(Vec::new());
+    };
     let (origin, grab) = {
         let mut drag = state.0.lock().expect("pill drag poisoned");
-        let drag = drag.as_mut()?;
+        let Some(drag) = drag.as_mut() else {
+            return Response::new(Vec::new());
+        };
         drag.touched = std::time::Instant::now();
         (drag.window, drag.grab)
     };
@@ -448,7 +473,27 @@ pub fn continue_pill_drag(app: AppHandle) -> Option<(f64, f64)> {
     }
     let (x, y) = clamp_pill_origin(desired, work_area(scale));
     place_window(&window, x, y, WINDOW_WIDTH, WINDOW_HEIGHT);
-    Some((x, y))
+
+    if let (Some(px), Some(py), Some(pw), Some(ph), Ok(hwnd)) =
+        (pill_x, pill_y, pill_w, pill_h, window.hwnd())
+    {
+        ensure_pill_excluded_from_capture(HWND(hwnd.0));
+        let crop_pad = 16.0;
+        let crop_log_x = (px - crop_pad).floor();
+        let crop_log_y = (py - crop_pad).floor();
+        let crop_log_w = ((px + pw + crop_pad).ceil() - crop_log_x).max(1.0);
+        let crop_log_h = ((py + ph + crop_pad).ceil() - crop_log_y).max(1.0);
+        let phys_x = (x * scale).round() as i32 + (crop_log_x * scale).round() as i32;
+        let phys_y = (y * scale).round() as i32 + (crop_log_y * scale).round() as i32;
+        let phys_w = (crop_log_w * scale).round().max(2.0) as i32;
+        let phys_h = (crop_log_h * scale).round().max(2.0) as i32;
+        if let Some(packet) = capture_crop_rgba_packet(
+            crop_log_x, crop_log_y, crop_log_w, crop_log_h, phys_x, phys_y, phys_w, phys_h, true,
+        ) {
+            return Response::new(packet);
+        }
+    }
+    Response::new(Vec::new())
 }
 
 /// Ends a drag. The pill stays where the last move put it.
@@ -598,6 +643,7 @@ pub fn set_pill_panel(app: AppHandle, required_height: f64) -> Option<PanelPlace
         0.0
     };
     let (_, (x, y, _width, _height)) = window_rect(&window)?;
+    invalidate_backdrop_hash();
     if extra <= 0.0 {
         place_window(&window, x, y, WINDOW_WIDTH, WINDOW_HEIGHT);
         *state.0.lock().expect("panel expansion poisoned") = None;
@@ -618,9 +664,220 @@ pub fn set_pill_panel(app: AppHandle, required_height: f64) -> Option<PanelPlace
     })
 }
 
-/// Applies native Windows DWM backdrop blur strictly inside the pill's
-/// rounded capsule (and its open panel, if any), leaving the surrounding
-/// window room completely unblurred and transparent.
+static LAST_BACKDROP_HASH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static EXCLUDED_PILL_HWND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+fn invalidate_backdrop_hash() {
+    LAST_BACKDROP_HASH.store(0, Ordering::Relaxed);
+}
+
+/// Marks the pill window with `WDA_EXCLUDEFROMCAPTURE` (`0x11`, Windows 10
+/// 2004+ / Windows 11) so DWM keeps the pill 100% visible on the monitor
+/// while excluding it in GPU hardware from desktop capture reads (`BitBlt`,
+/// DXGI, WGC). This eliminates self-capture in a single OS call across all
+/// monitors and DPI scales.
+fn ensure_pill_excluded_from_capture(hwnd: HWND) {
+    let raw = hwnd.0 as isize;
+    if raw == 0 || EXCLUDED_PILL_HWND.load(Ordering::Relaxed) == raw {
+        return;
+    }
+    if std::env::var("WHISPERLANE_GLASS_PROBE").as_deref() == Ok("1") {
+        return;
+    }
+    // SAFETY: `hwnd` is our own pill WebView2 window handle.
+    if unsafe { SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE) }.is_ok() {
+        EXCLUDED_PILL_HWND.store(raw, Ordering::Relaxed);
+    }
+}
+
+/// Binary packet layout returned over `tauri::ipc::Response`:
+/// - Bytes `0..4`:   `crop_log_x` (`f32`, little-endian)
+/// - Bytes `4..8`:   `crop_log_y` (`f32`, little-endian)
+/// - Bytes `8..12`:  `crop_log_w` (`f32`, little-endian)
+/// - Bytes `12..16`: `crop_log_h` (`f32`, little-endian)
+/// - Bytes `16..20`: `out_w` (`u32`, little-endian)
+/// - Bytes `20..24`: `out_h` (`u32`, little-endian)
+/// - Bytes `24..`:   top-down `RGBA` pixels (`out_w * out_h * 4` bytes)
+///
+/// When `force` is `false` and the 64-bit FNV-1a content hash matches the
+/// previous frame, returns `Some(Vec::new())` (`0` bytes) so the frontend
+/// skips canvas updates completely.
+fn encode_downsampled_rgba_packet(
+    bgra: &[u8],
+    src_w: usize,
+    src_h: usize,
+    src_stride: usize,
+    crop_log_x: f64,
+    crop_log_y: f64,
+    crop_log_w: f64,
+    crop_log_h: f64,
+    force: bool,
+) -> Option<Vec<u8>> {
+    if src_w == 0 || src_h == 0 || bgra.len() < src_h.saturating_sub(1) * src_stride + src_w * 4 {
+        return None;
+    }
+    let out_w = (src_w / 2).max(1);
+    let out_h = (src_h / 2).max(1);
+    let rgba_bytes = out_w * out_h * 4;
+    let mut packet = vec![0u8; 24 + rgba_bytes];
+    packet[0..4].copy_from_slice(&(crop_log_x as f32).to_le_bytes());
+    packet[4..8].copy_from_slice(&(crop_log_y as f32).to_le_bytes());
+    packet[8..12].copy_from_slice(&(crop_log_w as f32).to_le_bytes());
+    packet[12..16].copy_from_slice(&(crop_log_h as f32).to_le_bytes());
+    packet[16..20].copy_from_slice(&(out_w as u32).to_le_bytes());
+    packet[20..24].copy_from_slice(&(out_h as u32).to_le_bytes());
+
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for out_row in 0..out_h {
+        let src_y0 = (out_row * 2).min(src_h - 1);
+        let src_y1 = (src_y0 + 1).min(src_h - 1);
+        let row0 = src_y0 * src_stride;
+        let row1 = src_y1 * src_stride;
+        let dst_row = 24 + out_row * out_w * 4;
+        for out_col in 0..out_w {
+            let src_x0 = (out_col * 2).min(src_w - 1);
+            let src_x1 = (src_x0 + 1).min(src_w - 1);
+            let p00 = row0 + src_x0 * 4;
+            let p01 = row0 + src_x1 * 4;
+            let p10 = row1 + src_x0 * 4;
+            let p11 = row1 + src_x1 * 4;
+
+            let b = ((bgra[p00] as u32
+                + bgra[p01] as u32
+                + bgra[p10] as u32
+                + bgra[p11] as u32
+                + 2)
+                >> 2) as u8;
+            let g = ((bgra[p00 + 1] as u32
+                + bgra[p01 + 1] as u32
+                + bgra[p10 + 1] as u32
+                + bgra[p11 + 1] as u32
+                + 2)
+                >> 2) as u8;
+            let r = ((bgra[p00 + 2] as u32
+                + bgra[p01 + 2] as u32
+                + bgra[p10 + 2] as u32
+                + bgra[p11 + 2] as u32
+                + 2)
+                >> 2) as u8;
+
+            let d = dst_row + out_col * 4;
+            packet[d] = r;
+            packet[d + 1] = g;
+            packet[d + 2] = b;
+            packet[d + 3] = 255;
+
+            if (out_col & 1) == 0 {
+                let packed = (((r >> 2) as u64) << 16)
+                    | (((g >> 2) as u64) << 8)
+                    | ((b >> 2) as u64);
+                hash ^= packed;
+                hash = hash.wrapping_mul(0x100000001b3);
+            }
+        }
+    }
+
+    let combined_hash = hash
+        .wrapping_mul(0x100000001b3)
+        ^ ((out_w as u64) << 16)
+        ^ (out_h as u64);
+    let prev_hash = LAST_BACKDROP_HASH.swap(combined_hash, Ordering::Relaxed);
+    if !force && prev_hash == combined_hash && prev_hash != 0 {
+        return Some(Vec::new());
+    }
+    Some(packet)
+}
+
+fn capture_crop_rgba_packet(
+    crop_log_x: f64,
+    crop_log_y: f64,
+    crop_log_w: f64,
+    crop_log_h: f64,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    force: bool,
+) -> Option<Vec<u8>> {
+    if w <= 0 || h <= 0 {
+        return None;
+    }
+    // SAFETY: Standard Win32 GDI crop capture of `(x, y, w, h)` into a top-down
+    // 32-bit DIB section. Because the pill window carries
+    // `WDA_EXCLUDEFROMCAPTURE`, DWM composites the screen without the pill in
+    // GPU hardware.
+    unsafe {
+        let screen_dc = GetDC(HWND(std::ptr::null_mut()));
+        if screen_dc.is_invalid() {
+            return None;
+        }
+        let mem_dc = CreateCompatibleDC(screen_dc);
+        if mem_dc.is_invalid() {
+            let _ = ReleaseDC(HWND(std::ptr::null_mut()), screen_dc);
+            return None;
+        }
+        let bmi = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: w,
+                biHeight: -h,
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: BI_RGB.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut bits_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+        let Ok(dib) = CreateDIBSection(
+            screen_dc,
+            &bmi,
+            DIB_RGB_COLORS,
+            &raw mut bits_ptr,
+            None,
+            0,
+        ) else {
+            let _ = DeleteDC(mem_dc);
+            let _ = ReleaseDC(HWND(std::ptr::null_mut()), screen_dc);
+            return None;
+        };
+        if dib.is_invalid() || bits_ptr.is_null() {
+            let _ = DeleteDC(mem_dc);
+            let _ = ReleaseDC(HWND(std::ptr::null_mut()), screen_dc);
+            return None;
+        }
+        let old = SelectObject(mem_dc, dib);
+        let blt_ok = BitBlt(mem_dc, 0, 0, w, h, screen_dc, x, y, SRCCOPY).is_ok();
+        let _ = GdiFlush();
+        let byte_len = (w as usize) * (h as usize) * 4;
+        let out = if blt_ok {
+            let slice = std::slice::from_raw_parts(bits_ptr as *const u8, byte_len);
+            encode_downsampled_rgba_packet(
+                slice,
+                w as usize,
+                h as usize,
+                (w as usize) * 4,
+                crop_log_x,
+                crop_log_y,
+                crop_log_w,
+                crop_log_h,
+                force,
+            )
+        } else {
+            None
+        };
+        let _ = SelectObject(mem_dc, old);
+        let _ = DeleteObject(dib);
+        let _ = DeleteDC(mem_dc);
+        let _ = ReleaseDC(HWND(std::ptr::null_mut()), screen_dc);
+        out
+    }
+}
+
+/// Applies native Windows DWM region clipping strictly inside the pill's
+/// rounded capsule (and its open panel, if any), ensures `WDA_EXCLUDEFROMCAPTURE`
+/// is set on `pill_hwnd`, and returns a raw binary `tauri::ipc::Response`
+/// containing the 2x-downsampled RGBA desktop crop underneath the pill.
 #[tauri::command]
 pub fn set_pill_blur_region(
     app: AppHandle,
@@ -633,17 +890,20 @@ pub fn set_pill_blur_region(
     panel_w: Option<f64>,
     panel_h: Option<f64>,
     panel_r: Option<f64>,
-) {
+    force: Option<bool>,
+) -> Response {
     let Some(window) = app.get_webview_window(PILL) else {
-        return;
+        return Response::new(Vec::new());
     };
     let Ok(hwnd) = window.hwnd() else {
-        return;
+        return Response::new(Vec::new());
     };
     let scale = window.scale_factor().unwrap_or(1.0);
     if scale <= 0.0 || pill_w <= 0.0 || pill_h <= 0.0 {
-        return;
+        return Response::new(Vec::new());
     }
+
+    ensure_pill_excluded_from_capture(HWND(hwnd.0));
 
     let left = (pill_x * scale).round() as i32;
     let top = (pill_y * scale).round() as i32;
@@ -651,40 +911,78 @@ pub fn set_pill_blur_region(
     let bottom = ((pill_y + pill_h) * scale).round() as i32;
     let radius = (pill_h * scale).round() as i32;
 
+    let mut log_min_x = pill_x;
+    let mut log_min_y = pill_y;
+    let mut log_max_x = pill_x + pill_w;
+    let mut log_max_y = pill_y + pill_h;
+
     // SAFETY: Win32 GDI region and DWM calls operate on our own HWND; any
     // created HRGN is deleted immediately after DwmEnableBlurBehindWindow
     // copies it.
     unsafe {
         let pill_rgn = CreateRoundRectRgn(left, top, right, bottom, radius, radius);
-        if pill_rgn.is_invalid() {
-            return;
-        }
+        if !pill_rgn.is_invalid() {
+            if let (Some(px), Some(py), Some(pw), Some(ph)) = (panel_x, panel_y, panel_w, panel_h)
+            {
+                if pw > 0.0 && ph > 0.0 {
+                    log_min_x = log_min_x.min(px);
+                    log_min_y = log_min_y.min(py);
+                    log_max_x = log_max_x.max(px + pw);
+                    log_max_y = log_max_y.max(py + ph);
 
-        if let (Some(px), Some(py), Some(pw), Some(ph)) = (panel_x, panel_y, panel_w, panel_h) {
-            if pw > 0.0 && ph > 0.0 {
-                let p_left = (px * scale).round() as i32;
-                let p_top = (py * scale).round() as i32;
-                let p_right = ((px + pw) * scale).round() as i32;
-                let p_bottom = ((py + ph) * scale).round() as i32;
-                let p_diam = ((panel_r.unwrap_or(20.0) * 2.0) * scale).round() as i32;
-                let panel_rgn =
-                    CreateRoundRectRgn(p_left, p_top, p_right, p_bottom, p_diam, p_diam);
-                if !panel_rgn.is_invalid() {
-                    let _ = CombineRgn(pill_rgn, pill_rgn, panel_rgn, RGN_OR);
-                    let _ = DeleteObject(panel_rgn);
+                    let p_left = (px * scale).round() as i32;
+                    let p_top = (py * scale).round() as i32;
+                    let p_right = ((px + pw) * scale).round() as i32;
+                    let p_bottom = ((py + ph) * scale).round() as i32;
+                    let p_diam = ((panel_r.unwrap_or(20.0) * 2.0) * scale).round() as i32;
+                    let panel_rgn =
+                        CreateRoundRectRgn(p_left, p_top, p_right, p_bottom, p_diam, p_diam);
+                    if !panel_rgn.is_invalid() {
+                        let _ = CombineRgn(pill_rgn, pill_rgn, panel_rgn, RGN_OR);
+                        let _ = DeleteObject(panel_rgn);
+                    }
                 }
             }
-        }
 
-        let bb = DWM_BLURBEHIND {
-            dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
-            fEnable: true.into(),
-            hRgnBlur: pill_rgn,
-            fTransitionOnMaximized: false.into(),
-        };
-        let _ = DwmEnableBlurBehindWindow(HWND(hwnd.0), &bb);
-        let _ = DeleteObject(pill_rgn);
+            let bb = DWM_BLURBEHIND {
+                dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
+                fEnable: true.into(),
+                hRgnBlur: pill_rgn,
+                fTransitionOnMaximized: false.into(),
+            };
+            let _ = DwmEnableBlurBehindWindow(HWND(hwnd.0), &bb);
+            let _ = DeleteObject(pill_rgn);
+        }
     }
+
+    let Some(((win_phys_x, win_phys_y), _)) = window_rect(&window) else {
+        return Response::new(Vec::new());
+    };
+    let crop_pad = 16.0;
+    let crop_log_x = (log_min_x - crop_pad).floor();
+    let crop_log_y = (log_min_y - crop_pad).floor();
+    let crop_log_w = ((log_max_x + crop_pad).ceil() - crop_log_x).max(1.0);
+    let crop_log_h = ((log_max_y + crop_pad).ceil() - crop_log_y).max(1.0);
+
+    let phys_x = win_phys_x.round() as i32 + (crop_log_x * scale).round() as i32;
+    let phys_y = win_phys_y.round() as i32 + (crop_log_y * scale).round() as i32;
+    let phys_w = (crop_log_w * scale).round().max(2.0) as i32;
+    let phys_h = (crop_log_h * scale).round().max(2.0) as i32;
+
+    let packet = capture_crop_rgba_packet(
+        crop_log_x,
+        crop_log_y,
+        crop_log_w,
+        crop_log_h,
+        phys_x,
+        phys_y,
+        phys_w,
+        phys_h,
+        force.unwrap_or(false),
+    )
+    .unwrap_or_default();
+
+    Response::new(packet)
 }
 
 /// Keeps the empty room transparent to the mouse and the pill opaque to
@@ -829,6 +1127,9 @@ pub fn build_pill(app: &AppHandle) -> tauri::Result<()> {
     // first moment, so nothing underneath is ever unreachable by it.
     if let Some(window) = app.get_webview_window(PILL) {
         let _ = window.set_ignore_cursor_events(true);
+        if let Ok(hwnd) = window.hwnd() {
+            ensure_pill_excluded_from_capture(HWND(hwnd.0));
+        }
     }
     Ok(())
 }
@@ -838,11 +1139,12 @@ pub fn apply_phase(app: &AppHandle, phase: Option<Phase>) {
     let Some(pill) = app.get_webview_window(PILL) else {
         return;
     };
-    let _ = if pill_visible_in(phase) {
-        pill.show()
+    invalidate_backdrop_hash();
+    if pill_visible_in(phase) {
+        let _ = pill.show();
     } else {
-        pill.hide()
-    };
+        let _ = pill.hide();
+    }
 }
 
 /// Whether asking for settings should close them rather than open them.
@@ -1298,5 +1600,42 @@ mod tests {
         // Insertion refuses to type into either of them, so a label
         // change that missed one would start typing into the pill.
         assert_ne!(PILL, MAIN);
+    }
+
+    #[test]
+    fn live_crop_capture_produces_valid_rgba_binary_packet() {
+        invalidate_backdrop_hash();
+        let synthetic_bgra = vec![128u8; 320 * 88 * 4];
+        let packet = encode_downsampled_rgba_packet(
+            &synthetic_bgra,
+            320,
+            88,
+            320 * 4,
+            36.0,
+            224.0,
+            352.0,
+            88.0,
+            true,
+        )
+        .expect("RGBA packet encoding should succeed");
+        let w = u32::from_le_bytes(packet[16..20].try_into().unwrap());
+        let h = u32::from_le_bytes(packet[20..24].try_into().unwrap());
+        assert_eq!((w, h), (160, 44));
+        assert_eq!(packet.len(), 24 + (160 * 44 * 4));
+
+        // Second call with identical pixels and `force = false` returns empty delta:
+        let delta = encode_downsampled_rgba_packet(
+            &synthetic_bgra,
+            320,
+            88,
+            320 * 4,
+            36.0,
+            224.0,
+            352.0,
+            88.0,
+            false,
+        )
+        .expect("unchanged frame should return empty delta Vec");
+        assert!(delta.is_empty());
     }
 }

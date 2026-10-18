@@ -245,34 +245,109 @@ export function Pill() {
   } | null>(null);
   const dragBusy = useRef(false);
 
+  const blurBusyRef = useRef(false);
+
+  const applyBackdropPacket = useCallback(
+    (raw: ArrayBuffer | Uint8Array | null | undefined) => {
+      if (!raw) return;
+      const pillEl = pillBoxRef.current;
+      if (!pillEl) return;
+      const buf =
+        raw instanceof Uint8Array
+          ? raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength)
+          : raw;
+      if (!buf || buf.byteLength < 24) return;
+
+      const view = new DataView(buf, 0, 24);
+      const cropX = view.getFloat32(0, true);
+      const cropY = view.getFloat32(4, true);
+      const cropW = view.getFloat32(8, true);
+      const cropH = view.getFloat32(12, true);
+      const outW = view.getUint32(16, true);
+      const outH = view.getUint32(20, true);
+      const pixelBytes = outW * outH * 4;
+      if (outW === 0 || outH === 0 || buf.byteLength < 24 + pixelBytes) return;
+
+      const root = pillEl.closest(".pill") as HTMLElement | null;
+      if (root) {
+        root.style.setProperty("--lgs-bg-w", `${cropW}px`);
+        root.style.setProperty("--lgs-bg-h", `${cropH}px`);
+        const rgba = new Uint8ClampedArray(buf as ArrayBuffer, 24, pixelBytes);
+        const imageData = new ImageData(rgba, outW, outH);
+        const canvases =
+          root.querySelectorAll<HTMLCanvasElement>(".lgs-desktop-canvas");
+        for (const canvas of canvases) {
+          if (canvas.width !== outW) canvas.width = outW;
+          if (canvas.height !== outH) canvas.height = outH;
+          const ctx = canvas.getContext("2d");
+          ctx?.putImageData(imageData, 0, 0);
+        }
+      }
+
+      const latestPill = pillEl.getBoundingClientRect();
+      pillEl.style.setProperty("--lgs-offset-x", `${cropX - latestPill.left}px`);
+      pillEl.style.setProperty("--lgs-offset-y", `${cropY - latestPill.top}px`);
+
+      const panelSurface = panelRef.current
+        ?.firstElementChild as HTMLElement | null;
+      if (panelSurface) {
+        const latestPanel = panelSurface.getBoundingClientRect();
+        panelSurface.style.setProperty(
+          "--lgs-offset-x",
+          `${cropX - latestPanel.left}px`,
+        );
+        panelSurface.style.setProperty(
+          "--lgs-offset-y",
+          `${cropY - latestPanel.top}px`,
+        );
+      }
+    },
+    [],
+  );
+
   /**
-   * Synchronises the native Windows DWM blur region with the exact
+   * Synchronises the native Windows DWM blur region and the live
+   * `WDA_EXCLUDEFROMCAPTURE` desktop backdrop canvas with the exact
    * rounded silhouette of the capsule (and any open panel).
    */
-  const syncBlurRegion = useCallback(() => {
-    const pillEl = pillBoxRef.current;
-    if (!pillEl) return;
-    const pillRect = pillEl.getBoundingClientRect();
-    const panelEl = panelRef.current;
-    const panelSurface = panelEl?.firstElementChild as HTMLElement | null;
-    const panelRect =
-      panel && placement && panelSurface
-        ? panelSurface.getBoundingClientRect()
-        : null;
-    const panelRadius = panel === "take" ? 22 : 16;
+  const syncBlurRegion = useCallback(
+    (force = false) => {
+      if (blurBusyRef.current && !force) return;
+      const pillEl = pillBoxRef.current;
+      if (!pillEl) return;
+      const pillRect = pillEl.getBoundingClientRect();
+      if (pillRect.width <= 0 || pillRect.height <= 0) return;
+      const panelEl = panelRef.current;
+      const panelSurface = panelEl?.firstElementChild as HTMLElement | null;
+      const panelRect =
+        panel && placement && panelSurface
+          ? panelSurface.getBoundingClientRect()
+          : null;
+      const panelRadius = panel === "take" ? 22 : 16;
 
-    void invoke("set_pill_blur_region", {
-      pillX: pillRect.left,
-      pillY: pillRect.top,
-      pillW: pillRect.width,
-      pillH: pillRect.height,
-      panelX: panelRect ? panelRect.left : null,
-      panelY: panelRect ? panelRect.top : null,
-      panelW: panelRect ? panelRect.width : null,
-      panelH: panelRect ? panelRect.height : null,
-      panelR: panelRect ? panelRadius : null,
-    }).catch(() => {});
-  }, [panel, placement]);
+      blurBusyRef.current = true;
+      void invoke<ArrayBuffer>("set_pill_blur_region", {
+        pillX: pillRect.left,
+        pillY: pillRect.top,
+        pillW: pillRect.width,
+        pillH: pillRect.height,
+        panelX: panelRect ? panelRect.left : null,
+        panelY: panelRect ? panelRect.top : null,
+        panelW: panelRect ? panelRect.width : null,
+        panelH: panelRect ? panelRect.height : null,
+        panelR: panelRect ? panelRadius : null,
+        force,
+      })
+        .then((packet) => {
+          applyBackdropPacket(packet);
+        })
+        .catch(() => {})
+        .finally(() => {
+          blurBusyRef.current = false;
+        });
+    },
+    [applyBackdropPacket, panel, placement],
+  );
 
   /**
    * Takes the pointer's movement and lets the core move the window.
@@ -331,7 +406,16 @@ export function Pill() {
     // stopped.
     if (dragBusy.current) return;
     dragBusy.current = true;
-    void invoke("continue_pill_drag")
+    const pillRect = pillBoxRef.current?.getBoundingClientRect();
+    void invoke<ArrayBuffer>("continue_pill_drag", {
+      pillX: pillRect ? pillRect.left : null,
+      pillY: pillRect ? pillRect.top : null,
+      pillW: pillRect ? pillRect.width : null,
+      pillH: pillRect ? pillRect.height : null,
+    })
+      .then((packet) => {
+        applyBackdropPacket(packet);
+      })
       .catch(() => {})
       .finally(() => {
         dragBusy.current = false;
@@ -347,7 +431,11 @@ export function Pill() {
     } catch {
       // Releasing a capture that is already gone is not a failure.
     }
-    void invoke("end_pill_drag").catch(() => {});
+    void invoke("end_pill_drag")
+      .then(() => {
+        syncBlurRegion(true);
+      })
+      .catch(() => {});
   }
 
   // The copy confirmation is on a timer; leaving it running past the end
@@ -446,7 +534,7 @@ export function Pill() {
   }, [panel, resizeForPanel]);
 
   useLayoutEffect(() => {
-    syncBlurRegion();
+    syncBlurRegion(true);
   }, [syncBlurRegion, status?.phase, status?.detail, alignEnd]);
 
   // Keep the DWM blur region locked to the capsule and panel whenever
@@ -456,13 +544,25 @@ export function Pill() {
     const panelEl = panelRef.current;
     if (typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
-      syncBlurRegion();
+      syncBlurRegion(true);
       if (panelEl) void resizeForPanel();
     });
     if (pillEl) observer.observe(pillEl);
     if (panelEl) observer.observe(panelEl);
     return () => observer.disconnect();
   }, [panel, resizeForPanel, syncBlurRegion]);
+
+  // Continuously sample the live desktop behind the pill while visible so
+  // switching windows (Alt+Tab), moving other windows underneath the pill,
+  // or scrolling behind it adapts the glass backdrop in real time. Hash
+  // deduplication in Rust makes unchanged frames a zero-allocation no-op.
+  useEffect(() => {
+    if (phase === "idle") return;
+    const timer = window.setInterval(() => {
+      syncBlurRegion(false);
+    }, 33);
+    return () => window.clearInterval(timer);
+  }, [phase, syncBlurRegion]);
 
   async function press(command: TakeCommand) {
     try {

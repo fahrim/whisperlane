@@ -62,15 +62,15 @@ body {
   display: inline-flex;
 }
 
-/* Layer 0 — the accent, as light rather than as paint. Anchored to
-   .pill-dock so it is the pill's own light even while a panel is open
-   beside it. */
+/* Layer 0 — the accent, as ambient perimeter light rather than an opaque
+   backdrop wall. Kept soft so the desktop behind the translucent pill
+   remains clearly visible through the glass center. */
 .pill-aura {
   position: absolute;
   inset: -14px -18px;
   z-index: 0;
   pointer-events: none;
-  opacity: var(--aura-strength, 0.45);
+  opacity: var(--aura-strength, 0.28);
   filter: blur(22px);
   transition: opacity var(--motion-smooth-fade);
 }
@@ -83,37 +83,37 @@ body {
 }
 
 .pill-aura::before {
-  width: 65%;
-  height: 92px;
-  left: 4px;
+  width: 58%;
+  height: 88px;
+  left: -4px;
   top: 50%;
   transform: translateY(-50%);
   background: radial-gradient(
     ellipse at center,
-    rgb(var(--aura-primary) / 90%) 0%,
-    transparent 72%
+    rgb(var(--aura-primary) / 68%) 0%,
+    transparent 70%
   );
 }
 
 .pill-aura::after {
-  width: 58%;
-  height: 84px;
-  right: 4px;
+  width: 52%;
+  height: 80px;
+  right: -4px;
   top: 50%;
   transform: translateY(-50%);
   background: radial-gradient(
     ellipse at center,
-    rgb(var(--aura-secondary) / 78%) 0%,
-    transparent 72%
+    rgb(var(--aura-secondary) / 58%) 0%,
+    transparent 70%
   );
 }
 
-.pill[data-phase="idle"] { --aura-primary: var(--accent-idle); --aura-secondary: var(--accent-processing); --aura-strength: 0.42; }
-.pill[data-phase="listening"] { --aura-primary: var(--accent-recording); --aura-secondary: var(--accent-idle); --aura-strength: 1; }
-.pill[data-phase="thinking"] { --aura-primary: var(--accent-processing); --aura-secondary: var(--accent-idle); --aura-strength: 0.85; }
-.pill[data-phase="done"] { --aura-primary: var(--accent-success); --aura-secondary: var(--accent-processing); --aura-strength: 0.78; }
+.pill[data-phase="idle"] { --aura-primary: var(--accent-idle); --aura-secondary: var(--accent-processing); --aura-strength: 0.26; }
+.pill[data-phase="listening"] { --aura-primary: var(--accent-recording); --aura-secondary: var(--accent-idle); --aura-strength: 0.56; }
+.pill[data-phase="thinking"] { --aura-primary: var(--accent-processing); --aura-secondary: var(--accent-idle); --aura-strength: 0.48; }
+.pill[data-phase="done"] { --aura-primary: var(--accent-success); --aura-secondary: var(--accent-processing); --aura-strength: 0.42; }
 .pill[data-phase="failed"],
-.pill[data-phase="cancelled"] { --aura-primary: var(--accent-idle); --aura-secondary: var(--accent-idle); --aura-strength: 0.65; }
+.pill[data-phase="cancelled"] { --aura-primary: var(--accent-idle); --aura-secondary: var(--accent-idle); --aura-strength: 0.36; }
 
 /* Layer 1 — the capsule's box. The material lives in LiquidGlassSurface
    (liquid-glass.css); this element owns the geometry and the flow of the

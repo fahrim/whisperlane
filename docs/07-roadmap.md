@@ -56,8 +56,9 @@ no agent destination in this milestone. This milestone completes the MVP.
 
 Acceptance criteria:
 
-- First run is a single screen: the user understands the key, speaks, and
-  sees text land correctly in the focused application.
+- First run is a single screen: the user understands the key, chooses and
+  fetches the model it offers, speaks, and sees text land correctly in the
+  focused application.
 - The application reads as calm and finished: every state is legible from
   the pill, and advanced concerns are folded away.
 - A packaged Windows build installs, runs offline after setup, and

@@ -135,10 +135,11 @@ field exposure. What transfers, in priority order:
   responsibilities behind a narrow command and event boundary, with
   transcription history kept as its own concern rather than leaking into
   capture or insertion.
-- Model management that respects constrained machines. First-run download
-  with honest progress, a models folder that auto-discovers manually added
-  models without renaming rituals, and a CPU-optimized model family
-  alongside the Whisper family for machines where accelerated inference
+- Model management that respects constrained machines. Download on demand
+  with honest progress, started when the user asks for it rather than on
+  its own, a models folder that auto-discovers manually added models
+  without renaming rituals, and a CPU-optimized model family alongside
+  the Whisper family for machines where accelerated inference
   misbehaves.
 - Overlay discipline that matches the pill vision. A borderless,
   non-focusable, always-on-top pill that carries every state, with panels

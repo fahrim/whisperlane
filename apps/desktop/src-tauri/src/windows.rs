@@ -1267,6 +1267,16 @@ pub fn apply_phase(app: &AppHandle, phase: Option<Phase>) {
     }
 }
 
+/// Whether the window that opens on a first run is still waiting to be put
+/// on screen for the first time.
+///
+/// The window is created at a size nothing has been measured against, so
+/// showing it at creation shows the introduction clipped. A first run is
+/// therefore shown by its own first fit instead — see `fit_window`. The
+/// flag is spent the moment it is used, so a layout change on a window the
+/// user has since put away cannot bring it back uninvited.
+pub struct FirstRunReveal(pub std::sync::atomic::AtomicBool);
+
 /// Whether asking for settings should close them rather than open them.
 ///
 /// Visibility alone, with no question asked about focus. Focus is not a
@@ -1362,6 +1372,12 @@ pub fn minimize_pill(app: AppHandle) {
 /// The window grows about its centre so that a row appearing or a model
 /// finishing moves the content a little rather than shoving the whole
 /// window across the screen.
+///
+/// The screen is the one limit the content does not get to set. A window
+/// taller than the work area opens with its own header above the top of
+/// the screen, where no control can be reached and no scroll can help; the
+/// surface caps itself by the same room and scrolls instead, so a long
+/// introduction is read rather than lost.
 #[tauri::command]
 pub fn fit_window(app: AppHandle, content_width: f64, content_height: f64, bleed: f64) {
     let Some(window) = app.get_webview_window(MAIN) else {
@@ -1382,18 +1398,96 @@ pub fn fit_window(app: AppHandle, content_width: f64, content_height: f64, bleed
     if scale <= 0.0 {
         return;
     }
-    let wanted_width = ((content_width + bleed * 2.0) * scale).round().max(1.0) as u32;
-    let wanted_height = ((content_height + bleed * 2.0) * scale).round().max(1.0) as u32;
-    if size.width == wanted_width && size.height == wanted_height {
+    let (work_x, work_y, work_width, work_height) = work_area(scale);
+    // Room left around a window that is as tall as it may be, so it reads
+    // as sitting on the desktop rather than pinned between its edges. The
+    // measure and the room are logical; the window is set in physical.
+    let room = |wanted: f64, available: f64| {
+        if available > 0.0 {
+            wanted.min(available - FIT_ROOM)
+        } else {
+            wanted
+        }
+    };
+    let wanted = (
+        room(content_width + bleed * 2.0, work_width).max(1.0),
+        room(content_height + bleed * 2.0, work_height).max(1.0),
+    );
+    let wanted_width = (wanted.0 * scale).round().max(1.0) as u32;
+    let wanted_height = (wanted.1 * scale).round().max(1.0) as u32;
+    if size.width != wanted_width || size.height != wanted_height {
+        let _ = window.set_size(tauri::PhysicalSize::new(wanted_width, wanted_height));
+        // Windows anchors a resized window at its top-left, so a window that
+        // shrinks on open would creep down and to the right. Moving it back
+        // by half the difference keeps the middle where the user left it.
+        let dx = (size.width as i32 - wanted_width as i32) / 2;
+        let dy = (size.height as i32 - wanted_height as i32) / 2;
+        let _ = window.set_position(tauri::PhysicalPosition::new(position.x + dx, position.y + dy));
+        keep_on_screen(
+            &window,
+            wanted,
+            (work_x, work_y, work_width, work_height),
+            scale,
+        );
+    }
+    // A first run is presented by its own first fit. The window is created
+    // at a size chosen before anything has been measured, and showing it
+    // there shows the introduction clipped — a scrollbar in the place the
+    // one button on the screen should be. Waiting costs the moment it takes
+    // the interface to say how tall it is, and buys a first frame that is
+    // already the right one.
+    if let Some(reveal) = app.try_state::<FirstRunReveal>()
+        && reveal.0.swap(false, Ordering::Relaxed)
+    {
+        set_settings_visible(&app, true);
+        let _ = window.set_focus();
+    }
+}
+
+/// How much of the work area a window sized to its content leaves free.
+///
+/// Small enough that a screen is used rather than admired, large enough
+/// that the window does not read as a sheet of glass laid over everything.
+const FIT_ROOM: f64 = 32.0;
+
+/// Brings a window back inside the work area after a resize.
+///
+/// The resize itself is centred, which is what keeps a growing window from
+/// walking across the screen; that same centring is what can push a window
+/// taller than the room it has past the top edge. A window that is not on
+/// the desktop is not a window, so the corner is moved back in and the
+/// content scrolls inside it.
+///
+/// Logical throughout, like the work area it is clamped to.
+fn keep_on_screen(
+    window: &tauri::WebviewWindow,
+    size: (f64, f64),
+    work: (f64, f64, f64, f64),
+    scale: f64,
+) {
+    let (work_x, work_y, work_width, work_height) = work;
+    if work_width <= 0.0 || work_height <= 0.0 {
         return;
     }
-    let _ = window.set_size(tauri::PhysicalSize::new(wanted_width, wanted_height));
-    // Windows anchors a resized window at its top-left, so a window that
-    // shrinks on open would creep down and to the right. Moving it back
-    // by half the difference keeps the middle where the user left it.
-    let dx = (size.width as i32 - wanted_width as i32) / 2;
-    let dy = (size.height as i32 - wanted_height as i32) / 2;
-    let _ = window.set_position(tauri::PhysicalPosition::new(position.x + dx, position.y + dy));
+    let Ok(placed) = window.outer_position() else {
+        return;
+    };
+    let logical = (placed.x as f64 / scale, placed.y as f64 / scale);
+    let rightmost = work_x + work_width - size.0;
+    let bottommost = work_y + work_height - size.1;
+    // A window larger than the work area has nothing to clamp to: the
+    // choice is which edge it hangs off, and the top-left is the one a
+    // user can still see and drag.
+    let (x, y) = (
+        logical.0.clamp(work_x.min(rightmost), work_x.max(rightmost)),
+        logical.1.clamp(work_y.min(bottommost), work_y.max(bottommost)),
+    );
+    if (x, y) != logical {
+        let _ = window.set_position(tauri::PhysicalPosition::new(
+            (x * scale).round() as i32,
+            (y * scale).round() as i32,
+        ));
+    }
 }
 
 #[cfg(test)]

@@ -49,8 +49,8 @@ the target abstraction so phase two stays cheap.
 - Recover gracefully: cancel a take that went wrong so nothing is inserted,
   and always know which state the application is in.
 - Start from zero: install, understand the single instruction on first run,
-  speak, and succeed while the speech model completes downloading in the
-  background.
+  give the answers it asks for, choose and fetch the speech model it offers,
+  speak, and succeed.
 
 ## Phase-two scenarios (not v1)
 

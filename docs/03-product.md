@@ -27,8 +27,8 @@ door. Convenience never overrides this ordering.
 - Minimal optional refinement: light local cleanup of punctuation and obvious
   filler, off unless requested, never rewriting meaning.
 - Cancellation: discard a take so nothing is inserted.
-- Model management that stays out of the way: the required speech model
-  arrives quietly with honest progress.
+- Model management that stays out of the way: the required speech model is
+  fetched when the user asks for it, with honest progress.
 - Application settings kept to the minimum that v1 flows require.
 
 ## v1 boundaries

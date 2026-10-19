@@ -27,7 +27,7 @@ fallback), with an AI-agent-native direction held for phase two.
 - **Minimal optional refinement** — light local cleanup of punctuation and
   obvious filler, off unless requested, never rewriting meaning.
 - **Model management that stays out of the way** — the required speech model
-  arrives quietly with honest progress.
+  is fetched when you ask for it, with honest progress.
 - **Application settings kept to the minimum** that v1 flows require.
 
 Everything runs on the machine after setup: offline, with no account and no

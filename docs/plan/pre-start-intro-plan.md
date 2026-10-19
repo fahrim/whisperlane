@@ -54,7 +54,8 @@ Three axes, in priority order:
   app, reliably, on Windows.
 - A first-class "dictate into OpenCode" flow.
 - Fast local transcription on AMD/Intel/NVIDIA/CPU via whisper.cpp.
-- A dead-simple first run: one screen, one key, model downloads quietly.
+- A dead-simple first run: one screen, one key, and the speech model
+  fetched when asked.
 - A UX that feels finished — calm, sparse, confident.
 
 **Non-goals for v1**
@@ -77,8 +78,8 @@ Principles, not screens:
 - **Native feel.** Real platform behaviour, restrained motion, generous space,
   a single accent colour. Nothing that looks like a web app in a box.
 - **First run is one screen.** Big, clear instruction: *hold the key and speak.*
-  The model download runs in the background with honest progress. No account, no
-  wizard.
+  The model is fetched when asked, with honest progress — nothing downloads on
+  its own. No account, no wizard.
 
 ## 5. Core flows
 

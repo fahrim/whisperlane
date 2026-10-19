@@ -22,7 +22,7 @@ destinations grows.
 - Fast local transcription across common Windows hardware, including AMD and
   Intel graphics alongside NVIDIA and CPU fallback.
 - A dead-simple first run: one screen, one key, with the speech model
-  arriving quietly in the background.
+  fetched when asked and honest about its progress.
 - A user experience that feels calm, sparse, and confident from day one.
 
 ## Success measures (proposal, v1)

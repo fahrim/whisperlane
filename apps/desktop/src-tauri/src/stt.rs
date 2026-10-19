@@ -345,13 +345,12 @@ pub fn backend_from_banner(banner: &str) -> Backend {
 /// Never spawns when the model is missing: that is a Missing report,
 /// not a crash loop.
 pub fn ensure_ready(app: &AppHandle) -> Result<u16, String> {
-    let chosen = crate::settings::model_of(app);
     let model = model_path(app)?;
     if !model.is_file() {
-        let msg = format!(
-            "model missing: {} — download it in settings",
-            chosen.file
-        );
+        // Short enough to survive the pill's capsule, and it names the
+        // surface that fixes it rather than the file the user has no use
+        // for (the settings row already shows the chosen model).
+        let msg = "model not downloaded — fetch it in Settings".to_string();
         if let Some(state) = app.try_state::<SttState>() {
             let mut inner = state.0.lock().expect("stt state poisoned");
             inner.model_missing = true;

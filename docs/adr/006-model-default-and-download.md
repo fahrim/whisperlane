@@ -2,6 +2,11 @@
 
 Status: approved.
 
+Amended by `../08-decisions.md` item 15: choosing a model only says
+which model — fetching is its own act behind its own control — and the
+take's missing-model message says where to fetch rather than naming the
+file, which the settings row does.
+
 ## Context
 
 The pipeline needs a speech model present before a take can be

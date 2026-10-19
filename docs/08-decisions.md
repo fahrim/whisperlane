@@ -632,6 +632,88 @@ what is true rather than what was asked for.
 Status: approved — recorded here rather than in an ADR because it
 constrains a preference, not the product's behaviour.
 
+## 15. The model download is asked for, never started on its own
+
+Context: the first-run screen fetched the model by itself. Opening the
+window began the transfer, before the user had answered anything or had
+time to read the row describing it. Item four and ADR-006 had settled
+that the model is fetched on demand rather than shipped in the
+installer, and the earlier documents described first run with the model
+"arriving quietly in the background"; the build read both as licence to
+start the transfer at the first opportunity. That spends half a
+gigabyte of the user's bandwidth without asking, at the moment they have
+only just met the product. The same path failed honest transfers in the
+other direction: its deadline measured the whole request rather than the
+progress being made, so a slow connection was reported as a broken one
+instead of being allowed to finish.
+
+A follow-up report asked what happens when the user leaves the first run
+without the model. The answer was honest but late: the first take failed
+with a message saying the model was not downloaded, after a screen that
+had every chance to ask for the fetch and never did — its one action
+finished the introduction over an install that could not dictate, and
+left the user to find the model on a settings row they had never been
+shown.
+
+Options: start the fetch as soon as the first-run window opens, so the
+model is ready soonest; state what is missing and fetch it only when the
+user asks, through one control on the row; finish the first run only
+once the model is on disk, with the fetch carried by the screen's own
+action; offer a way past the screen without the model; or ship the model
+in the installer so no fetch is needed at all.
+
+Trade-offs: fetching on open reaches the first take soonest and spends
+the user's bandwidth without asking. Fetching on request keeps that
+decision with the user and costs one deliberate click before the first
+take. Fetching on request through the screen's own action costs the same
+click and adds no other decision, but it withholds the finish until the
+model exists — offline, the fetch can only be retried or the window
+closed, since without the model the application cannot take a word
+anyway. A way past the screen without the model would keep settings
+reachable offline, but it finishes the introduction over an install that
+fails its first take, which is exactly the report that prompted this
+question. Bundling removes the fetch entirely at the size of the
+installer, which item four already declined.
+
+Direction: the maintainer, reporting the first-run experience, directed
+that nothing is downloaded unasked: the row says what is missing and
+offers the one control that fetches it, and the same control lives on in
+settings for every later fetch. On the follow-up report the maintainer
+directed that the first run cannot be finished without the model — there
+is no "continue without it" path — and that the model is offered there
+with the same chooser settings uses.
+
+Decision: no transfer begins without a user action. Opening a window
+never starts a download, and a model that is not on disk is shown as
+missing; a take that needs it fails with a plain message saying the
+model is not downloaded and where to fetch it, rather than the
+application quietly starting a transfer, as ADR-006 already requires.
+The message says where to fetch rather than naming the file: it has to
+survive the pill's width, and the settings row already shows the chosen
+model by name. Choosing a model says which model rather than
+starting a transfer: fetching is its own act behind its own control.
+Once a fetch is asked for, it stays honest in the other direction too:
+progress is bytes over total, a transfer that stops making progress
+fails with a plain message instead of hanging, and one that is merely
+slow is allowed the time it needs.
+
+On the first run that one control is the screen's own action, because
+the first run has nothing else to finish with: while the model is
+missing the action is the fetch, while the fetch runs the action's own
+place carries its progress, and the action becomes starting to talk only
+once the model is on disk. In settings the control stays on the row that
+says what is missing, as directed; only the first run moves it onto its
+own action. The model is chosen there with the same chooser settings
+offers, and the screen is not finished without it: a dictation tool with
+no model cannot take a word, so the one way past the screen without
+fetching is closing its window, which does not finish the first run and
+shows it again on the next launch. A failed fetch is named beside the
+model it belongs to and retried from the same action.
+
+Status: approved — recorded here rather than in an ADR because it
+tightens item four's on-demand fetch rather than replacing it. Direction
+from the maintainer on a first-run report.
+
 ## ADR process
 
 - A decision becomes an ADR only after explicit approval of the

@@ -11,8 +11,15 @@
 // dictation tool that is not running cannot be dictated to; a switch left
 // at "off" would be an answer nobody gave. So it is asked as two choices,
 // and the screen is not finished until one of them has been taken.
+//
+// The speech model is the other thing the screen cannot finish without: a
+// dictation tool with no model cannot take a word. So the foot's one
+// action carries the next step — the fetch while the model is missing,
+// honest progress while it runs, and starting to talk once it is on disk.
+// The fetch is still asked for, never started on its own (decisions,
+// item 15); only the action that offers it moves.
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Picker, Segmented } from "./controls";
 import lockupDark from "./assets/whisperlane-lockup-horizontal-on-dark.png";
 import lockupLight from "./assets/whisperlane-lockup-horizontal-on-light.png";
@@ -37,12 +44,14 @@ export interface FirstRunProps {
     hotkeys: HotkeyChoice[];
     languages: LanguageChoice[];
     devices: InputDevice[];
+    models: ModelOption[];
     startWithWindows: boolean;
   };
   change: {
     hotkey: (code: string) => void;
     language: (code: string) => void;
     microphone: (value: string) => void;
+    model: (code: string) => void;
     startWithWindows: (next: boolean) => Promise<boolean>;
   };
   onDownload: () => void;
@@ -66,20 +75,29 @@ function hotkeyKeycaps(code: string, fallbackLabel: string): string[] {
   return cleaned.split(/\s*\+\s*/).filter(Boolean);
 }
 
-function modelLine(
+/**
+ * What the model card says under its picker. The fetch's own progress
+ * lives on the primary action, so nothing here repeats it; a failure
+ * stays here, beside the choice it happened to.
+ */
+function modelCardLine(
   model: ModelOption | null,
   download: Download | null,
+  fetchError: string | null,
 ): string {
-  if (download?.running) {
-    const size = `${download.received_mb} / ${download.total_mb} MB`;
-    const percent =
-      download.percent !== null ? ` ${download.percent}%` : "";
-    return `Fetching the speech model · ${size}${percent}`;
-  }
-  if (download?.error) return `The model download failed: ${download.error}`;
-  if (!model) return "";
+  if (download?.running || !model) return "";
   if (model.present) return `The speech model is ready · ${model.size_mb} MB`;
-  return `The speech model is not here yet · ${model.size_mb} MB`;
+  return fetchError ?? `The speech model is not here yet · ${model.size_mb} MB`;
+}
+
+/** The fetch's numbers, as the progress bar's caption. */
+function progressValues(download: Download): string {
+  if (download.percent === null) {
+    return download.received_mb > 0
+      ? `${download.received_mb} MB so far`
+      : "starting…";
+  }
+  return `${download.percent}% · ${download.received_mb} of ${download.total_mb} MB`;
 }
 
 export function FirstRun({
@@ -105,7 +123,14 @@ export function FirstRun({
   // has one instruction on it.
   const live =
     phase === "listening" || phase === "thinking" || phase === "failed";
-  const modelMissing = model !== null && !model.present && !download?.running;
+  const downloading = download?.running ?? false;
+  const modelReady = model?.present ?? false;
+  // A failure belongs to the model it happened to: switching the choice
+  // must not show one model's failure beside another's name, or offer a
+  // retry for a model that never failed.
+  const fetchError =
+    download?.error && download.model === model?.id ? download.error : null;
+  const modelStatus = modelCardLine(model, download, fetchError);
   // Already on means already answered — someone who has it registered from
   // a previous install is not asked again. Everyone else has to choose,
   // because there is no honest default for a chord that only works if the
@@ -114,6 +139,16 @@ export function FirstRun({
   const [answer, setAnswer] = useState<string | null>(
     choices.startWithWindows ? "yes" : null,
   );
+
+  // The registration is read from the system in parallel with everything
+  // else, so it can arrive after this screen has mounted. Arriving late
+  // with "yes" is the answer already given — asking again would report a
+  // question nobody asked.
+  useEffect(() => {
+    if (choices.startWithWindows) {
+      setAnswer((current) => current ?? "yes");
+    }
+  }, [choices.startWithWindows]);
 
   const keycaps = hotkeyKeycaps(settings.hotkey, hotkey);
   const liveListening = phase === "listening" || micTesting;
@@ -392,6 +427,71 @@ export function FirstRun({
               </div>
             </div>
           </div>
+
+          <div className="settings-card">
+            <div className="settings-card-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path
+                  d="M11 3.5 12.9 9.1 18.5 11 12.9 12.9 11 18.5 9.1 12.9 3.5 11 9.1 9.1 11 3.5Z"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M18.5 3.5 19.2 5.8 21.5 6.5 19.2 7.2 18.5 9.5 17.8 7.2 15.5 6.5 17.8 5.8 18.5 3.5Z"
+                  fill="currentColor"
+                />
+                <path
+                  d="M18 15.5 18.5 17 20 17.5 18.5 18 18 19.5 17.5 18 16 17.5 17.5 17 18 15.5Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </div>
+            <div className="settings-card-body">
+              <h2 className="settings-card-title">Speech Model</h2>
+              <p className="settings-card-desc">
+                Bigger models are more accurate, but slower.
+              </p>
+              <div className="settings-card-controls">
+                <Picker
+                  label="Speech Model"
+                  leadingIcon={
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path
+                        d="M9.5 3.5a3 3 0 0 0-2.9 2.2A3.2 3.2 0 0 0 4.5 9c0 1.1.55 2.08 1.4 2.66a3.3 3.3 0 0 0-.4 1.6c0 1.54 1.04 2.84 2.46 3.22A2.9 2.9 0 0 0 12 18.5V6a2.5 2.5 0 0 0-2.5-2.5Z"
+                        stroke="currentColor"
+                        strokeWidth="1.7"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d="M14.5 3.5a3 3 0 0 1 2.9 2.2A3.2 3.2 0 0 1 19.5 9c0 1.1-.55 2.08-1.4 2.66.26.48.4 1.02.4 1.6 0 1.54-1.04 2.84-2.46 3.22A2.9 2.9 0 0 1 12 18.5V6a2.5 2.5 0 0 1 2.5-2.5Z"
+                        stroke="currentColor"
+                        strokeWidth="1.7"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  }
+                  value={settings.model}
+                  options={choices.models.map((option) => ({
+                    code: option.id,
+                    label: option.label,
+                  }))}
+                  onChange={change.model}
+                  disabled={downloading}
+                />
+              </div>
+              {modelStatus && (
+                <p
+                  role={fetchError ? "alert" : undefined}
+                  className="settings-card-status"
+                >
+                  {modelStatus}
+                </p>
+              )}
+            </div>
+          </div>
         </section>
       </div>
 
@@ -406,32 +506,55 @@ export function FirstRun({
           <p className="first-run-transcript">{status.last_text}</p>
         )}
 
-        {modelLine(model, download) && (
-          <div className="first-run-model-row">
-            <span className="first-run-model-dot" aria-hidden="true" />
-            <p className="first-run-model">
-              <span>{modelLine(model, download)}</span>
-              {modelMissing && (
-                <button
-                  type="button"
-                  className="card-action-btn"
-                  onClick={onDownload}
-                >
-                  Fetch it
-                </button>
-              )}
-            </p>
+        {download?.running ? (
+          <div
+            className={`first-run-progress${download.percent === null ? " is-indeterminate" : ""}`}
+            role="progressbar"
+            aria-label="Downloading the speech model"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={download.percent ?? undefined}
+          >
+            <div className="first-run-progress-label">
+              <span className="first-run-progress-title">
+                Downloading the speech model
+              </span>
+              <span className="first-run-progress-values">
+                {progressValues(download)}
+              </span>
+            </div>
+            <div className="first-run-progress-track">
+              <div
+                className="first-run-progress-fill"
+                style={
+                  download.percent === null
+                    ? undefined
+                    : { width: `${download.percent}%` }
+                }
+              />
+            </div>
           </div>
+        ) : modelReady ? (
+          <button
+            type="button"
+            className="first-run-done"
+            disabled={answer === null}
+            onClick={onDone}
+          >
+            Start talking
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="first-run-done"
+            disabled={model === null}
+            onClick={onDownload}
+          >
+            {fetchError
+              ? "Try the download again"
+              : `Download the speech model${model ? ` · ${model.size_mb} MB` : ""}`}
+          </button>
         )}
-
-        <button
-          type="button"
-          className="first-run-done"
-          disabled={answer === null}
-          onClick={onDone}
-        >
-          Start talking
-        </button>
         <p className="first-run-footnote">
           whisperlane stays in the tray. Right-click its icon for Settings.
         </p>

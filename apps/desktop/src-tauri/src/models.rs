@@ -33,6 +33,36 @@ const MODEL_SOURCE: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve
 /// network busy, small enough that progress stays responsive.
 const CHUNK: usize = 256 * 1024;
 
+/// How long the model source is given to answer a connection.
+///
+/// A handshake that has not begun in this time is a machine with no route
+/// to the source, not a slow connection.
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// How long the socket may say nothing mid-transfer before the download is
+/// called dead.
+///
+/// A stall, never a budget. The default model is 547 MB, and the first
+/// version of this gave the whole request sixty seconds — which is not a
+/// timeout but a demand that the user's line sustain nine megabytes a
+/// second. The one machine that reported a failed download had a
+/// connection that simply took longer than that; the file was fine and the
+/// clock was not. Waiting on silence still fails a source that has stopped
+/// answering, which is the failure worth catching.
+const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// The client every model fetch runs on.
+///
+/// Per-read timeouts rather than one deadline for the whole call: ureq's
+/// `timeout()` measures the entire request, which is a statement about the
+/// user's connection speed rather than about the source's health.
+fn fetch_agent(connect: std::time::Duration, read: std::time::Duration) -> ureq::Agent {
+    ureq::AgentBuilder::new()
+        .timeout_connect(connect)
+        .timeout_read(read)
+        .build()
+}
+
 /// A model the user can choose.
 ///
 /// The default is first and is the one every install is expected to use;
@@ -247,7 +277,8 @@ fn run_download(app: &AppHandle, model: ModelChoice) {
             return Ok(());
         }
         let partial = target.with_extension("part");
-        let expected = fetch(&model.url(), &partial, app)?;
+        let agent = fetch_agent(CONNECT_TIMEOUT, READ_TIMEOUT);
+        let expected = fetch(&agent, &model.url(), &partial, app)?;
         verify_size(&partial, expected)?;
         std::fs::rename(&partial, &target)
             .map_err(|e| format!("could not store the model: {e}"))?;
@@ -272,9 +303,9 @@ fn run_download(app: &AppHandle, model: ModelChoice) {
 /// Streams the model to disk, reporting progress as it goes. Returns
 /// the length the source declared, which is what the file is checked
 /// against afterwards.
-fn fetch(url: &str, target: &Path, app: &AppHandle) -> Result<u64, String> {
-    let response = ureq::get(url)
-        .timeout(std::time::Duration::from_secs(60))
+fn fetch(agent: &ureq::Agent, url: &str, target: &Path, app: &AppHandle) -> Result<u64, String> {
+    let response = agent
+        .get(url)
         .call()
         .map_err(|e| format!("could not reach the model source: {e}"))?;
     let declared = response
@@ -310,34 +341,6 @@ fn fetch(url: &str, target: &Path, app: &AppHandle) -> Result<u64, String> {
         .flush()
         .map_err(|e| format!("could not write the model file: {e}"))?;
     Ok(declared.unwrap_or(received))
-}
-
-/// Whether the first run should start fetching the chosen model.
-///
-/// Only the honest answer: a model already on disk, or a download already
-/// running, means there is nothing to start. Dictation is never blocked by
-/// this — a take without a model fails plainly in the transcription step.
-pub fn should_start_first_run_download(first_run: bool, present: bool, running: bool) -> bool {
-    first_run && !present && !running
-}
-
-/// Starts the chosen model's download when the first run still needs it.
-///
-/// First run is one screen with honest progress behind it, so the fetch
-/// begins on its own rather than waiting to be asked for. That is a
-/// first-run courtesy and nothing more: a later launch fetches nothing
-/// the user did not ask for, even when the chosen model is missing, and
-/// says so on the surface instead. Anything already present or in flight
-/// is left alone, so calling it again is harmless.
-#[tauri::command]
-pub fn ensure_model_ready(app: AppHandle, first_run: bool) -> Download {
-    let chosen = crate::settings::model_of(&app);
-    let present = is_present(&app, chosen);
-    let running = get_download(app.clone()).running;
-    if should_start_first_run_download(first_run, present, running) {
-        return download_model(app, chosen.id.to_string());
-    }
-    get_download(app)
 }
 
 /// Refuses a file whose length does not match what the source said.
@@ -460,23 +463,6 @@ mod tests {
     }
 
     #[test]
-    fn first_run_starts_a_download_only_when_one_is_missing() {
-        // First run, nothing on disk and nothing in flight: fetch it.
-        assert!(should_start_first_run_download(true, false, false));
-        // Already there, or already coming: never start a second.
-        assert!(!should_start_first_run_download(true, true, false));
-        assert!(!should_start_first_run_download(true, false, true));
-        assert!(!should_start_first_run_download(true, true, true));
-        // Later runs fetch nothing at all. A missing model then is
-        // something the user is told about and asked for, not something
-        // fetched behind their back — the window offers the download.
-        assert!(!should_start_first_run_download(false, false, false));
-        assert!(!should_start_first_run_download(false, true, false));
-        assert!(!should_start_first_run_download(false, false, true));
-        assert!(!should_start_first_run_download(false, true, true));
-    }
-
-    #[test]
     fn a_zero_length_source_is_not_treated_as_a_pass() {
         // Without a declared size the check must still refuse an empty
         // file rather than accept it as "matching".
@@ -484,5 +470,49 @@ mod tests {
         std::fs::write(&path, b"").unwrap();
         assert!(verify_size(&path, 0).is_ok());
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// A source that keeps sending, on a line that is slow.
+    ///
+    /// This is the reported failure written as a test: the first download
+    /// path gave the whole request sixty seconds, which a half-gigabyte
+    /// model on a home connection cannot meet, and the transfer died with
+    /// "timed out reading response" while the source was answering
+    /// perfectly well. The timeouts here are the same shape as the ones
+    /// the download runs under, scaled down so the test is quick: a body
+    /// that takes ten times the per-read timeout to arrive must still
+    /// arrive whole.
+    #[test]
+    fn a_slow_but_flowing_transfer_is_never_timed_out() {
+        use std::io::Write;
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 300\r\n\r\n")
+                .unwrap();
+            for _ in 0..30 {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+                socket.write_all(&[b'x'; 10]).unwrap();
+            }
+        });
+
+        let agent = fetch_agent(
+            std::time::Duration::from_secs(1),
+            std::time::Duration::from_millis(200),
+        );
+        let response = agent
+            .get(&format!("http://127.0.0.1:{port}/ggml-model.bin"))
+            .call()
+            .expect("a source that answers is not an error");
+        let body = response
+            .into_string()
+            .expect("a transfer that keeps arriving must finish");
+        server.join().unwrap();
+
+        assert_eq!(body.len(), 300, "the whole body has to arrive");
     }
 }

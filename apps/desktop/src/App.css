@@ -1039,14 +1039,19 @@ button:disabled {
   box-shadow: none;
 }
 
-.picker-button:hover {
+.picker-button:hover:not(:disabled) {
   background: rgb(26 28 44 / 70%);
   border-color: rgb(255 255 255 / 16%);
 }
 
-:root[data-theme="light"] .picker-button:hover {
+:root[data-theme="light"] .picker-button:hover:not(:disabled) {
   background: var(--control-bg-hover);
   border-color: var(--control-border);
+}
+
+.picker-button:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .picker-button-lead {
@@ -1306,8 +1311,7 @@ button:disabled {
   margin-top: 6px;
 }
 
-.first-run-state,
-.first-run-model {
+.first-run-state {
   margin: 0;
   font-size: 12.5px;
   color: var(--text-secondary);
@@ -1336,36 +1340,91 @@ button:disabled {
   padding-top: 6px;
 }
 
-.first-run-model-row {
+/* The fetch, in the action's own place: the same footprint as the button
+   it replaced, so the foot does not move while it runs. */
+.first-run-progress {
+  align-self: stretch;
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 11px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 7px;
+  min-height: 42px;
+  margin: 2px 0 0;
+  padding: 7px 14px;
+  box-sizing: border-box;
+  border-radius: 12px;
   background: rgb(255 255 255 / 4%);
   border: 1px solid rgb(255 255 255 / 8%);
 }
 
-:root[data-theme="light"] .first-run-model-row {
-  background: rgb(0 0 0 / 3%);
-  border-color: var(--surface-border);
+:root[data-theme="light"] .first-run-progress {
+  background: var(--control-bg);
+  border-color: var(--control-border);
 }
 
-.first-run-model-dot {
-  flex: none;
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: #a855f7;
-  box-shadow: 0 0 8px rgb(168 85 247 / 75%);
-}
-
-.first-run-model {
+.first-run-progress-label {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  flex: 1;
   gap: 10px;
+  font-size: 12.5px;
+  line-height: 16px;
+}
+
+.first-run-progress-title {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.first-run-progress-values {
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.first-run-progress-track {
+  height: 5px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgb(255 255 255 / 10%);
+}
+
+:root[data-theme="light"] .first-run-progress-track {
+  background: rgb(0 0 0 / 8%);
+}
+
+.first-run-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #7c3aed 0%, #a855f7 55%, #ec4899 100%);
+  transition: width 240ms ease;
+}
+
+/* Before the source has said how big the file is, there is no percentage
+   to be honest about; the segment says "moving" instead of inventing one. */
+.first-run-progress.is-indeterminate .first-run-progress-fill {
+  width: 32%;
+  animation: first-run-progress-slide 1.3s ease-in-out infinite;
+}
+
+@keyframes first-run-progress-slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(430%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .first-run-progress-fill {
+    transition: none;
+  }
+  .first-run-progress.is-indeterminate .first-run-progress-fill {
+    animation: none;
+    width: 100%;
+    opacity: 0.45;
+  }
 }
 
 .first-run-done {

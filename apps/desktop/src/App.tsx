@@ -288,7 +288,7 @@ function App() {
   } | null>(null);
 
   // Held while the introduction is being closed, for the reason given
-  // below it.
+  // below it, and released when the window has gone away.
   const [leaving, setLeaving] = useState(false);
 
   const showIntroduction =
@@ -387,6 +387,15 @@ function App() {
   }
 
   const frameRef = useRef<HTMLDivElement | null>(null);
+  // The introduction is capped at the window it is in and scrolls when it
+  // has more to show than fits. Its own height is therefore the window's
+  // rather than the content's, and a window fitted to that measurement
+  // stays exactly as tall as it was created — which is how the first run
+  // came up clipped, with a scrollbar where a button should have been.
+  // The shell is the scrolling box, so the whole of what it holds is read
+  // from it instead. Only the introduction caps itself this way: the
+  // settings screen is measured off the frame like everything else.
+  const introShellRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
     if (settings === null) return;
     const frame = frameRef.current;
@@ -400,7 +409,16 @@ function App() {
         ) || 0;
       const rect = frame.getBoundingClientRect();
       const width = Math.max(frame.offsetWidth, Math.round(rect.width));
-      const height = Math.max(frame.offsetHeight, Math.round(rect.height));
+      // A custom height is the user's own answer, so the cap that answers
+      // to it is not read as content: dragging the window shorter must not
+      // hand the measurement back the height it was just told to forget.
+      const shell =
+        windowSize.height === null ? introShellRef.current : null;
+      const height = Math.max(
+        frame.offsetHeight,
+        Math.round(rect.height),
+        shell?.scrollHeight ?? 0,
+      );
       if (width <= 0 || height <= 0) return;
       void invoke("fit_window", {
         contentWidth: width,
@@ -445,7 +463,20 @@ function App() {
 
   async function downloadModel(id: string) {
     try {
-      setDownload(await invoke<Download>("download_model", { id }));
+      let state = await invoke<Download>("download_model", { id });
+      setDownload(state);
+      // The call that asked for the fetch sees it through to its end.
+      // The window's poll cannot be trusted with that: a small model can
+      // start and finish between two ticks, and a tick already on its way
+      // when the fetch was asked for may answer from before it began. The
+      // model list has to be re-read here afterwards, or the foot would
+      // offer the download again over a model that is already on disk.
+      while (state.running) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        state = await invoke<Download>("get_download");
+        setDownload(state);
+      }
+      await refreshModels();
     } catch (e) {
       setError(String(e));
     }
@@ -554,7 +585,16 @@ function App() {
       if (!event.payload) setAudioLevel(0);
     });
     const offVisibility = listen<boolean>("window-visibility", (event) => {
-      if (!event.payload) stopMicTest();
+      if (!event.payload) {
+        stopMicTest();
+        // Finishing the introduction closes the window rather than swapping
+        // it for the settings screen, and the introduction is held on
+        // screen for the moment in between. The moment ends when the window
+        // does: released here, the next open shows settings; held, it puts
+        // the finished introduction back in front of the user every time
+        // they look for a setting.
+        setLeaving(false);
+      }
     });
     return () => {
       stopMicTest();
@@ -593,8 +633,6 @@ function App() {
   const canDownload =
     chosenModel !== null && !chosenModel.present && !download?.running;
 
-  const wasDownloading = useRef(false);
-
   useEffect(() => {
     let stop = false;
     async function poll() {
@@ -602,9 +640,9 @@ function App() {
         setStatus(await invoke<PipelineStatus>("get_pipeline_state"));
         await refreshStt();
         const state = await invoke<Download>("get_download");
+        // Progress only: a fetch's ending belongs to the call that asked
+        // for it (downloadModel), which cannot miss it.
         setDownload(state);
-        if (wasDownloading.current && !state.running) await refreshModels();
-        wasDownloading.current = state.running;
       } catch (e) {
         if (!stop) setError(String(e));
       }
@@ -613,13 +651,7 @@ function App() {
       .then(setHotkey)
       .catch((e) => setError(String(e)));
     invoke<Settings>("get_settings")
-      .then((loaded) => {
-        setSettings(loaded);
-        return invoke<Download>("ensure_model_ready", {
-          firstRun: !loaded.onboarded,
-        });
-      })
-      .then(setDownload)
+      .then(setSettings)
       .catch((e) => setError(String(e)));
     invoke<LanguageChoice[]>("list_languages")
       .then(setLanguages)
@@ -697,7 +729,7 @@ function App() {
         <SignalBackdrop />
 
         {!showSettings && (
-          <main className="first-run-shell">
+          <main className="first-run-shell" ref={introShellRef}>
             {settings === null && <p role="status">loading…</p>}
             {error && (
               <p role="alert" className="banner">
@@ -715,6 +747,7 @@ function App() {
                   hotkeys,
                   languages,
                   devices,
+                  models: modelOptions,
                   startWithWindows,
                 }}
                 change={{
@@ -726,6 +759,7 @@ function App() {
                         ? { kind: "system_default" }
                         : { kind: "device", id: value },
                     ),
+                  model: (id) => void chooseModel(id),
                   startWithWindows: (next) => chooseStartWithWindows(next),
                 }}
                 onDownload={() =>
@@ -1036,11 +1070,12 @@ function App() {
                         {modelLine && (
                           <p className="settings-card-status">{modelLine}</p>
                         )}
-                        {download?.error && (
-                          <p role="alert" className="settings-card-status">
-                            {download.error}
-                          </p>
-                        )}
+                        {download?.error &&
+                          download.model === chosenModel?.id && (
+                            <p role="alert" className="settings-card-status">
+                              {download.error}
+                            </p>
+                          )}
                       </div>
                     </section>
                   </>

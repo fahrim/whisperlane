@@ -29,6 +29,8 @@ export interface PickerProps {
   leadingIcon?: ReactNode;
   renderValue?: (selected: PickerOption | undefined) => ReactNode;
   buttonRef?: RefObject<HTMLButtonElement | null>;
+  /** Locked while something else owns the value, such as a fetch in flight. */
+  disabled?: boolean;
 }
 
 /** Where the list has room to open, and how much of it. */
@@ -58,6 +60,7 @@ export function Picker({
   leadingIcon,
   renderValue,
   buttonRef,
+  disabled = false,
 }: PickerProps) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(() =>
@@ -227,6 +230,7 @@ export function Picker({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={label}
+        disabled={disabled}
         onClick={() => (open ? setOpen(false) : show("chosen"))}
         onKeyDown={onButtonKeyDown}
       >

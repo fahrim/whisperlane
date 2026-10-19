@@ -14,9 +14,16 @@
   and a single accent color. Nothing that reads as a web page in a box.
 - First run is one screen, and it is a settings screen. One big, clear
   instruction — hold the key and speak — over the answers that cannot be
-  assumed, with the model download running honestly in the background. No
-  account step, no wizard. It is shown once; closing it says where settings
-  live from then on.
+  assumed, the speech model among them, chosen with the same chooser
+  settings uses and fetched only when the user asks. Nothing downloads
+  unasked: the transfer is the user's bandwidth and their decision. The
+  screen does not finish without the model, because a dictation tool with
+  no model cannot take a word: its one action is the fetch while the
+  model is missing, honest progress while the fetch runs, and starting to
+  talk once the model is on disk. No account step, no wizard. It is shown
+  until a first run is finished: closing it unfinished puts it away for
+  now and brings it back on the next launch; finishing it is the last time
+  it appears, and says where settings live from then on.
 
 ## Core flows
 
@@ -77,25 +84,40 @@
   status at a glance, quick access to start dictation, and a path to
   settings.
 - Onboarding window. A single screen with one instruction, the answers it
-  cannot assume, and honest model download progress. Starting with Windows
-  is required on it and is asked as two answers rather than as a toggle
-  left at a default; everything else offered there is already correct and
-  one click from being otherwise. No account step, no multi-page wizard.
+  cannot assume, and one action that carries the next step. The speech
+  model is among those answers, offered with the same chooser settings
+  uses, and the action is the fetch while the model is missing, honest
+  progress in the action's own place while the fetch runs, and starting
+  to talk once the model is on disk. Nothing is downloaded until the user
+  asks for it there, and a failed fetch is named beside the model it
+  belongs to and retried from the same action. Starting with Windows is
+  required on it and is asked as two answers rather than as a toggle left
+  at a default; everything else offered there is already correct and one
+  click from being otherwise. No account step, no multi-page wizard.
 - Settings window. Opened from the pill three-dot control or the tray. It
   groups what it holds by what each thing is for — dictation, speech model,
   appearance, startup — with a control in a fixed column, so every one ends
   on the same edge and the labels keep their room. The minimum v1 requires:
   hotkey choice, microphone and language choice, model choice, theme, and
   starting with Windows. Destination choice arrives with phase two.
-  Everything else stays hidden or at defaults. Choosing a model fetches it,
-  so the model row is one control and one line of what it is doing rather
-  than a list of equal-weight download buttons. Engine diagnostics are not
-  shown: which backend is in use and whether it has been verified are true
-  and not the user's business.
+  Everything else stays hidden or at defaults. Choosing a model only says
+  which model; a model that is not on disk is fetched by its own control on
+  the row, so the row stays one line of what it is doing rather than a list
+  of equal-weight download buttons — on the onboarding screen that one
+  control is the screen's own action, not a second one in the row. Engine
+  diagnostics are not shown: which backend is in use and whether it has
+  been verified are true and not the user's business.
 - Window surface. A calm flat plane, not glass. Glass stays with the pill,
   which is the small floating surface it was chosen for; the window has to
   stay readable in a light room, and its palette is chosen for that. It
   follows the system theme live, with the user's choice as an override.
+- Window sizing. A window opens at the size its content needs and never
+  larger than the work area it opens onto. It is measured before it is
+  shown, so nothing resizes or jumps once it is visible, and content that
+  cannot fit is carried by a surface that stops at the work area and
+  scrolls inside itself. A window that cannot be made to fit anyway keeps
+  its top-left corner on the screen, where it can still be reached and
+  dragged.
 - Model manager. A quiet surface showing download and readiness state with
   honest progress. It never blocks dictation language with jargon.
 - State presence in the pill. Idle, listening, thinking, done, and failure
@@ -187,7 +209,7 @@ and recorded in the decision record.
 - Structure behind the flows: `05-architecture.md`
 - Agent destination behavior (phase two): `06-agent-integration.md`
 - When polish lands: `07-roadmap.md`
-- Decisions behind these flows: `08-decisions.md` items 8, 10, 13 and 14,
-  `adr/004-cancel-gesture.md`, `adr/007-chord-from-terminal-state.md`,
+- Decisions behind these flows: `08-decisions.md` items 8, 10, 13, 14 and
+  15, `adr/004-cancel-gesture.md`, `adr/007-chord-from-terminal-state.md`,
   `adr/008-pill-control.md`, `adr/009-liquid-glass-tokens.md`
 - External input merged here: `reference/external-ui-ux-brief.md`, triage in `reference/ui-brief-triage.md`

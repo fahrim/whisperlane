@@ -18,7 +18,7 @@ use audio::{
 };
 use deliver::copy_last_text;
 use hotkey::{get_hotkey_label, list_hotkeys};
-use models::{download_model, ensure_model_ready, get_download, list_models, ModelState};
+use models::{download_model, get_download, list_models, ModelState};
 use pipeline::{get_pipeline_state, PipelineState, PipelineStatus};
 use settings::{
     complete_onboarding, get_settings, is_start_with_windows, list_languages, list_themes, load,
@@ -67,7 +67,6 @@ pub fn run() {
             get_download,
             download_model,
             set_model,
-            ensure_model_ready,
             take_control,
             set_mic_test,
             toggle_settings,
@@ -110,14 +109,17 @@ pub fn run() {
             app.manage(SettingsState(std::sync::Mutex::new(saved.clone())));
             hotkey::apply_binding(saved.hotkey);
 
-            // When onboarded, the settings window stays hidden at launch,
-            // while the pill is built visible so the user immediately sees
-            // Whisperlane is running in its idle / ready state.
-            if saved.onboarded {
-                windows::set_settings_visible(app.handle(), false);
-            } else {
-                windows::set_settings_visible(app.handle(), true);
-            }
+            // The window is created hidden and stays that way until the
+            // interface has measured what it holds: a first run is shown by
+            // its own first fit, so the introduction is never seen at the
+            // size it happened to be created with, and a launch that has
+            // already been through it opens nothing at all — the pill is
+            // the visible proof that Whisperlane is running.
+            let first_run = !saved.onboarded;
+            app.manage(windows::FirstRunReveal(
+                std::sync::atomic::AtomicBool::new(first_run),
+            ));
+            windows::set_settings_visible(app.handle(), false);
 
             tray::build(app.handle())?;
             windows::build_pill(app.handle())?;

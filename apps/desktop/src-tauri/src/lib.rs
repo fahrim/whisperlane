@@ -18,7 +18,7 @@ use audio::{
 };
 use deliver::copy_last_text;
 use hotkey::{get_hotkey_label, list_hotkeys};
-use models::{download_model, get_download, list_models, ModelState};
+use models::{download_model, get_download, get_model_readiness, list_models, ModelState};
 use pipeline::{get_pipeline_state, PipelineState, PipelineStatus};
 use settings::{
     complete_onboarding, get_settings, is_start_with_windows, list_languages, list_themes, load,
@@ -65,6 +65,7 @@ pub fn run() {
             needs_microphone_choice,
             list_models,
             get_download,
+            get_model_readiness,
             download_model,
             set_model,
             take_control,

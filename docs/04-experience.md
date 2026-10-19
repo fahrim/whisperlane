@@ -82,7 +82,11 @@
   three actions, so neither path can behave differently from the other.
 - Tray affordance and popover. The quiet home when the pill is hidden:
   status at a glance, quick access to start dictation, and a path to
-  settings.
+  settings. Its status line follows the pill's rule: it says ready only
+  with a model on disk, names what is missing when there is none, and
+  shows a model on its way as the working state. Its mark follows that
+  line, because the mark is the glance: a model that is not on disk is
+  not the resting mark, and one arriving is the working mark.
 - Onboarding window. A single screen with one instruction, the answers it
   cannot assume, and one action that carries the next step. The speech
   model is among those answers, offered with the same chooser settings
@@ -127,7 +131,10 @@
   is state-aware rather than decorative: each non-listening state draws the
   same quiet dotted row with its emphasis placed differently, so the pill
   can be read without parsing a word, and the written line beside it still
-  says what happened in plain language.
+  says what happened in plain language. The resting line is not a promise
+  the install cannot keep: with no model on disk the pill says what is
+  missing instead of ready, and while the model is being fetched it shows
+  the fetch as its working state.
 - Transcript panel (hybrid). Closed by default: on success the text goes
   straight to the focused application and the pill settles. It can be
   opened on demand from the pill's menu, which unfolds a card beside the
@@ -141,7 +148,8 @@
 
 ## States and feedback
 
-- Idle: the tool is ready; the pill rests hidden and the tray rests quiet.
+- Idle: the tool is ready, which it can say only with a model on disk; the
+  pill rests hidden and the tray rests quiet.
 - Listening: capture is active; the pill's signal animates immediately so
   the user sees speech being heard.
 - Thinking: transcription is in progress; the pill shows a calm waiting
@@ -150,6 +158,10 @@
 - Failed or cancelled: the cause is stated plainly in place, nothing
   half-inserted remains, and the pill keeps the reason readable until the
   next take replaces it.
+- No model yet: the pill and the tray name what is missing rather than
+  resting ready, and while the model is fetched both show the fetch as
+  their working state. A take keeps its own state above either, because
+  that is the moment.
 
 Every state is legible from the pill alone without opening settings.
 Errors never leave the user guessing whether text was inserted.

@@ -710,9 +710,21 @@ fetching is closing its window, which does not finish the first run and
 shows it again on the next launch. A failed fetch is named beside the
 model it belongs to and retried from the same action.
 
+The resting surfaces follow the same rule as the screen. The pill's
+resting line and the tray's status line say ready only once the model is
+on disk: a missing model is named rather than passed off as readiness,
+and a model on its way is shown as the working state. A take that finds
+no model says the same sentence on the pill, so whichever way the user
+learns it the install never claims a readiness it cannot keep. The tray
+says it in its own shorter words, and its mark follows its line, because
+a line read at a glance and a mark read sooner than that must not
+disagree.
+
 Status: approved — recorded here rather than in an ADR because it
 tightens item four's on-demand fetch rather than replacing it. Direction
-from the maintainer on a first-run report.
+from the maintainer on a first-run report, extended on a later report
+that the pill and the tray claimed readiness over an install with no
+model.
 
 ## ADR process
 

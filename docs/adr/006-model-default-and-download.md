@@ -5,7 +5,10 @@ Status: approved.
 Amended by `../08-decisions.md` item 15: choosing a model only says
 which model — fetching is its own act behind its own control — and the
 take's missing-model message says where to fetch rather than naming the
-file, which the settings row does.
+file, which the settings row does. Readiness is a surface rule too: the
+pill's resting line and the tray's status line and mark say ready only
+once the model is on disk, name the missing model instead, and show a
+model on its way as the working state.
 
 ## Context
 

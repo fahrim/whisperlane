@@ -65,6 +65,22 @@ export interface Download {
   error: string | null;
 }
 
+/**
+ * Whether the chosen model can take a word yet, and whether it is on its
+ * way. The resting surfaces say ready only when this allows it, so the
+ * pill and the tray cannot promise a take the install cannot deliver.
+ */
+export interface ModelReadiness {
+  present: boolean;
+  downloading: boolean;
+  /**
+   * The core's own sentence for a missing model, or null when there is
+   * nothing to say. Carried rather than restated, so the pill and the
+   * take that finds no model say the same words.
+   */
+  hint: string | null;
+}
+
 export interface InputDevice {
   id: string;
   label: string;

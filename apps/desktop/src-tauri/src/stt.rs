@@ -347,10 +347,9 @@ pub fn backend_from_banner(banner: &str) -> Backend {
 pub fn ensure_ready(app: &AppHandle) -> Result<u16, String> {
     let model = model_path(app)?;
     if !model.is_file() {
-        // Short enough to survive the pill's capsule, and it names the
-        // surface that fixes it rather than the file the user has no use
-        // for (the settings row already shows the chosen model).
-        let msg = "model not downloaded — fetch it in Settings".to_string();
+        // The model manager owns the sentence: the pill shows the same
+        // one while nothing has been tried yet, so the two cannot drift.
+        let msg = crate::models::MODEL_MISSING_HINT.to_string();
         if let Some(state) = app.try_state::<SttState>() {
             let mut inner = state.0.lock().expect("stt state poisoned");
             inner.model_missing = true;
@@ -600,7 +599,9 @@ fn transcribe_call(port: u16, wav_path: &str, language: &str) -> Result<String, 
 #[tauri::command]
 pub fn get_stt_status(app: AppHandle) -> SttStatus {
     let chosen = crate::settings::model_of(&app);
-    let model_present = model_path(&app).map(|p| p.is_file()).unwrap_or(false);
+    // The presence rule lives in the model manager; this is the same
+    // question its readiness answers, and a status read must not write.
+    let model_present = crate::models::is_present(&app, chosen);
     let (service, detail, cached) = match app.try_state::<SttState>() {
         Some(state) => {
             let mut inner = state.0.lock().expect("stt state poisoned");

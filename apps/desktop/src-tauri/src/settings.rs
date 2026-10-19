@@ -694,6 +694,9 @@ pub fn set_model(app: AppHandle, model: String) -> Settings {
         let _ = write_settings(&path, &updated);
     }
     crate::stt::reload(&app);
+    // The chosen model is what readiness — and so the tray's resting line
+    // — is about: a choice can change the answer without a phase moving.
+    crate::tray::refresh_now(&app);
     updated
 }
 

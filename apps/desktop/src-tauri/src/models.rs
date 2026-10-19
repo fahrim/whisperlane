@@ -170,15 +170,70 @@ impl Download {
     }
 }
 
+/// What the core says when the chosen model is not on disk.
+///
+/// One sentence, named once: it has to survive the pill's capsule, and it
+/// names the surface that fixes it rather than the file the user has no
+/// use for. A take that finds no model says the same words, so the two
+/// can never drift apart.
+pub const MODEL_MISSING_HINT: &str = "model not downloaded — fetch it in Settings";
+
+/// Whether the chosen model can take a word yet, and whether it is on
+/// its way. The one answer every resting surface shows, so the pill and
+/// the tray cannot say ready over an install that has no model.
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct ModelReadiness {
+    /// The chosen model's file is on disk.
+    pub present: bool,
+    /// The chosen model is being fetched right now.
+    pub downloading: bool,
+    /// The sentence to show while the model is missing, or none when
+    /// there is nothing to say. Carried rather than restated. It speaks
+    /// for a model that is not there and nothing is doing about it; a
+    /// surface that is showing the fetch in progress says its own words.
+    pub hint: Option<&'static str>,
+}
+
+/// Readiness decided from facts, not guessed from a phase.
+///
+/// A transfer for another model does not make this one unready: the
+/// model on disk is the one dictation uses, and it still takes a word
+/// while a second file arrives.
+pub fn readiness_of(chosen: ModelChoice, present: bool, download: &Download) -> ModelReadiness {
+    ModelReadiness {
+        present,
+        downloading: download.running && download.model.as_deref() == Some(chosen.id),
+        hint: (!present).then_some(MODEL_MISSING_HINT),
+    }
+}
+
+/// The answer as it stands, read by the tray and by the pill's poll.
+pub fn readiness(app: &AppHandle) -> ModelReadiness {
+    let chosen = crate::settings::model_of(app);
+    readiness_of(chosen, is_present(app, chosen), &get_download(app.clone()))
+}
+
+#[tauri::command]
+pub fn get_model_readiness(app: AppHandle) -> ModelReadiness {
+    readiness(&app)
+}
+
 #[derive(Default)]
 pub struct ModelState(pub std::sync::Mutex<Download>);
 
-pub fn models_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
+/// Where the models live, without creating anything: a status read must
+/// not write to disk, and a directory that is not there simply has no
+/// models in it.
+fn models_dir_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(app
         .path()
         .app_data_dir()
         .map_err(|e| format!("could not resolve data dir: {e:?}"))?
-        .join("models");
+        .join("models"))
+}
+
+pub fn models_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let dir = models_dir_path(app)?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("could not create models dir: {e}"))?;
     Ok(dir)
 }
@@ -188,7 +243,9 @@ pub fn model_path(app: &AppHandle, model: ModelChoice) -> Result<PathBuf, String
 }
 
 pub fn is_present(app: &AppHandle, model: ModelChoice) -> bool {
-    model_path(app, model).map(|p| p.is_file()).unwrap_or(false)
+    models_dir_path(app)
+        .map(|dir| dir.join(model.file).is_file())
+        .unwrap_or(false)
 }
 
 #[tauri::command]
@@ -261,6 +318,10 @@ pub fn download_model(app: AppHandle, id: String) -> Download {
     }
     let worker = app.clone();
     std::thread::spawn(move || run_download(&worker, model));
+    // The tray's resting line is about the model, not a phase, so the
+    // phase writer cannot announce this. Say it here, with the state
+    // lock already released.
+    crate::tray::refresh_now(&app);
     get_download(app.clone())
 }
 
@@ -298,6 +359,10 @@ fn run_download(app: &AppHandle, model: ModelChoice) {
             state.error = None;
         }
     });
+    // A finished fetch changes what the resting surfaces may say: the
+    // model is either on disk now or it is not, and the tray has to stop
+    // saying it is arriving.
+    crate::tray::refresh_now(app);
 }
 
 /// Streams the model to disk, reporting progress as it goes. Returns
@@ -442,6 +507,45 @@ mod tests {
         assert_eq!(report.percent, Some(50));
         assert_eq!(report.model.as_deref(), Some("base-q5_1"));
         assert!(!report.error.is_some());
+    }
+
+    #[test]
+    fn readiness_is_about_the_chosen_model_only() {
+        let chosen = ModelChoice::from_id("base-q5_1").unwrap();
+        let fetching = |id: &str| Download {
+            running: true,
+            model: Some(id.to_string()),
+            ..Download::default()
+        };
+
+        // The chosen model's own transfer is the one that makes it "on
+        // its way".
+        assert!(readiness_of(chosen, false, &fetching("base-q5_1")).downloading);
+        // Another model arriving does not make this one unready: the
+        // model on disk is the one dictation uses.
+        assert!(!readiness_of(chosen, true, &fetching("large-v3-q5_0")).downloading);
+        // A finished transfer is not a running one, and an idle state
+        // reports nothing in flight.
+        let done = Download {
+            running: false,
+            model: Some("base-q5_1".to_string()),
+            ..Download::default()
+        };
+        assert!(!readiness_of(chosen, true, &done).downloading);
+        assert!(!readiness_of(chosen, false, &Download::default()).downloading);
+    }
+
+    #[test]
+    fn readiness_carries_the_file_answer_and_the_one_sentence() {
+        let chosen = ModelChoice::DEFAULT;
+
+        let missing = readiness_of(chosen, false, &Download::default());
+        assert!(!missing.present);
+        assert_eq!(missing.hint, Some(MODEL_MISSING_HINT));
+
+        let present = readiness_of(chosen, true, &Download::default());
+        assert!(present.present);
+        assert_eq!(present.hint, None);
     }
 
     #[test]

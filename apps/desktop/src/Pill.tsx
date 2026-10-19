@@ -24,6 +24,7 @@ import { LiquidWaveform, type WaveState } from "./LiquidWaveform";
 import type {
   LanguageChoice,
   MainAction,
+  ModelReadiness,
   Phase,
   PipelineStatus,
   Settings,
@@ -90,6 +91,13 @@ function signalFor(status: PipelineStatus | null): string {
       return "Ready";
   }
 }
+
+/**
+ * The pill's own words for a model that is on its way. The row it sits
+ * beside carries the fetch; this line says what the app is doing. The
+ * missing-model sentence is not here: the core carries that one.
+ */
+const MODEL_FETCH_LINE = "downloading the model";
 
 function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -235,6 +243,7 @@ export function Pill() {
   const [cleared, setCleared] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [languages, setLanguages] = useState<LanguageChoice[]>([]);
+  const [readiness, setReadiness] = useState<ModelReadiness | null>(null);
 
   const phase: Phase = status?.phase ?? "idle";
   const isRecording = phase === "listening";
@@ -466,6 +475,31 @@ export function Pill() {
     };
   }, []);
 
+  // The pill says ready, and only the model can make that true. The
+  // rest of the state arrives as phase events, but a fetch is not a
+  // phase: it can start or finish in another window while nothing here
+  // moves, so the answer is read on the settings window's own rhythm.
+  // A read that fails leaves the last answer standing — the line already
+  // reports what is known, and a second alert under the capsule would be
+  // noise rather than news.
+  useEffect(() => {
+    let alive = true;
+    async function pollReadiness() {
+      try {
+        const next = await invoke<ModelReadiness>("get_model_readiness");
+        if (alive) setReadiness(next);
+      } catch {
+        // Keep the last answer: see the comment above.
+      }
+    }
+    void pollReadiness();
+    const timer = window.setInterval(pollReadiness, 1000);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
   useEffect(() => {
     if (!isRecording) {
       setElapsedSec(0);
@@ -621,8 +655,24 @@ export function Pill() {
   }
 
   const action: MainAction = status?.main_action ?? "start";
-  const waveState = waveStateFor(phase);
   const signal = signalFor(status);
+
+  // A take is the moment and keeps its own words; the model fills only
+  // the resting line. A missing model is shown in the pill's failure
+  // face and a model on its way in its working face, because "ready" is
+  // not true until the model can take a word, and a take that finds no
+  // model says exactly this sentence anyway. Nothing here changes what
+  // the control does: the core's own action still decides that.
+  const idleReadiness = phase === "idle" ? readiness : null;
+  const facePhase: Phase = idleReadiness?.downloading
+    ? "thinking"
+    : idleReadiness && !idleReadiness.present
+      ? "failed"
+      : phase;
+  const faceLine = idleReadiness?.downloading
+    ? MODEL_FETCH_LINE
+    : (idleReadiness?.hint ?? signal);
+  const waveState = waveStateFor(facePhase);
   const currentLangLabel =
     settings?.language === "auto" || !settings?.language
       ? "Auto"
@@ -632,7 +682,7 @@ export function Pill() {
   return (
     <div
       className="pill"
-      data-phase={phase}
+      data-phase={facePhase}
       data-panel={placement ?? undefined}
       data-align={alignEnd ? "end" : "start"}
       data-glass={liveGlass ? "live" : "performance"}
@@ -682,7 +732,7 @@ export function Pill() {
             }}
           >
             <LiquidGlassSurface geometry="orb" />
-            <OrbIcon phase={phase} />
+            <OrbIcon phase={facePhase} />
           </button>
 
           {/* 2. CENTER — Waveform / State-Aware White Equalizer + Status Text.
@@ -712,7 +762,7 @@ export function Pill() {
                   height={22}
                 />
                 <p className="pill-state" role="status" aria-live="polite">
-                  {signal || status?.label || ""}
+                  {faceLine || status?.label || ""}
                 </p>
               </div>
             )}

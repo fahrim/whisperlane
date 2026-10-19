@@ -19,7 +19,7 @@ This folder holds approved decisions. Proposals live in
 - `003-device-event-filter.md` — device event filter for the global hotkey (approved from `08-decisions.md` item 7).
 - `004-cancel-gesture.md` — how the user discards a take (approved from `08-decisions.md` item 8).
 - `005-text-insertion-windows.md` — text insertion on Windows (approved from `08-decisions.md` item 3).
-- `006-model-default-and-download.md` — default model and download (approved from `08-decisions.md` item 4); amended by `08-decisions.md` item 15.
+- `006-model-default-and-download.md` — default model and download (approved from `08-decisions.md` item 4); amended by `08-decisions.md` item 15 (on-demand fetch, the missing-model sentence, and the resting surfaces' readiness).
 - `007-chord-from-terminal-state.md` — the chord from a finished state (approved from `08-decisions.md` item 9); extended by `008-pill-control.md`.
 - `008-pill-control.md` — the pill's control and the chord's tap threshold (approved from `08-decisions.md` item 10); amends `004-cancel-gesture.md` and extends `007-chord-from-terminal-state.md`.
 - `009-liquid-glass-tokens.md` — the locked visual token set and the pill's material (approved from `08-decisions.md` item 8); amended in polish.

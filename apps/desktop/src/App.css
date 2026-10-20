@@ -985,6 +985,23 @@ section {
   overflow-wrap: anywhere;
 }
 
+/* Release notes are written by whoever cut the release, so the card
+   bounds them instead of trusting their length: the newest sentence is
+   the one worth reading, and the rest scrolls. */
+.update-notes {
+  margin: 8px 0 0;
+  padding: 10px 13px;
+  max-height: 7.5em;
+  overflow-y: auto;
+  border-radius: var(--control-radius);
+  background: var(--control-bg);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 /* --- Controls -------------------------------------------------------- */
 
 button {

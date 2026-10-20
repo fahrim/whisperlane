@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getVersion } from "@tauri-apps/api/app";
+import { check, type Update } from "@tauri-apps/plugin-updater";
 import { FirstRun } from "./FirstRun";
 import { Picker, Switch } from "./controls";
 import { SignalBackdrop } from "./SignalBackdrop";
@@ -32,6 +34,26 @@ interface SttStatus {
 
 type NavTab = "general" | "speech" | "appearance" | "shortcuts" | "about";
 
+/**
+ * What the updates surface can be doing. The update itself is kept out of
+ * this value: it holds a resource on the Rust side, so it lives in a ref
+ * that one place owns and closes.
+ */
+type UpdateState =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "current" }
+  | { kind: "available"; version: string; notes: string | null }
+  | {
+      kind: "downloading";
+      version: string;
+      percent: number | null;
+      receivedMb: number;
+      totalMb: number;
+    }
+  | { kind: "installing"; version: string }
+  | { kind: "failed"; reason: string };
+
 const LEVEL_BAR_COUNT = 16;
 const RESTING_BARS = 10;
 
@@ -42,6 +64,52 @@ function hotkeyKeycaps(code: string, fallbackLabel: string): string[] {
   const cleaned = fallbackLabel.replace(/\s*\(.*\)$/, "").trim();
   if (!cleaned || cleaned === "…") return ["Control", "Shift", "Space"];
   return cleaned.split(/\s*\+\s*/).filter(Boolean);
+}
+
+/**
+ * What the updates card says. Every state has a sentence, because a
+ * button that changes nothing visible reads as broken, and "up to date"
+ * has to be said rather than shown as silence.
+ */
+function updateLine(state: UpdateState): string {
+  switch (state.kind) {
+    case "idle":
+      return "Check for a newer version when you want one. Nothing is fetched on its own.";
+    case "checking":
+      return "Checking for updates…";
+    case "current":
+      return "This is the newest version.";
+    case "available":
+      return `Version ${state.version} is available.`;
+    case "downloading": {
+      const progress = state.percent === null ? "" : ` · ${state.percent}%`;
+      const size =
+        state.totalMb > 0
+          ? ` · ${state.receivedMb} of ${state.totalMb} MB`
+          : "";
+      return `Downloading ${state.version}${progress}${size}`;
+    }
+    case "installing":
+      return "Installing — whisperlane closes and reopens on the new version.";
+    case "failed":
+      return state.reason;
+  }
+}
+
+/**
+ * The updater speaks in transport and signature terms. The card says the
+ * same thing in words a user can act on, and keeps anything it cannot
+ * classify verbatim rather than inventing a cause.
+ */
+function updateFailureReason(error: unknown): string {
+  const text = (error instanceof Error ? error.message : String(error)).trim();
+  if (/signature|verification|verify/i.test(text)) {
+    return "The update could not be verified, so it was not installed.";
+  }
+  if (/network|dns|connect|request|timed? ?out|http|tls/i.test(text)) {
+    return "Could not reach the update server. Check the connection and try again.";
+  }
+  return text || "The update could not be completed.";
 }
 
 function GearIcon() {
@@ -252,6 +320,20 @@ function PowerIcon() {
   );
 }
 
+function RefreshIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M20 11a8 8 0 1 0-2.34 6M20 4v7h-7"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function App() {
   const [status, setStatus] = useState<PipelineStatus | null>(null);
   const [stt, setStt] = useState<SttStatus | null>(null);
@@ -267,6 +349,11 @@ function App() {
   const [_askMic, setAskMic] = useState(false);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
   const [download, setDownload] = useState<Download | null>(null);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
+  const [updateState, setUpdateState] = useState<UpdateState>({ kind: "idle" });
+  // The update object holds a resource on the Rust side. It is kept here
+  // rather than in the state above so exactly one place owns closing it.
+  const pendingUpdate = useRef<Update | null>(null);
   const [activeTab, setActiveTab] = useState<NavTab>("general");
   const [audioLevel, setAudioLevel] = useState<number>(0);
   const [micTesting, setMicTesting] = useState<boolean>(false);
@@ -490,6 +577,90 @@ function App() {
     }
   }
 
+  /**
+   * Releases an update the user looked at and did not install. The object
+   * holds the downloaded manifest on the Rust side, so leaving one behind
+   * on every check would leak it for as long as the window lives.
+   */
+  async function forgetPendingUpdate() {
+    const stale = pendingUpdate.current;
+    pendingUpdate.current = null;
+    if (!stale) return;
+    try {
+      await stale.close();
+    } catch {
+      // Already released; there is nothing left to close.
+    }
+  }
+
+  async function checkForUpdate() {
+    await forgetPendingUpdate();
+    setUpdateState({ kind: "checking" });
+    try {
+      const found = await check();
+      if (!found) {
+        setUpdateState({ kind: "current" });
+        return;
+      }
+      pendingUpdate.current = found;
+      setUpdateState({
+        kind: "available",
+        version: found.version,
+        notes: found.body?.trim() || null,
+      });
+    } catch (e) {
+      setUpdateState({ kind: "failed", reason: updateFailureReason(e) });
+    }
+  }
+
+  async function installUpdate() {
+    const found = pendingUpdate.current;
+    if (!found) {
+      // The offer went away between the check and the press; asking again
+      // is the honest answer, not installing something stale.
+      setUpdateState({ kind: "idle" });
+      return;
+    }
+    try {
+      let received = 0;
+      let total = 0;
+      const megabytes = (bytes: number) => Math.round(bytes / (1024 * 1024));
+      setUpdateState({
+        kind: "downloading",
+        version: found.version,
+        percent: null,
+        receivedMb: 0,
+        totalMb: 0,
+      });
+      await found.download((event) => {
+        if (event.event === "Started") {
+          total = event.data.contentLength ?? 0;
+        } else if (event.event === "Progress") {
+          received += event.data.chunkLength;
+          setUpdateState({
+            kind: "downloading",
+            version: found.version,
+            percent:
+              total > 0
+                ? Math.min(100, Math.round((received / total) * 100))
+                : null,
+            receivedMb: megabytes(received),
+            totalMb: megabytes(total),
+          });
+        }
+      });
+      // Installing closes the application on Windows: the installer runs
+      // the update and reopens the new version by itself. Nothing after
+      // this call is seen by the user, which is why the sentence is set
+      // before it rather than after.
+      pendingUpdate.current = null;
+      setUpdateState({ kind: "installing", version: found.version });
+      await found.install();
+    } catch (e) {
+      setUpdateState({ kind: "failed", reason: updateFailureReason(e) });
+    }
+  }
+
   async function chooseMicrophone(microphone: Microphone) {
     try {
       setSettings(await invoke<Settings>("set_microphone", { microphone }));
@@ -633,6 +804,20 @@ function App() {
   const canDownload =
     chosenModel !== null && !chosenModel.present && !download?.running;
 
+  const updateBusy =
+    updateState.kind === "checking" ||
+    updateState.kind === "downloading" ||
+    updateState.kind === "installing";
+
+  const updateAction: { label: string; run: () => void } =
+    updateState.kind === "available"
+      ? { label: "Install update", run: installUpdate }
+      : {
+          label:
+            updateState.kind === "failed" ? "Try again" : "Check for updates",
+          run: checkForUpdate,
+        };
+
   useEffect(() => {
     let stop = false;
     async function poll() {
@@ -671,6 +856,11 @@ function App() {
     invoke<boolean>("is_start_with_windows")
       .then(setStartWithWindows)
       .catch(() => {});
+    // The version comes from the running build, not from a string kept in
+    // this file: the one here was still saying 0.1.0 two releases later.
+    getVersion()
+      .then(setAppVersion)
+      .catch(() => {});
     refreshModels();
     poll();
     const timer = setInterval(poll, 1000);
@@ -679,6 +869,14 @@ function App() {
       clearInterval(timer);
     };
   }, []);
+
+  // A window that goes away must not leave the update resource behind it.
+  useEffect(
+    () => () => {
+      void forgetPendingUpdate();
+    },
+    [],
+  );
 
   const activeBars =
     micTesting || live
@@ -1169,27 +1367,64 @@ function App() {
                 )}
 
                 {showAboutCard && (
-                  <section className="settings-card" aria-label="About whisperlane">
-                    <div className="settings-card-icon">
-                      <img
-                        src={brandmarkGradient}
-                        alt=""
-                        className="about-brandmark-img"
-                        draggable={false}
-                      />
-                    </div>
-                    <div className="settings-card-body">
-                      <h2 className="settings-card-title">whisperlane</h2>
-                      <p className="settings-card-desc">
-                        Version 0.1.0 · Local voice-to-text dictation for Windows.
-                      </p>
-                      {modelLine && (
-                        <p className="settings-card-status">
-                          Speech engine: {modelLine}
+                  <>
+                    <section
+                      className="settings-card"
+                      aria-label="About whisperlane"
+                    >
+                      <div className="settings-card-icon">
+                        <img
+                          src={brandmarkGradient}
+                          alt=""
+                          className="about-brandmark-img"
+                          draggable={false}
+                        />
+                      </div>
+                      <div className="settings-card-body">
+                        <h2 className="settings-card-title">whisperlane</h2>
+                        <p className="settings-card-desc">
+                          Version {appVersion ?? "…"} · Local voice-to-text
+                          dictation for Windows.
                         </p>
-                      )}
-                    </div>
-                  </section>
+                        {modelLine && (
+                          <p className="settings-card-status">
+                            Speech engine: {modelLine}
+                          </p>
+                        )}
+                      </div>
+                    </section>
+
+                    <section className="settings-card" aria-label="Updates">
+                      <div className="settings-card-icon">
+                        <RefreshIcon />
+                      </div>
+                      <div className="settings-card-body">
+                        <h2 className="settings-card-title">Updates</h2>
+                        <p className="settings-card-desc" role="status">
+                          {updateLine(updateState)}
+                        </p>
+                        {updateState.kind === "available" &&
+                          updateState.notes && (
+                            <p className="update-notes">{updateState.notes}</p>
+                          )}
+                        <div className="field-status-row">
+                          <span className="settings-card-status">
+                            {updateState.kind === "available"
+                              ? "Signed and verified before it installs."
+                              : "Windows · signed builds"}
+                          </span>
+                          <button
+                            type="button"
+                            className="card-action-btn"
+                            disabled={updateBusy}
+                            onClick={updateAction.run}
+                          >
+                            {updateAction.label}
+                          </button>
+                        </div>
+                      </div>
+                    </section>
+                  </>
                 )}
 
                 {activeTab === "general" &&

@@ -124,6 +124,13 @@
   dragged.
 - Model manager. A quiet surface showing download and readiness state with
   honest progress. It never blocks dictation language with jargon.
+- Updates. Asked for, never fetched on the user's behalf: the About card
+  carries the running version and one control that checks, and — when
+  there is a newer version — its number, its notes, and a download that
+  reports progress the way a model fetch does. An update that does not
+  match its signature is not installed. On Windows the installer closes
+  the application and reopens it on the new version, and the card says so
+  before it does rather than after.
 - State presence in the pill. Idle, listening, thinking, done, and failure
   are carried by the pill itself — the signal animates while listening,
   settles into a calm waiting presence while thinking, confirms briefly on

@@ -726,8 +726,54 @@ from the maintainer on a first-run report, extended on a later report
 that the pill and the tray claimed readiness over an install with no
 model.
 
-## ADR process
+## 16. An installed application learns about a newer one only when asked
 
+Context: nothing told an installed whisperlane that a newer one existed.
+The release pipeline produced an installer and a draft release, and that was
+the end of it: a user on an older version could keep using it indefinitely
+without ever being told, and the only way to update was to notice the
+repository by themselves. The release plan already called for signed builds
+with updater signature verification, so the machinery was specified and
+unbuilt.
+
+Options: no updater at all, with updates found by whoever thinks to look;
+a check the user asks for, on the About card, with no traffic otherwise; a
+check that runs on its own on a schedule and says so quietly when it finds
+something; or a check that runs, downloads and installs without being
+asked.
+
+Trade-offs: no updater is the only option that adds no outbound request,
+and it is also the only one that leaves a known-broken version installed
+forever. An asked-for check keeps the local-first promise intact — the
+application contacts nothing until a button is pressed — and costs the user
+the same deliberate click the model fetch already asks for. A scheduled
+check finds updates sooner at the cost of the application talking to a
+server on its own, which is a new behavior for a product whose promise is
+that everyday dictation needs no network; it would need an explicit
+setting and an off switch to be honest. An unasked download-and-install
+removes the last decision from the user and is incompatible with a tool
+that is supposed to be invisible and predictable.
+
+Direction: the maintainer asked for the update path to be built after an
+analysis that recommended the asked-for check. Nothing in the request
+extended to a background check.
+
+Decision: updates are asked for. The About card carries the running
+version read from the application, one control that checks, and — when a
+newer version exists — its number, its notes, a download that reports
+progress the way a model fetch does, and an install that closes and
+reopens the application. The update is signed and is refused if the
+signature does not hold, so a tampered download fails rather than
+installing. On Windows the NSIS installer carries the update; the MSI
+remains a first-install artifact and is not the update channel. The
+endpoint is the newest published release's manifest, which means the draft
+the pipeline produces becomes the update only when a person publishes it.
+
+Status: open — the asked-for path is built. Whether whisperlane ever
+checks on its own, and under what setting, is still the maintainer's call
+and is not implemented.
+
+## ADR process
 - A decision becomes an ADR only after explicit approval of the
   recommendation or an alternative.
 - ADRs live under `adr/`, are numbered sequentially, and record context,

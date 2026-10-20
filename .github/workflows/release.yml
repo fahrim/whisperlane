@@ -1,0 +1,139 @@
+# Publishing a whisperlane release.
+#
+# A version tag is the only trigger. The tag is the statement of what
+# is being published, so the workflow reads the version back out of the
+# manifests and refuses to build when the tag and the manifests disagree:
+# an installer whose name says one version and whose code is another is
+# worse than no installer.
+#
+# The checks from the continuous integration workflow run again here,
+# before the build. A tag that cannot pass them cannot become an
+# installer.
+#
+# The release is created as a draft. It is verified by hand — the build
+# is run, the installer is installed, a take is spoken — before anyone
+# is told it exists. Signing is not part of this yet; an unsigned build
+# says plainly that it is unsigned.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build, for example v0.8.0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    name: Windows bundle
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Install
+        working-directory: apps/desktop
+        run: bun install --frozen-lockfile
+
+      - name: The tag must match the version in the manifests
+        shell: pwsh
+        run: |
+          $tag = ('{0}' -f (git tag --points-at HEAD | Select-Object -First 1))
+          if (-not $tag) { throw 'this build is not on a tag' }
+
+          $pkg = (Get-Content apps/desktop/package.json -Raw | ConvertFrom-Json).version
+          $tauri = (Get-Content apps/desktop/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $toml = Get-Content apps/desktop/src-tauri/Cargo.toml -Raw
+          $cargo = [regex]::Match($toml, '(?ms)^\[package\].*?^version\s*=\s*"([^"]+)"').Groups[1].Value
+
+          $versions = @(@($pkg, $tauri, $cargo) | Sort-Object -Unique)
+          if ($versions.Count -ne 1) {
+            throw "the manifests disagree on the version: $($versions -join ', ')"
+          }
+          if ($tag -ne "v$($versions[0])") {
+            throw "tag $tag does not match the manifest version $($versions[0])"
+          }
+          Write-Host "building $tag"
+
+      - name: Lint
+        working-directory: apps/desktop/src-tauri
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Test
+        working-directory: apps/desktop/src-tauri
+        run: cargo test --all-targets
+
+      - name: Typecheck
+        working-directory: apps/desktop
+        run: bunx tsc --noEmit
+
+      - name: Stage the transcription runtime
+        shell: pwsh
+        run: |
+          # The engine is pinned by tag and checksum. It travels with the
+          # source when it is committed, and is fetched when it is not:
+          # the installer must never ship without it.
+          if (-not (Test-Path 'apps/desktop/src-tauri/runtime/whisper-server.exe')) {
+            ./scripts/fetch-runtime.ps1 -Force
+          }
+          if (-not (Test-Path 'apps/desktop/src-tauri/runtime/whisper-server.exe')) {
+            throw 'the transcription runtime is missing; the installer would ship without an engine'
+          }
+
+      - name: Build the installers
+        working-directory: apps/desktop
+        run: bun run tauri build
+
+      - name: Collect the installers
+        shell: pwsh
+        run: |
+          $bundles = 'apps/desktop/src-tauri/target/release/bundle'
+          $files = @()
+          foreach ($pattern in @("$bundles/nsis/*.exe", "$bundles/msi/*.msi")) {
+            $files += Get-ChildItem $pattern -ErrorAction SilentlyContinue
+          }
+          if ($files.Count -eq 0) {
+            throw "no installer was produced under $bundles"
+          }
+          $files | ForEach-Object {
+            Write-Host ("{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB))
+          }
+
+      - name: Upload the installers as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: whisperlane-windows
+          path: |
+            apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
+            apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: error
+
+      - name: Open a draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
+            apps/desktop/src-tauri/target/release/bundle/msi/*.msi

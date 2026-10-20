@@ -1,0 +1,125 @@
+# Continuous integration for whisperlane.
+#
+# Windows only, on purpose: the shell speaks to the Windows API directly,
+# the pill is a native window, and the transcription engine ships as
+# Windows binaries. A green run on another operating system would say
+# nothing about the product.
+#
+# What is checked here is the behaviour that can be checked without a
+# machine and a microphone: the manifests agree, the readme points at
+# assets that exist, the interface compiles, and the core's own tests
+# pass.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  repository:
+    name: Repository checks
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The manifests must agree on the version
+        shell: pwsh
+        run: |
+          $pkg = (Get-Content apps/desktop/package.json -Raw | ConvertFrom-Json).version
+          $tauri = (Get-Content apps/desktop/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $toml = Get-Content apps/desktop/src-tauri/Cargo.toml -Raw
+          $cargo = [regex]::Match($toml, '(?ms)^\[package\].*?^version\s*=\s*"([^"]+)"').Groups[1].Value
+
+          Write-Host "package.json    $pkg"
+          Write-Host "tauri.conf.json $tauri"
+          Write-Host "Cargo.toml      $cargo"
+
+          $versions = @(@($pkg, $tauri, $cargo) | Sort-Object -Unique)
+          if ($versions.Count -ne 1) {
+            throw "the manifests disagree on the version: $($versions -join ', ')"
+          }
+          Write-Host "version $pkg"
+
+      - name: Every local asset the readme points at must exist
+        shell: pwsh
+        run: |
+          $readme = Get-Content README.md -Raw
+          $paths = [regex]::Matches($readme, '(?:src|srcset)="([^"]+)"') |
+            ForEach-Object { $_.Groups[1].Value } |
+            Where-Object { $_ -notmatch '^https?://' } |
+            Sort-Object -Unique
+
+          if ($paths.Count -eq 0) {
+            throw "no local assets found in the readme; the check is broken"
+          }
+
+          $missing = @()
+          foreach ($path in $paths) {
+            if (-not (Test-Path $path)) { $missing += $path }
+          }
+          if ($missing.Count -gt 0) {
+            throw "readme assets missing: $($missing -join ', ')"
+          }
+          Write-Host "$($paths.Count) readme assets present"
+
+  frontend:
+    name: Frontend
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+
+      - name: Cache the package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('apps/desktop/bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bunx tsc --noEmit
+
+      - name: Build
+        run: bun run build
+
+  rust:
+    name: Rust core
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: apps/desktop/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
+
+      - name: Lint
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Test
+        run: cargo test --all-targets

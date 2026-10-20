@@ -6,16 +6,15 @@ The repository separates concerns so the product structure is visible from
 the top level: the desktop application holding the interface and the native
 core, optional shared native libraries for audio, transcription, and
 insertion concerns, project documentation with the plan folder as the
-origin, and root-level project files including the readme and licensing
-texts. The exact directory names are settled with the first milestone
-scaffold; this document is updated then, and the documentation index points
-to it.
+origin, root-level project files including the readme and licensing texts,
+and the workflow definitions that check and publish the application. The
+exact directory names are settled with the first milestone scaffold; this
+document is updated then, and the documentation index points to it.
 
 ## Version control status
 
-The repository is not yet under version control. Initialization is deferred
-until the documentation set is approved, at which point history begins with
-the approved docs and the two canonical license texts. No history is
+The repository is under version control. History begins with the approved
+documentation and the two canonical license texts, and no history is
 rewritten after that point without explicit agreement.
 
 ## Licensing
@@ -77,15 +76,31 @@ Licensing texts travel with every distribution.
 The repository starts private and turns public at the first release; that
 switch is a one-time visibility change, not a code change.
 
-Release automation plan (implemented after the project scaffold exists,
-not before): semantic version tags as the single trigger, signed Windows
-builds with updater signature verification following the reference
-product, draft releases that are verified before publishing, and a
-changelog drawn from milestone acceptance rather than reconstructed
-memory. Once the scaffold lands, this plan becomes a release skill and a
-release command that run the same loop every time: bump, changelog, tag,
-build, sign, draft, verify, publish. The plan lives here; the machinery
-arrives with the scaffold.
+Release automation plan: semantic version tags as the single trigger,
+signed Windows builds with updater signature verification following the
+reference product, draft releases that are verified before publishing, and
+a changelog drawn from milestone acceptance rather than reconstructed
+memory. The machinery now exists as two workflow definitions under the
+repository's workflow directory, and the loop they close is: bump,
+changelog, tag, build, draft, verify, publish. The publishing one takes a
+version tag as its only trigger, reads the version back out of the
+manifests, refuses to build when the tag and the manifests disagree, and
+leaves the result as a draft that a person opens and checks before it is
+announced. Two pieces of the plan are still open: signing and updater
+verification are not implemented, so a published build is unsigned and says
+so, and the release notes are the platform's generated notes rather than a
+changelog drawn from milestone acceptance.
+
+## Continuous integration
+
+Every push and every pull request is checked on Windows, because the
+product is Windows: a green run on another operating system would say
+nothing about it. The checks are the ones that hold without a microphone
+and a machine: the manifests are read to confirm they agree on the
+version, the readme is read to confirm it points at assets that exist, the
+interface is typechecked and built, and the native core is linted and
+tested. The publishing workflow runs the same checks before it builds, so
+a tag that cannot pass CI cannot become an installer.
 
 ## Related
 

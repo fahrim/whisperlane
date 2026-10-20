@@ -30,6 +30,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "resources": {
       "runtime/*": "runtime/"
     },
@@ -48,5 +49,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI5QTZEMDE2NzNBMUUzRTAKUldUZzQ2RnpGdENtdVhxdnkwWHFyVERFa1BqdmZ4UkZtV2RNdTIwU3hIU0txckFQWlAwaWRUa0UK",
+      "endpoints": [
+        "https://github.com/fahrim/whisperlane/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

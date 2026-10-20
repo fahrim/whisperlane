@@ -102,6 +102,12 @@ jobs:
 
       - name: Build the installers
         working-directory: apps/desktop
+        env:
+          # Signing cannot be skipped: the updater refuses an artifact it
+          # cannot verify, so an unsigned build is an update nobody can
+          # install.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: bun run tauri build
 
       - name: Collect the installers
@@ -119,13 +125,60 @@ jobs:
             Write-Host ("{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB))
           }
 
+      - name: Write the update manifest
+        shell: pwsh
+        run: |
+          # The updater reads this file before it downloads anything, so a
+          # signature that is missing here is an update that never reaches
+          # the user. The endpoint in tauri.conf.json points at the
+          # "latest" release, which is why this file is attached to the
+          # release rather than committed.
+          $bundles = 'apps/desktop/src-tauri/target/release/bundle/nsis'
+          # Only an installer that carries a signature can be published:
+          # picking the newest file blindly would find a stale one in a
+          # workspace that has been built before.
+          $installer = Get-ChildItem "$bundles/*.exe" |
+            Where-Object { $_.Name -notlike '*.sig' -and (Test-Path "$($_.FullName).sig") } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $installer) {
+            throw 'no signed NSIS installer to publish'
+          }
+
+          $sigPath = "$($installer.FullName).sig"
+          $signature = (Get-Content $sigPath -Raw).Trim()
+
+          $version = (Get-Content apps/desktop/package.json -Raw | ConvertFrom-Json).version
+          $tag = ('{0}' -f (git tag --points-at HEAD | Select-Object -First 1))
+
+          # Release notes stay empty until a changelog exists that is drawn
+          # from milestone acceptance rather than reconstructed afterwards.
+          $manifest = [ordered]@{
+            version = $version
+            notes = ''
+            pub_date = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+            platforms = [ordered]@{
+              'windows-x86_64' = [ordered]@{
+                signature = $signature
+                url = "https://github.com/${{ github.repository }}/releases/download/$tag/$($installer.Name)"
+              }
+            }
+          }
+
+          $path = 'apps/desktop/src-tauri/target/release/bundle/latest.json'
+          $manifest | ConvertTo-Json -Depth 6 | Set-Content -Path $path -Encoding utf8
+          Write-Host "latest.json -> $version, $($installer.Name)"
+          Get-Content $path
+
       - name: Upload the installers as an artifact
         uses: actions/upload-artifact@v4
         with:
           name: whisperlane-windows
           path: |
             apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
+            apps/desktop/src-tauri/target/release/bundle/nsis/*.sig
             apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+            apps/desktop/src-tauri/target/release/bundle/latest.json
           if-no-files-found: error
 
       - name: Open a draft release
@@ -136,4 +189,6 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             apps/desktop/src-tauri/target/release/bundle/nsis/*.exe
+            apps/desktop/src-tauri/target/release/bundle/nsis/*.sig
             apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+            apps/desktop/src-tauri/target/release/bundle/latest.json

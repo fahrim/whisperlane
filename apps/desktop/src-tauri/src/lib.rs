@@ -44,6 +44,12 @@ pub fn run() {
         // the product: a dictation tool that is not running cannot be
         // dictated to, and the user should not have to find it first.
         .plugin(tauri_plugin_autostart::Builder::new().build())
+        // Updates are asked for, never fetched behind the user's back:
+        // the plugin runs only when the About card asks it to, and the
+        // signature it insists on is what makes an update something other
+        // than a stranger's installer. On Windows the installer closes
+        // the application and reopens it, so nothing here has to.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(PipelineState(std::sync::Mutex::new(
             PipelineStatus::default(),
         )))

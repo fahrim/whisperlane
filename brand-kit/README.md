@@ -38,6 +38,7 @@ Hazır görsel ölçüleri:
 - LinkedIn kapak: 1128 × 191
 - YouTube kanal kapağı: 2560 × 1440
 - Open Graph / bağlantı paylaşım görseli: 1200 × 630
+- Landing hero (README/websitesi başlığı): `04_Social_Media/hero-main-generated.webp`
 - Profil görselleri: 1080, 800 ve 300 px
 - E-posta imzası: açık/koyu zemin için şeffaf PNG
 

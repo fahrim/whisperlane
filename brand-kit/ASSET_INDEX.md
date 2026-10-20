@@ -19,7 +19,7 @@
 `idle`, `listening-active`, `processing`, `muted`, `error` — transparent PNGs plus dark-tile previews.
 
 ## Social (`04_Social_Media`)
-Instagram, X, LinkedIn, YouTube, Open Graph, profile-avatar and email-signature assets. Dimensions are encoded in the filenames.
+Instagram, X, LinkedIn, YouTube, Open Graph, profile-avatar and email-signature assets. Dimensions are encoded in the filenames. `hero-main-generated.webp` is the wide landing hero used at the top of the readme.
 
 ## Guidelines (`05_Guidelines`)
 `brand-overview.png`, `color-palette.png`, `whisperline-brand-identity-presets_design-system.png`

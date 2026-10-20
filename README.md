@@ -1,12 +1,27 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="brand-kit/01_Logos/PNG/whisperlane-lockup-horizontal-on-dark.png">
-  <source media="(prefers-color-scheme: light)" srcset="brand-kit/01_Logos/PNG/whisperlane-lockup-horizontal-on-light.png">
-  <img alt="whisperlane" src="brand-kit/01_Logos/PNG/whisperlane-lockup-horizontal-on-light.png" width="460">
-</picture>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand-kit/01_Logos/PNG/whisperlane-lockup-horizontal-on-dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="brand-kit/01_Logos/PNG/whisperlane-lockup-horizontal-on-light.png">
+    <img alt="whisperlane" src="brand-kit/01_Logos/PNG/whisperlane-lockup-horizontal-on-light.png" width="400">
+  </picture>
+</p>
 
-# whisperlane
+<p align="center">
+  <b>Hold a key, talk, and it is typed.</b><br>
+  <sub>Free · Private · Local-first dictation for Windows</sub>
+</p>
 
-> Hold a key, talk, and it is typed.
+<p align="center">
+  <a href="https://learn.microsoft.com/en-us/windows/"><img src="https://img.shields.io/badge/platform-Windows-0078D4?logo=windows&logoColor=white" alt="Windows" height="20"></a>
+  <a href="https://tauri.app"><img src="https://img.shields.io/badge/tauri-v2-24C8DB?logo=tauri&logoColor=black" alt="Tauri v2" height="20"></a>
+  <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-2024-orange?logo=rust&logoColor=white" alt="Rust" height="20"></a>
+  <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%7C%20Apache--2.0-blue.svg" alt="MIT or Apache-2.0" height="20"></a>
+  <a href="docs/07-roadmap.md"><img src="https://img.shields.io/badge/status-in%20progress-yellow.svg" alt="Status: in progress" height="20"></a>
+</p>
+
+<p align="center">
+  <img src="brand-kit/04_Social_Media/hero-main-generated.webp" alt="The whisperlane settings window, a finished take and the listening pill, floating over a blue wave" width="900">
+</p>
 
 whisperlane is a free, private, local-first desktop dictation tool. Press a
 hotkey, speak, and the transcribed words appear where the caret is — in the
@@ -33,6 +48,15 @@ fallback), with an AI-agent-native direction held for phase two.
 Everything runs on the machine after setup: offline, with no account and no
 required network dependency for everyday dictation.
 
+## How a take works
+
+| Step | What happens |
+| --- | --- |
+| **Hold** | Press and hold the chord — `Ctrl` + `Shift` + `Space` by default, configurable in settings. |
+| **Speak** | The microphone is captured locally and the pill shows the live input level. |
+| **Release** | The take is transcribed on the GPU (Vulkan, CUDA, or CPU fallback) and the text lands at the caret. |
+| **Discard** | `Escape` throws the take away at any point before insertion — nothing is typed. |
+
 ## Status
 
 Windows-only MVP, in progress. Agents (including OpenCode) are deliberately
@@ -40,54 +64,27 @@ phase two.
 
 | Milestone | Scope | Status |
 | --- | --- | --- |
-| M0 — skeleton that talks | Shell, tray, hotkey, capture, GPU transcription, clipboard delivery | Done |
-| M1 — useful on Windows | Settings, chord, microphone, hold/toggle/cancel, insertion, model download, AMD/Intel acceleration | Done |
-| M2 — polish and packaging | First run, pill states, premium pass, packaging | In progress |
-| Phase 2 — agent integration | Dictation into an AI coding agent (OpenCode first) | Planned |
-| M3 — wider platforms | macOS, then Linux, signing and notarization | Planned |
+| M0 — skeleton that talks | Shell, tray, hotkey, capture, GPU transcription, clipboard delivery | ✅ Done |
+| M1 — useful on Windows | Settings, chord, microphone, hold/toggle/cancel, insertion, model download, AMD/Intel acceleration | ✅ Done |
+| M2 — polish and packaging | First run, pill states, premium pass, packaging | 🟡 In progress |
+| Phase 2 — agent integration | Dictation into an AI coding agent (OpenCode first) | ⏳ Planned |
+| M3 — wider platforms | macOS, then Linux, signing and notarization | ⏳ Planned |
 
 ## The pill
 
 Every state is legible from a single small indicator.
 
 <p align="center">
-  <img src="brand-kit/03_Status_States/whisperlane-status-idle-tile.png" alt="Idle" width="96">
-  <img src="brand-kit/03_Status_States/whisperlane-status-listening-active-tile.png" alt="Listening" width="96">
-  <img src="brand-kit/03_Status_States/whisperlane-status-processing-tile.png" alt="Processing" width="96">
-  <img src="brand-kit/03_Status_States/whisperlane-status-muted-tile.png" alt="Muted" width="96">
-  <img src="brand-kit/03_Status_States/whisperlane-status-error-tile.png" alt="Error" width="96">
+  <img src="brand-kit/03_Status_States/whisperlane-status-idle-tile.png" alt="Idle" width="96" loading="lazy">
+  <img src="brand-kit/03_Status_States/whisperlane-status-listening-active-tile.png" alt="Listening" width="96" loading="lazy">
+  <img src="brand-kit/03_Status_States/whisperlane-status-processing-tile.png" alt="Processing" width="96" loading="lazy">
+  <img src="brand-kit/03_Status_States/whisperlane-status-muted-tile.png" alt="Muted" width="96" loading="lazy">
+  <img src="brand-kit/03_Status_States/whisperlane-status-error-tile.png" alt="Error" width="96" loading="lazy">
 </p>
 
 <p align="center">
   <sub>Idle · Listening · Processing · Muted · Error</sub>
 </p>
-
-## Brand
-
-The brand kit lives in [`brand-kit/`](brand-kit/). Assets include the logo
-lockups, app icons, status states, social media sizes, and the guidelines
-below.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="brand-kit/05_Guidelines/color-palette.png">
-  <img alt="Color palette" src="brand-kit/05_Guidelines/color-palette.png" width="640">
-</picture>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="brand-kit/05_Guidelines/brand-overview.png">
-  <img alt="Brand overview" src="brand-kit/05_Guidelines/brand-overview.png" width="640">
-</picture>
-
-See [`brand-kit/README.md`](brand-kit/README.md) and
-[`brand-kit/ASSET_INDEX.md`](brand-kit/ASSET_INDEX.md) for the full asset
-list and usage notes.
-
-## Social preview
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="brand-kit/04_Social_Media/open-graph-1200x630.jpg">
-  <img alt="Open Graph preview" src="brand-kit/04_Social_Media/open-graph-1200x630.jpg" width="640">
-</picture>
 
 ## Documentation
 
@@ -117,6 +114,41 @@ Full index: [`docs/README.md`](docs/README.md).
   Turkish.
 - No document contains source code, configuration, or snippets; architecture
   is narrated.
+
+## Brand
+
+The brand kit lives in [`brand-kit/`](brand-kit/). Assets include the logo
+lockups, app icons, status states, social media sizes, and the guidelines
+below.
+
+<p align="center">
+  <img src="brand-kit/05_Guidelines/brand-overview.png" alt="Brand overview: primary lockup, app icon, brandmark variants, voice and agent states, core palette" width="640" loading="lazy">
+</p>
+
+<p align="center">
+  <img src="brand-kit/05_Guidelines/color-palette.png" alt="Color palette: Midnight Navy, Deep Indigo, Signal Cyan, Electric Blue, Wave Purple, Glow Magenta, Warm Coral, Silver, Near White" width="640" loading="lazy">
+</p>
+
+<p align="center">
+  <img src="brand-kit/02_App_Icons/PNG/whisperlane-app-icon-flat-1024.png" alt="App icon, flat" width="112" loading="lazy">
+  <img src="brand-kit/02_App_Icons/PNG/whisperlane-app-icon-1024.png" alt="App icon, glass" width="112" loading="lazy">
+  <img src="brand-kit/02_App_Icons/PNG/whisperlane-maskable-512.png" alt="App icon, maskable" width="112" loading="lazy">
+  <img src="brand-kit/02_App_Icons/PNG/favicon-48.png" alt="Favicon" width="48" loading="lazy">
+</p>
+
+<p align="center">
+  <sub>Flat · Glass · Maskable · Favicon</sub>
+</p>
+
+See [`brand-kit/README.md`](brand-kit/README.md) and
+[`brand-kit/ASSET_INDEX.md`](brand-kit/ASSET_INDEX.md) for the full asset
+list and usage notes.
+
+## Social preview
+
+<p align="center">
+  <img src="brand-kit/04_Social_Media/open-graph-1200x630.jpg" alt="Open Graph preview" width="640" loading="lazy">
+</p>
 
 ## License
 

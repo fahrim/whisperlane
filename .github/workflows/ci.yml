@@ -14,7 +14,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # Both names, because the default branch is `master` today and a
+    # repository renamed to `main` tomorrow must not lose its checks.
+    branches: [master, main]
   pull_request:
   workflow_dispatch:
 

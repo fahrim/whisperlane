@@ -39,20 +39,23 @@ impl Phase {
     /// one.
     pub fn can_transition_to(self, next: Phase) -> bool {
         use Phase::*;
-        match (self, next) {
-            (Idle, Listening) => true,
-            (Idle, Failed) => true,
-            (Listening, Thinking) => true,
-            (Listening, Cancelled) => true,
-            (Listening, Failed) => true,
-            (Thinking, Done) => true,
-            (Thinking, Failed) => true,
-            (Thinking, Cancelled) => true,
-            (Done, Idle) | (Done, Listening) => true,
-            (Failed, Idle) | (Failed, Listening) => true,
-            (Cancelled, Idle) | (Cancelled, Listening) => true,
-            _ => false,
-        }
+        matches!(
+            (self, next),
+            (Idle, Listening)
+                | (Idle, Failed)
+                | (Listening, Thinking)
+                | (Listening, Cancelled)
+                | (Listening, Failed)
+                | (Thinking, Done)
+                | (Thinking, Failed)
+                | (Thinking, Cancelled)
+                | (Done, Idle)
+                | (Done, Listening)
+                | (Failed, Idle)
+                | (Failed, Listening)
+                | (Cancelled, Idle)
+                | (Cancelled, Listening)
+        )
     }
 
     /// Plain-language name for a state, as the first-run screen shows

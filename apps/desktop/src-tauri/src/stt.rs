@@ -77,6 +77,7 @@ pub struct SttStatus {
     pub detail: Option<String>,
 }
 
+#[derive(Default)]
 pub(crate) struct SttInner {
     child: Option<Child>,
     port: Option<u16>,
@@ -91,23 +92,6 @@ pub(crate) struct SttInner {
     /// answer cannot change without the machine or the runtime
     /// changing, and the probe is far too slow for a status poll.
     verified_backend: Option<Backend>,
-}
-
-impl Default for SttInner {
-    fn default() -> Self {
-        Self {
-            child: None,
-            port: None,
-            starting: false,
-            active_requests: 0,
-            last_use: None,
-            consecutive_crashes: 0,
-            last_error: None,
-            model_missing: false,
-            reload_pending: false,
-            verified_backend: None,
-        }
-    }
 }
 
 pub struct SttState(pub(crate) Mutex<SttInner>);
@@ -605,7 +589,7 @@ pub fn get_stt_status(app: AppHandle) -> SttStatus {
     let (service, detail, cached) = match app.try_state::<SttState>() {
         Some(state) => {
             let mut inner = state.0.lock().expect("stt state poisoned");
-            let alive = inner.child.as_mut().is_some_and(|c| child_alive(c));
+            let alive = inner.child.as_mut().is_some_and(child_alive);
             let svc = if inner
                 .last_error
                 .as_ref()

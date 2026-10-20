@@ -737,6 +737,10 @@ impl Drop for CapturePool {
 
 static CAPTURE_POOL: Mutex<Option<CapturePool>> = Mutex::new(None);
 
+// The geometry arguments are one rectangle and one crop described in
+// the same words the desktop uses; bundling them into a struct would
+// hide the call site behind a type that says less than the names do.
+#[allow(clippy::too_many_arguments)]
 fn encode_downsampled_rgba_packet(
     bgra: &[u8],
     src_w: usize,
@@ -833,6 +837,9 @@ fn encode_downsampled_rgba_packet(
     Some(out_buf.clone())
 }
 
+// One window handle and one crop rectangle, again spelled out the way
+// the caller reads them.
+#[allow(clippy::too_many_arguments)]
 fn capture_crop_rgba_packet(
     pill_hwnd: Option<HWND>,
     crop_log_x: f64,
@@ -905,14 +912,14 @@ fn capture_crop_rgba_packet(
                 &raw mut bits_ptr,
                 None,
                 0,
-            ) {
-                if !dib.is_invalid() && !bits_ptr.is_null() {
-                    let _ = SelectObject(pool.mem_dc, dib);
-                    pool.dib = dib;
-                    pool.bits_ptr = bits_ptr;
-                    pool.capacity_w = new_cap_w;
-                    pool.capacity_h = new_cap_h;
-                }
+            ) && !dib.is_invalid()
+                && !bits_ptr.is_null()
+            {
+                let _ = SelectObject(pool.mem_dc, dib);
+                pool.dib = dib;
+                pool.bits_ptr = bits_ptr;
+                pool.capacity_w = new_cap_w;
+                pool.capacity_h = new_cap_h;
             }
         }
 
@@ -957,6 +964,9 @@ fn capture_crop_rgba_packet(
 /// underneath the pill. The pill stays capturable (`WDA_NONE`) except around
 /// our own `BitBlt`, so Snipping Tool and friends keep seeing it.
 #[tauri::command]
+// The signature is the command's wire format: the pill sends the pill
+// rectangle and the panel rectangle as separate numbers.
+#[allow(clippy::too_many_arguments)]
 pub fn set_pill_blur_region(
     app: AppHandle,
     pill_x: f64,
@@ -995,20 +1005,21 @@ pub fn set_pill_blur_region(
 
     // Physical panel rect + corner diameter, when a panel is open.
     let mut panel_phys = [0i32; 5];
-    if let (Some(px), Some(py), Some(pw), Some(ph)) = (panel_x, panel_y, panel_w, panel_h) {
-        if pw > 0.0 && ph > 0.0 {
-            log_min_x = log_min_x.min(px);
-            log_min_y = log_min_y.min(py);
-            log_max_x = log_max_x.max(px + pw);
-            log_max_y = log_max_y.max(py + ph);
-            panel_phys = [
-                (px * scale).round() as i32,
-                (py * scale).round() as i32,
-                ((px + pw) * scale).round() as i32,
-                ((py + ph) * scale).round() as i32,
-                ((panel_r.unwrap_or(20.0) * 2.0) * scale).round() as i32,
-            ];
-        }
+    if let (Some(px), Some(py), Some(pw), Some(ph)) = (panel_x, panel_y, panel_w, panel_h)
+        && pw > 0.0
+        && ph > 0.0
+    {
+        log_min_x = log_min_x.min(px);
+        log_min_y = log_min_y.min(py);
+        log_max_x = log_max_x.max(px + pw);
+        log_max_y = log_max_y.max(py + ph);
+        panel_phys = [
+            (px * scale).round() as i32,
+            (py * scale).round() as i32,
+            ((px + pw) * scale).round() as i32,
+            ((py + ph) * scale).round() as i32,
+            ((panel_r.unwrap_or(20.0) * 2.0) * scale).round() as i32,
+        ];
     }
 
     // The sampling loop calls this every display frame; the region itself

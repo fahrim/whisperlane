@@ -407,12 +407,12 @@ pub fn run_listener(app: AppHandle) {
 /// leave the chord latched and every later press dead. The window
 /// regaining focus is the first reliable moment to clear that state.
 fn clear_stale_state(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        if let Ok(true) = window.is_focused() {
-            // SAFETY: same hook-thread-only rule as STATE.
-            let state = unsafe { &mut *STATE.0.get() };
-            state.reset();
-        }
+    if let Some(window) = app.get_webview_window("main")
+        && let Ok(true) = window.is_focused()
+    {
+        // SAFETY: same hook-thread-only rule as STATE.
+        let state = unsafe { &mut *STATE.0.get() };
+        state.reset();
     }
 }
 

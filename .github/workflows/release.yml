@@ -166,7 +166,17 @@ jobs:
           }
 
           $path = 'apps/desktop/src-tauri/target/release/bundle/latest.json'
-          $manifest | ConvertTo-Json -Depth 6 | Set-Content -Path $path -Encoding utf8
+          $json = $manifest | ConvertTo-Json -Depth 6
+          # Written byte-exact and without a BOM. A manifest that begins
+          # with one is a manifest the updater cannot parse, and the two
+          # PowerShell editions disagree about what "-Encoding utf8" means:
+          # one writes a BOM, the other does not. This does not depend on
+          # which one runs.
+          [System.IO.File]::WriteAllText(
+            (Join-Path (Get-Location).Path $path),
+            $json,
+            (New-Object System.Text.UTF8Encoding $false)
+          )
           Write-Host "latest.json -> $version, $($installer.Name)"
           Get-Content $path
 

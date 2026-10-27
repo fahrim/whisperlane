@@ -1,0 +1,46 @@
+{
+  "$schema": "https://raw.githubusercontent.com/ScoopInstaller/Scoop/master/schema.json",
+  "version": "0.8.0",
+  "description": "Hold a key, talk, and it is typed. Local-first dictation for Windows.",
+  "homepage": "https://github.com/fahrim/whisperlane",
+  "license": "MIT|Apache-2.0",
+  "notes": [
+    "whisperlane is managed by Scoop here, so update it with `scoop update whisperlane`.",
+    "The in-app updater also works, but it installs over this copy and `scoop status` will then report a mismatch.",
+    "Speech models are downloaded by the app on first use, not by Scoop."
+  ],
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/fahrim/whisperlane/releases/download/v0.8.0/Whisperlane_0.8.0_x64-setup.exe",
+      "hash": "f51a4a7d819eef10ece691d24af41f6674e1b785ab3f947b47ceb27d55d43dec"
+    }
+  },
+  "installer": {
+    "args": [
+      "/S",
+      "/D=$dir"
+    ]
+  },
+  "uninstaller": {
+    "file": "uninstall.exe",
+    "args": [
+      "/S"
+    ]
+  },
+  "shortcuts": [
+    [
+      "whisperlane.exe",
+      "Whisperlane"
+    ]
+  ],
+  "checkver": {
+    "github": "https://github.com/fahrim/whisperlane"
+  },
+  "autoupdate": {
+    "architecture": {
+      "64bit": {
+        "url": "https://github.com/fahrim/whisperlane/releases/download/v$version/Whisperlane_$version_x64-setup.exe"
+      }
+    }
+  }
+}

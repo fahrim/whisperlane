@@ -1,0 +1,17 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+PackageIdentifier: Fahrim.Whisperlane
+PackageVersion: 0.8.0
+InstallerType: nullsoft
+Scope: user
+InstallModes:
+  - interactive
+  - silent
+  - silentWithProgress
+UpgradeBehavior: install
+ReleaseDate: 2026-10-27
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/fahrim/whisperlane/releases/download/v0.8.0/Whisperlane_0.8.0_x64-setup.exe
+    InstallerSha256: F51A4A7D819EEF10ECE691D24AF41F6674E1B785AB3F947B47CEB27D55D43DEC
+ManifestType: installer
+ManifestVersion: 1.6.0

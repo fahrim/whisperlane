@@ -41,6 +41,15 @@ export interface Settings {
   theme: "system" | "light" | "dark";
   /** Live desktop-refracting glass, or the static performance material. */
   glass: "live" | "performance";
+  /** Whether a finished transcript is published on the local socket. */
+  transcript_service: boolean;
+}
+
+export interface TranscriptServiceStatus {
+  running: boolean;
+  port: number;
+  subscribers: number;
+  error: string | null;
 }
 
 export interface ThemeChoice {

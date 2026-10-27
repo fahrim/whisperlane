@@ -551,6 +551,13 @@ pub struct Settings {
     pub theme: Theme,
     /// Live desktop glass, or the static performance material.
     pub glass: GlassMode,
+    /// Whether a finished transcript is published on the local socket.
+    ///
+    /// Off by default: it is the one thing in the application that hands
+    /// a transcript to another process, so it is asked for rather than
+    /// assumed. The setting is the switch; the service itself lives in
+    /// `transcript_service`.
+    pub transcript_service: bool,
 }
 
 impl Default for Settings {
@@ -567,6 +574,7 @@ impl Default for Settings {
             start_with_windows: false,
             theme: Theme::System,
             glass: GlassMode::Live,
+            transcript_service: false,
         }
     }
 }
@@ -856,6 +864,34 @@ fn persist(app: &AppHandle, change: impl FnOnce(&mut Settings)) -> Settings {
     guard.clone()
 }
 
+/// Applies a change and saves it, for modules outside this one.
+///
+/// `persist` alone only moves memory, and every command here pairs the
+/// two by hand. A module that forgets the second half leaves a setting
+/// that looks applied until the next launch, which is the worst of both
+/// answers.
+pub fn persist_public(app: &AppHandle, change: impl FnOnce(&mut Settings)) -> Settings {
+    let updated = persist(app, change);
+    if let Ok(path) = settings_path(app) {
+        let _ = write_settings(&path, &updated);
+    }
+    updated
+}
+
+/// Turns the local transcript service on or off and remembers it.
+///
+/// The service is started or stopped first, so the saved setting is what
+/// is actually true rather than what was asked for.
+#[tauri::command]
+pub fn set_transcript_service(app: AppHandle, enabled: bool) -> Settings {
+    if enabled {
+        crate::transcript_service::start();
+    } else {
+        crate::transcript_service::stop();
+    }
+    persist_public(&app, |settings| settings.transcript_service = enabled)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -918,6 +954,7 @@ mod tests {
             start_with_windows: true,
             theme: Theme::Dark,
             glass: GlassMode::Performance,
+            transcript_service: true,
         };
         write_settings(&path, &settings).unwrap();
         assert_eq!(read_settings(&path), settings);

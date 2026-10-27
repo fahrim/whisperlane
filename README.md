@@ -8,7 +8,7 @@
 
 <p align="center">
   <b>Hold a key, talk, and it is typed.</b><br>
-  <sub>Free · Private · Local-first dictation for Windows</sub>
+  <sub>Free, open source, local-first dictation for Windows — wherever your caret already is.</sub>
 </p>
 
 <p align="center">
@@ -16,63 +16,139 @@
   <a href="https://tauri.app"><img src="https://img.shields.io/badge/tauri-v2-24C8DB?logo=tauri&logoColor=black" alt="Tauri v2" height="20"></a>
   <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-2024-orange?logo=rust&logoColor=white" alt="Rust" height="20"></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%7C%20Apache--2.0-blue.svg" alt="MIT or Apache-2.0" height="20"></a>
-  <a href="docs/07-roadmap.md"><img src="https://img.shields.io/badge/status-in%20progress-yellow.svg" alt="Status: in progress" height="20"></a>
+  <a href="https://github.com/fahrim/whisperlane/releases/latest"><img src="https://img.shields.io/badge/version-v0.8.0-30EEDD.svg" alt="v0.8.0" height="20"></a>
 </p>
 
 <p align="center">
   <img src="brand-kit/04_Social_Media/hero-main-generated.webp" alt="The whisperlane settings window, a finished take and the listening pill, floating over a blue wave" width="900">
 </p>
 
-whisperlane is a free, private, local-first desktop dictation tool. Press a
-hotkey, speak, and the transcribed words appear where the caret is — in the
-focused application today, and in an AI coding agent in phase two. No
-account, no cloud round-trip, no settings wall. A quiet tool that is mostly
-invisible, feels finished, and respects the machine it runs on.
+whisperlane is a dictation tool for people who write in a terminal. Press the
+chord, speak, release — the words appear where your caret already was. No
+window to open, no account to make, no round trip to a server. It runs on
+your machine, on your GPU, and it is free.
 
-**Positioning.** Not another general dictation app: a premium-feeling,
-local-first dictation tool whose technical wedge is strong Windows graphics
-support beyond a single vendor (AMD and Intel alongside NVIDIA and CPU
-fallback), with an AI-agent-native direction held for phase two.
+It is built for the way developers actually write: short bursts, half-formed
+thoughts, a sentence aimed at a file, a commit message, a prompt for the
+agent on the other side of the terminal.
+
+```text
+Ctrl + Shift + Space  →  hold, speak, release  →  typed at the caret
+Escape                →  throw the take away, type nothing
+```
+
+## Why another one
+
+Two things were missing from the dictation tools that already exist.
+
+**Windows graphics coverage.** Most accelerated speech tooling assumes one
+vendor. whisperlane walks the backends on your machine — CUDA where it is
+there, **Vulkan for AMD and Intel**, CPU as the floor — so the fast path is
+not reserved for one brand of card.
+
+**A shorter path to the agent.** Dictation should reach the thing you are
+talking to, not the thing that happens to be in front. That starts with the
+caret and continues, in this product's own scope, with a direct agent
+target.
 
 ## What it does
 
-- **Hold-to-talk** and **toggle-to-talk** dictation.
-- **Insertion into the focused application** — the only destination in v1.
-- **Cancellation** that discards a take so nothing is inserted.
-- **Minimal optional refinement** — light local cleanup of punctuation and
-  obvious filler, off unless requested, never rewriting meaning.
-- **Model management that stays out of the way** — the required speech model
-  is fetched when you ask for it, with honest progress.
-- **Application settings kept to the minimum** that v1 flows require.
-
-Everything runs on the machine after setup: offline, with no account and no
-required network dependency for everyday dictation.
-
-## How a take works
-
-| Step | What happens |
+| Feature | What it does |
 | --- | --- |
-| **Hold** | Press and hold the chord — `Ctrl` + `Shift` + `Space` by default, configurable in settings. |
-| **Speak** | The microphone is captured locally and the pill shows the live input level. |
-| **Release** | The take is transcribed on the GPU (Vulkan, CUDA, or CPU fallback) and the text lands at the caret. |
-| **Discard** | `Escape` throws the take away at any point before insertion — nothing is typed. |
+| **Hold or toggle** | Hold the chord to talk, tap it to start and stop, or cancel with `Escape` before anything is typed. |
+| **Types where you are** | One destination today: the focused window. Editor, browser, terminal, or the agent running inside it. |
+| **Runs locally** | Transcription on your GPU. After setup, everyday dictation needs no network. |
+| **No account** | No sign-in, no sync, no telemetry. Your settings and models live in your user profile. |
+| **Honest progress** | Model downloads and updates report what is actually happening, and never start without you asking. |
+| **Signed updates** | Updates are verified against a key shipped in the app. An unsigned or tampered download is refused. |
 
-## Status
+## Dictation that reaches the agent
 
-Windows-only MVP, in progress. Agents (including OpenCode) are deliberately
-phase two.
+Today, whisperlane types into the focused window — and an agent's terminal is
+a window, so it works there with no special mode and no integration work.
+
+What comes next is a **direct agent target**: dictating into an open agent
+session without moving focus to its window first. Same take, same chord,
+same transcription — the words are delivered to the agent rather than to
+whatever is frontmost. No model in the middle, no rewriting, no autonomous
+work. Only the target changes, and it stays free.
+
+Turning a spoken sentence into a planned task and running it across several
+agents is a different problem. It is not on this roadmap.
+
+## For tool builders
+
+Most dictation tools are a dead end: the text goes into a box and stays
+there. whisperlane can publish each finished transcript as one JSON line on
+loopback, so anything you are building can read what was just spoken.
+
+```
+{"version":"1.0","event":"transcript","text":"…","timestamp":1710000000000}
+```
+
+Off by default, enabled in **Settings → Integrations**, text only — a
+subscriber can read, and cannot ask whisperlane to do anything. The contract
+is versioned and deliberately small, so the next thing built on it does not
+have to change this application.
+
+## Install
+
+Grab the installer from the [latest release](https://github.com/fahrim/whisperlane/releases/latest).
+Windows builds are signed for the updater; the checksum and signature travel
+with the release.
+
+The app is a Windows MVP. macOS and Linux are not supported yet, and the
+settings that exist are the ones the flows need — not a control panel.
+
+## Build from source
+
+Requires [Rust](https://rustup.rs), [Bun](https://bun.sh), and the WebView2
+runtime that ships with Windows 10 and 11.
+
+```bash
+cd apps/desktop
+bun install
+bun run tauri build
+```
+
+A bundle build also needs the updater signing key. Everything else — the
+type check, the linter, and the tests — does not:
+
+```bash
+cargo test        # inside apps/desktop/src-tauri
+```
+
+## Milestones
 
 | Milestone | Scope | Status |
 | --- | --- | --- |
 | M0 — skeleton that talks | Shell, tray, hotkey, capture, GPU transcription, clipboard delivery | ✅ Done |
 | M1 — useful on Windows | Settings, chord, microphone, hold/toggle/cancel, insertion, model download, AMD/Intel acceleration | ✅ Done |
-| M2 — polish and packaging | First run, pill states, premium pass, packaging | 🟡 In progress |
-| Phase 2 — agent integration | Dictation into an AI coding agent (OpenCode first) | ⏳ Planned |
+| M2 — polish and packaging | First run, pill states, premium pass, packaging | ✅ Released as v0.8.0 |
+| Phase 2 — direct agent target | Dictate into an open agent session without moving focus first | ⏳ Planned |
 | M3 — wider platforms | macOS, then Linux, signing and notarization | ⏳ Planned |
+
+## Documentation
+
+The project is documented before it is built. Start with the source plan,
+then read the numbered set.
+
+| Document | Purpose |
+| --- | --- |
+| [`docs/plan/pre-start-intro-plan.md`](docs/plan/pre-start-intro-plan.md) | Single source of truth for what we are building and why |
+| [`docs/01-vision.md`](docs/01-vision.md) | Mission, vision, v1 goals, success measures, non-goals |
+| [`docs/02-audience.md`](docs/02-audience.md) | Target users, personas, usage scenarios |
+| [`docs/03-product.md`](docs/03-product.md) | Scope, features, boundaries, positioning |
+| [`docs/04-experience.md`](docs/04-experience.md) | UX principles, flows, states, premium feel |
+| [`docs/05-architecture.md`](docs/05-architecture.md) | Components, data flow, technology choices |
+| [`docs/06-agent-integration.md`](docs/06-agent-integration.md) | The direct agent target and the destination abstraction |
+| [`docs/07-roadmap.md`](docs/07-roadmap.md) | Milestones with acceptance criteria |
+| [`docs/08-decisions.md`](docs/08-decisions.md) | What is decided, what is open, and why |
+| [`docs/09-repository.md`](docs/09-repository.md) | Layout, licensing, contribution, release |
 
 ## The pill
 
-Every state is legible from a single small indicator.
+Every state is legible from one small indicator.
 
 <p align="center">
   <img src="brand-kit/03_Status_States/whisperlane-status-idle-tile.png" alt="Idle" width="96" loading="lazy">
@@ -86,40 +162,10 @@ Every state is legible from a single small indicator.
   <sub>Idle · Listening · Processing · Muted · Error</sub>
 </p>
 
-## Documentation
-
-The project is documented first; the plan folder is the origin. Start with
-the source plan, then read the numbered documents in order.
-
-| Document | Purpose |
-| --- | --- |
-| [`docs/plan/pre-start-intro-plan.md`](docs/plan/pre-start-intro-plan.md) | Single source of truth for what we are building and why |
-| [`docs/01-vision.md`](docs/01-vision.md) | Mission, vision, v1 goals, success measures, non-goals |
-| [`docs/02-audience.md`](docs/02-audience.md) | Target users, personas, usage scenarios |
-| [`docs/03-product.md`](docs/03-product.md) | Scope, features, boundaries, positioning |
-| [`docs/04-experience.md`](docs/04-experience.md) | UX principles, flows, states, premium feel |
-| [`docs/05-architecture.md`](docs/05-architecture.md) | Components, data flow, technology choices |
-| [`docs/06-agent-integration.md`](docs/06-agent-integration.md) | Phase-two agent path and target abstraction |
-| [`docs/07-roadmap.md`](docs/07-roadmap.md) | Milestones M0 through M3 with acceptance criteria |
-| [`docs/08-decisions.md`](docs/08-decisions.md) | Open questions with options, trade-offs, recommendations |
-| [`docs/09-repository.md`](docs/09-repository.md) | Layout, licensing, contribution, test and release strategy |
-
-Full index: [`docs/README.md`](docs/README.md).
-
-## Repository
-
-- Layout, licensing, contribution rules and release strategy:
-  [`docs/09-repository.md`](docs/09-repository.md).
-- Documentation is written in English; discussion with the maintainer is in
-  Turkish.
-- No document contains source code, configuration, or snippets; architecture
-  is narrated.
-
 ## Brand
 
-The brand kit lives in [`brand-kit/`](brand-kit/). Assets include the logo
-lockups, app icons, status states, social media sizes, and the guidelines
-below.
+The brand kit lives in [`brand-kit/`](brand-kit/): logo lockups, app icons,
+status states, social sizes, and the guidelines below.
 
 <p align="center">
   <img src="brand-kit/05_Guidelines/brand-overview.png" alt="Brand overview: primary lockup, app icon, brandmark variants, voice and agent states, core palette" width="640" loading="lazy">
@@ -141,8 +187,7 @@ below.
 </p>
 
 See [`brand-kit/README.md`](brand-kit/README.md) and
-[`brand-kit/ASSET_INDEX.md`](brand-kit/ASSET_INDEX.md) for the full asset
-list and usage notes.
+[`brand-kit/ASSET_INDEX.md`](brand-kit/ASSET_INDEX.md) for usage notes.
 
 ## Social preview
 
@@ -157,6 +202,10 @@ following the common Rust-ecosystem convention. Licensing texts travel with
 every distribution.
 
 ---
+
+<p align="center">
+  <sub>If whisperlane saves you a sentence, a star helps someone else find it.</sub>
+</p>
 
 <sub>whisperlane — a quiet tool that is mostly invisible, feels finished, and
 respects the machine it runs on.</sub>

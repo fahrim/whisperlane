@@ -5,6 +5,16 @@ it proves dictation into the focused application first. Everything below
 is the design that phase two implements, kept cheap by building v1
 against the target abstraction from the start.
 
+The boundary this document defends: whisperlane delivers a take to a
+destination. It does not plan, improve consent, or decide. Naming an agent
+session and sending it the words is the whole of the agent path here.
+Turning a spoken sentence into a structured task and running it across
+agents is a different problem, and these documents do not describe it.
+
+Dictating into an agent's terminal already works today, because a terminal
+is a focused window. What phase two adds is naming that destination, so the
+take reaches an open session without the user moving focus to it first.
+
 ## Why this is the wedge
 
 Most dictation tools type into applications. whisperlane makes typing into
@@ -52,7 +62,8 @@ keeps full control: review, edit, then send.
 Transcription hands the text to the agent as a prompt in one step, reducing
 the interaction to speak-and-go. This mode is narrower and more opinionated:
 it must be explicit, cancellable, and honest about what was sent. It is not
-the default until Mode A is solid.
+the default until Mode A is solid. What the agent then does with the prompt
+is the agent's business; whisperlane's part ends when the text arrives.
 
 ## Design rules
 

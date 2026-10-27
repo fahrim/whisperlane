@@ -9,6 +9,7 @@ mod pipeline;
 mod settings;
 mod stt;
 pub mod stt_shared;
+mod transcript_service;
 mod target;
 mod tray;
 mod windows;
@@ -23,9 +24,10 @@ use pipeline::{get_pipeline_state, PipelineState, PipelineStatus};
 use settings::{
     complete_onboarding, get_settings, is_start_with_windows, list_languages, list_themes, load,
     set_glass_mode, set_hotkey, set_language, set_microphone, set_model, set_start_with_windows,
-    set_theme, SettingsState,
+    set_theme, set_transcript_service, SettingsState,
 };
 use stt::{get_stt_status, sweep_idle, SttState};
+use transcript_service::transcript_service_status;
 use windows::{
     begin_pill_drag, continue_pill_drag, end_pill_drag, fit_window, is_settings_visible,
     minimize_pill, quit_app, set_pill_blur_region, set_pill_panel, toggle_settings,
@@ -91,7 +93,9 @@ pub fn run() {
             is_start_with_windows,
             set_theme,
             set_glass_mode,
-            list_themes
+            list_themes,
+            set_transcript_service,
+            transcript_service_status
         ])
         // The settings window is the app's only settings surface, so it
         // has to survive its own close button. Destroyed here, the window
@@ -115,6 +119,11 @@ pub fn run() {
             let saved = load(app.handle());
             app.manage(SettingsState(std::sync::Mutex::new(saved.clone())));
             hotkey::apply_binding(saved.hotkey);
+            // The local transcript service is a switch, not a default:
+            // only a settings file that asks for it starts it.
+            if saved.transcript_service {
+                transcript_service::start();
+            }
 
             // The window is created hidden and stays that way until the
             // interface has measured what it holds: a first run is shown by

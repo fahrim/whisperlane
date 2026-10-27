@@ -131,6 +131,12 @@
   match its signature is not installed. On Windows the installer closes
   the application and reopens it on the new version, and the card says so
   before it does rather than after.
+- Integrations. The one surface that faces outwards, and it says so.
+  Publishing transcripts on the local socket is a switch, off until turned
+  on, and its row reports whether the socket is listening, on which port,
+  and how many programs are reading. The row names what leaves the machine,
+  because a tool that talks to other programs has to be honest about which
+  way the traffic goes.
 - State presence in the pill. Idle, listening, thinking, done, and failure
   are carried by the pill itself — the signal animates while listening,
   settles into a calm waiting presence while thinking, confirms briefly on

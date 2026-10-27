@@ -20,6 +20,7 @@ import type {
   PipelineStatus,
   Settings,
   ThemeChoice,
+  TranscriptServiceStatus,
 } from "./types";
 import "./App.css";
 
@@ -32,7 +33,7 @@ interface SttStatus {
   detail: string | null;
 }
 
-type NavTab = "general" | "speech" | "appearance" | "shortcuts" | "about";
+type NavTab = "general" | "speech" | "appearance" | "shortcuts" | "integrations" | "about";
 
 /**
  * What the updates surface can be doing. The update itself is kept out of
@@ -320,6 +321,20 @@ function PowerIcon() {
   );
 }
 
+function PlugIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-6 6 6 6 0 0 1-6-6V8ZM12 17v4"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function RefreshIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -354,6 +369,7 @@ function App() {
   // The update object holds a resource on the Rust side. It is kept here
   // rather than in the state above so exactly one place owns closing it.
   const pendingUpdate = useRef<Update | null>(null);
+  const [transcript, setTranscript] = useState<TranscriptServiceStatus | null>(null);
   const [activeTab, setActiveTab] = useState<NavTab>("general");
   const [audioLevel, setAudioLevel] = useState<number>(0);
   const [micTesting, setMicTesting] = useState<boolean>(false);
@@ -572,6 +588,23 @@ function App() {
   async function refreshStt() {
     try {
       setStt(await invoke<SttStatus>("get_stt_status"));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function refreshIntegrations() {
+    try {
+      setTranscript(await invoke<TranscriptServiceStatus>("transcript_service_status"));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function chooseTranscriptService(enabled: boolean) {
+    try {
+      setSettings(await invoke<Settings>("set_transcript_service", { enabled }));
+      setTranscript(await invoke<TranscriptServiceStatus>("transcript_service_status"));
     } catch (e) {
       setError(String(e));
     }
@@ -861,6 +894,7 @@ function App() {
     getVersion()
       .then(setAppVersion)
       .catch(() => {});
+    void refreshIntegrations();
     refreshModels();
     poll();
     const timer = setInterval(poll, 1000);
@@ -887,6 +921,7 @@ function App() {
   const showSpeechCards = activeTab === "general" || activeTab === "speech";
   const showAppearanceCard = activeTab === "general" || activeTab === "appearance";
   const showStartupCard = activeTab === "general";
+  const showIntegrationsCards = activeTab === "integrations";
   const showAboutCard = activeTab === "about";
 
   const keycaps = settings
@@ -1040,6 +1075,23 @@ function App() {
                   <span className="sidebar-nav-text">
                     <span className="sidebar-nav-title">Shortcuts</span>
                     <span className="sidebar-nav-subtitle">Hotkeys &amp; controls</span>
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`sidebar-nav-item${activeTab === "integrations" ? " is-active" : ""}`}
+                  onClick={() => {
+                    setActiveTab("integrations");
+                    void refreshIntegrations();
+                  }}
+                >
+                  <span className="sidebar-nav-icon">
+                    <PlugIcon />
+                  </span>
+                  <span className="sidebar-nav-text">
+                    <span className="sidebar-nav-title">Integrations</span>
+                    <span className="sidebar-nav-subtitle">Local socket</span>
                   </span>
                 </button>
 
@@ -1364,6 +1416,53 @@ function App() {
                       />
                     </div>
                   </section>
+                )}
+
+                {showIntegrationsCards && (
+                  <>
+                    <section
+                      className="settings-card"
+                      aria-label="Local transcript service"
+                    >
+                      <div className="settings-card-icon">
+                        <PlugIcon />
+                      </div>
+                      <div className="settings-card-body">
+                        <h2 className="settings-card-title">
+                          Local transcript service
+                        </h2>
+                        <p className="settings-card-desc">
+                          Publish each finished dictation on loopback so
+                          another program on this machine can read it. Off by
+                          default, and it carries text only — nothing here
+                          can run a command.
+                        </p>
+                        <div className="settings-card-controls">
+                          <Switch
+                            checked={settings?.transcript_service ?? false}
+                            label="Publish finished transcripts on the local socket"
+                            onChange={(next) =>
+                              void chooseTranscriptService(next)
+                            }
+                          />
+                        </div>
+                        <div className="field-status-row">
+                          <span className="settings-card-status" role="status">
+                            {transcript?.error
+                              ? transcript.error
+                              : transcript?.running
+                                ? `Listening on 127.0.0.1:${transcript.port} · ${transcript.subscribers} connected`
+                                : "Not running."}
+                          </span>
+                          <span className="settings-card-note">
+                            <InfoIcon size={14} />
+                            <span>JSON lines · contract v1</span>
+                          </span>
+                        </div>
+                      </div>
+                    </section>
+
+                  </>
                 )}
 
                 {showAboutCard && (

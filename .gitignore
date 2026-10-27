@@ -53,6 +53,7 @@ desktop.ini
 
 # Editors
 .idea/
+.vscode/
 *.swp
 *~
 

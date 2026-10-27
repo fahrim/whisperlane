@@ -517,6 +517,11 @@ pub fn transcribe_take(app: AppHandle, wav_path: String) {
                         Some("nothing recognized — try again".to_string()),
                     );
                 } else {
+                    // Published before the text is moved into the
+                    // pipeline, and published once per take: the socket
+                    // carries the finish of a dictation, not every later
+                    // thing the panel happens to show.
+                    crate::transcript_service::publish(&text);
                     set_last_text(&app, text);
                     set_phase(&app, Phase::Done, None);
                     crate::target::deliver(&app);

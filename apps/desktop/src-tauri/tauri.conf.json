@@ -31,7 +31,7 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
-    "publisher": "Fahrim",
+    "publisher": "Smarteknoloji",
     "resources": {
       "runtime/*": "runtime/"
     },

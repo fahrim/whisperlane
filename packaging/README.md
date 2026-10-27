@@ -6,10 +6,10 @@ release itself is the primary channel; these files exist so that
 
 ## What lives here
 
-- `winget/manifests/f/Fahrim/Whisperlane/<version>/` — the three manifests
-  expected by `microsoft/winget-pkgs`, in the exact folder layout that
-  repository uses. Submitting a release means copying that version folder
-  into a fork of `winget-pkgs` and opening a pull request.
+- `winget/manifests/s/Smarteknoloji/Whisperlane/<version>/` — the three
+  manifests expected by `microsoft/winget-pkgs`, in the exact folder layout
+  that repository uses. Submitting a release means copying that version
+  folder into a fork of `winget-pkgs` and opening a pull request.
 - `scoop/whisperlane.json` — the manifest for our own bucket,
   `fahrim/scoop-whisperlane`. In the bucket it sits at `bucket/whisperlane.json`.
 
@@ -37,6 +37,9 @@ managed by Scoop afterwards.
 
 The 0.8.0 installer was built before the bundle declared a publisher, so its
 uninstall entry has an empty one. `winget-pkgs` validates the manifest
-against what the installer registers, and an empty publisher does not match
-a manifest that names one. 0.8.1 is built with `bundle.publisher` set, which
-is the release the winget pull request should point at.
+against what the installer registers, and an empty publisher does not match a
+manifest that names one. 0.8.1 is built with `bundle.publisher` set to
+`Smarteknoloji`, which is the release the winget pull request points at.
+
+The package identifier follows the publisher: `Smarteknoloji.Whisperlane`.
+Renaming it later means abandoning the identifier, so it is set once here.

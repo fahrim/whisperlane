@@ -1,15 +1,15 @@
 # yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
-PackageIdentifier: Fahrim.Whisperlane
+PackageIdentifier: Smarteknoloji.Whisperlane
 PackageVersion: 0.8.0
 PackageLocale: en-US
-Publisher: Fahrim
+Publisher: Smarteknoloji
 PublisherUrl: https://github.com/fahrim
 PublisherSupportUrl: https://github.com/fahrim/whisperlane/issues
 PackageName: Whisperlane
 PackageUrl: https://github.com/fahrim/whisperlane
 License: MIT OR Apache-2.0
 LicenseUrl: https://github.com/fahrim/whisperlane/blob/master/LICENSE-MIT
-Copyright: Copyright (c) whisperlane contributors
+Copyright: Copyright (c) 2026 Fahri Meral
 ShortDescription: Hold a key, talk, and it is typed - local-first dictation for Windows.
 Description: |-
   whisperlane is a free, open source dictation tool for Windows. Hold a key,

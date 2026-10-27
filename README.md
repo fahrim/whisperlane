@@ -16,7 +16,7 @@
   <a href="https://tauri.app"><img src="https://img.shields.io/badge/tauri-v2-24C8DB?logo=tauri&logoColor=black" alt="Tauri v2" height="20"></a>
   <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-2024-orange?logo=rust&logoColor=white" alt="Rust" height="20"></a>
   <a href="LICENSE-MIT"><img src="https://img.shields.io/badge/license-MIT%20%7C%20Apache--2.0-blue.svg" alt="MIT or Apache-2.0" height="20"></a>
-  <a href="https://github.com/fahrim/whisperlane/releases/latest"><img src="https://img.shields.io/badge/version-v0.8.0-30EEDD.svg" alt="v0.8.0" height="20"></a>
+  <a href="https://github.com/fahrim/whisperlane/releases/latest"><img src="https://img.shields.io/github/v/release/fahrim/whisperlane?color=30EEDD" alt="Latest release" height="20"></a>
 </p>
 
 <p align="center">

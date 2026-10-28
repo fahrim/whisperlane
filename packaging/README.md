@@ -33,13 +33,14 @@ signature. A portable zip would need its own build target and its own answer
 for updates, so Scoop is pointed at the installer with `/D` and the app is
 managed by Scoop afterwards.
 
-## Why winget starts at 0.8.1
+## The publisher is not decoration
 
-The 0.8.0 installer was built before the bundle declared a publisher, so its
-uninstall entry has an empty one. `winget-pkgs` validates the manifest
-against what the installer registers, and an empty publisher does not match a
-manifest that names one. 0.8.1 is built with `bundle.publisher` set to
-`Smarteknoloji`, which is the release the winget pull request points at.
+`winget-pkgs` validates the manifest against the uninstall entry the
+installer writes: `DisplayName` has to match `PackageName`, and `Publisher`
+has to match `Publisher`. The 0.8.0 installer wrote an empty publisher, which
+is why the first submission is 0.8.1 — the release that carries
+`bundle.publisher` set to `Smarteknoloji`. If that field is ever dropped from
+the bundle, winget submissions stop validating.
 
 The package identifier follows the publisher: `Smarteknoloji.Whisperlane`.
 Renaming it later means abandoning the identifier, so it is set once here.

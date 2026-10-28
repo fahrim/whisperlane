@@ -7,7 +7,8 @@ the top level: the desktop application holding the interface and the native
 core, optional shared native libraries for audio, transcription, and
 insertion concerns, project documentation with the plan folder as the
 origin, root-level project files including the readme and licensing texts,
-and the workflow definitions that check and publish the application. The
+the workflow definitions that check and publish the application, and the
+manifests that carry a release into package managers. The
 exact directory names are settled with the first milestone scaffold; this
 document is updated then, and the documentation index points to it.
 
@@ -94,6 +95,12 @@ than a changelog drawn from milestone acceptance.
 
 The update itself is asked for rather than pushed; the decision and its
 open end are recorded in `08-decisions.md` item 16.
+
+Releases reach users two ways: the installer on the release page, and
+package-manager manifests kept under `packaging/`. The winget manifests are
+submitted upstream; the scoop manifest is published from its own bucket.
+Both pin the installer's checksum, so a package manager cannot install a
+different file from the one the release published.
 
 ## Continuous integration
 

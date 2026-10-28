@@ -93,9 +93,20 @@ have to change this application.
 
 ## Install
 
-Grab the installer from the [latest release](https://github.com/fahrim/whisperlane/releases/latest).
-Windows builds are signed for the updater; the checksum and signature travel
-with the release.
+**Windows installer.** Grab it from the [latest release](https://github.com/fahrim/whisperlane/releases/latest).
+Builds are signed for the updater, and every release carries a
+`SHA256SUMS.txt` beside the installers so the download can be checked.
+
+**Scoop.**
+
+```powershell
+scoop bucket add whisperlane https://github.com/fahrim/scoop-whisperlane
+scoop install whisperlane
+```
+
+If you install through Scoop, update through Scoop as well. The in-app updater
+works, but it installs over the Scoop-managed copy and `scoop status` will
+then report a mismatch.
 
 The app is a Windows MVP. macOS and Linux are not supported yet, and the
 settings that exist are the ones the flows need — not a control panel.

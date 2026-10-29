@@ -237,6 +237,8 @@ export function Pill() {
   const [elapsedSec, setElapsedSec] = useState(0);
   const [panel, setPanel] = useState<Panel>(null);
   const [popoverView, setPopoverView] = useState<"main" | "languages">("main");
+  /** Where the language list goes back to: the menu it came from, or the card. */
+  const [languageReturn, setLanguageReturn] = useState<"menu" | "take">("menu");
   const [placement, setPlacement] = useState<Placement | null>(null);
   const [alignEnd, setAlignEnd] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -607,17 +609,23 @@ export function Pill() {
     }
   }
 
-  async function cycleLanguage() {
-    if (languages.length === 0) return;
-    const currentIdx = languages.findIndex((l) => l.code === settings?.language);
-    const next = languages[(currentIdx + 1) % languages.length];
-    try {
-      setSettings(
-        await invoke<Settings>("set_language", { language: next.code }),
-      );
-    } catch (e) {
-      setError(String(e));
-    }
+  /**
+   * Opens the language list, remembering the surface it was opened from.
+   *
+   * The list belongs to the popover, not to the card's language chip, so
+   * it takes the popover's place and hands the user back to whichever
+   * surface asked for it.
+   */
+  function openLanguageList(returnTo: "menu" | "take") {
+    setLanguageReturn(returnTo);
+    setPanel("menu");
+    setPopoverView("languages");
+  }
+
+  function closeLanguageList() {
+    setPopoverView("main");
+    if (languageReturn === "take") setPanel("take");
+    setLanguageReturn("menu");
   }
 
   async function selectLanguage(code: string) {
@@ -625,7 +633,7 @@ export function Pill() {
       setSettings(
         await invoke<Settings>("set_language", { language: code }),
       );
-      setPopoverView("main");
+      closeLanguageList();
     } catch (e) {
       setError(String(e));
     }
@@ -795,6 +803,7 @@ export function Pill() {
                 aria-expanded={panel === "menu"}
                 title="Options"
                 onClick={() => {
+                  setLanguageReturn("menu");
                   setPopoverView("main");
                   setPanel((prev) => (prev === "menu" ? null : "menu"));
                 }}
@@ -816,7 +825,7 @@ export function Pill() {
                 <LastTakeCard
                   text={lastText}
                   languageLabel={currentLangLabel}
-                  onCycleLanguage={() => void cycleLanguage()}
+                  onChooseLanguage={() => openLanguageList("take")}
                   onCopy={() => void copyTake()}
                   onClose={() => setPanel(null)}
                   onClear={() => setCleared(true)}
@@ -832,8 +841,8 @@ export function Pill() {
                         <button
                           type="button"
                           className="pill-popover-back"
-                          onClick={() => setPopoverView("main")}
-                          title="Back to menu"
+                          onClick={closeLanguageList}
+                          title="Back"
                           aria-label="Back"
                         >
                           <svg
@@ -902,7 +911,7 @@ export function Pill() {
                         type="button"
                         className="pill-popover-item"
                         role="menuitem"
-                        onClick={() => setPopoverView("languages")}
+                        onClick={() => openLanguageList("menu")}
                       >
                         <span>Language</span>
                         <span className="pill-popover-value-group">

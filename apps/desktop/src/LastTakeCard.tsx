@@ -112,7 +112,7 @@ interface LastTakeCardProps {
   text: string | null;
   /** The language the next take will use, as the settings surface names it. */
   languageLabel: string;
-  onCycleLanguage: () => void;
+  onChooseLanguage: () => void;
   onCopy: () => void;
   onClose: () => void;
   /** Clears what the card shows, without touching the stored take. */
@@ -126,7 +126,7 @@ interface LastTakeCardProps {
 export function LastTakeCard({
   text,
   languageLabel,
-  onCycleLanguage,
+  onChooseLanguage,
   onCopy,
   onClose,
   onClear,
@@ -147,8 +147,8 @@ export function LastTakeCard({
           <button
             type="button"
             className="card-language"
-            onClick={onCycleLanguage}
-            title="Change the language the next take uses"
+            onClick={onChooseLanguage}
+            title="Choose the language the next take uses"
           >
             {languageLabel}
           </button>

@@ -48,6 +48,16 @@ ask-on-first-press so no setup stands between install and first dictation.
   one: the editor autocomplete conflict recorded above, and the stray
   space it types into a text field. Both are stated in the binding's own
   label rather than discovered in use.
+- Known collision, recorded after approval: Visual Studio Code binds
+  Control plus Shift plus Space to parameter hints. Because the chord is
+  never swallowed, one press there both opens the hints popup and starts a
+  take. The binding stays the default — the approval reasoned about editor
+  and input-method collisions generally and did not have this one in front
+  of it — but the decision's "user-configurable" is currently three
+  presets, and both alternates carry costs of their own. Capturing an
+  arbitrary chord on first run is queued in `../../BACKLOG.md`; the
+  collision joins the binding's label with that work, so it is stated
+  rather than discovered.
 - Toggle behavior and the hands-free alternate land with the M1 flow and
   settings work, not in the skeleton.
 - The chord must not collide with the terminal hosting an agent prompt, which

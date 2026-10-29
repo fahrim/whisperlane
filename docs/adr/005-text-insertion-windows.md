@@ -53,6 +53,15 @@ was inserted.
 - The destination abstraction stays intact. Insertion happens behind the
   focused-application target, so the phase-two agent destination enters
   as another target rather than a new delivery mechanism.
+- Known constraint, recorded after approval: the integrity rule that
+  refuses our synthesized input also keeps the low-level keyboard hook
+  from seeing keys aimed at a window above us. Pressing the chord while an
+  elevated window has focus can therefore start no take at all, which is
+  outside this decision's fallback because there is no take to deliver and
+  no keystroke to react to. Naming the reason where the case is observable
+  — an insertion refused, or a take started from the pill — is queued in
+  `../../BACKLOG.md`; starting the application elevated remains the user's
+  deliberate choice, not something the product does for them.
 - Everyday Windows targets are verified in v1. The terminal hosting an
   agent prompt joins the acceptance matrix in phase two.
 

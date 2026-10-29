@@ -773,6 +773,42 @@ Status: open — the asked-for path is built. Whether whisperlane ever
 checks on its own, and under what setting, is still the maintainer's call
 and is not implemented.
 
+## 17. What the settings screen says about the machine's acceleration
+
+Context: the backend is established by launching the engine once and
+reading the banner it prints, never by looking for a library, and the
+answer is cached for the session. The experience document deliberately
+keeps that answer off the settings surface: which backend is in use and
+whether it has been verified are true but not the user's business. An
+outside review of setup made the counter-case. A machine that has fallen
+back to the processor transcribes slowly, and the person using it reads
+that as the product being slow rather than the machine lacking
+acceleration. The answer is already computed and already reaches the
+interface; nothing renders it.
+
+Options: keep the surface silent; show the backend and its verification
+state as a diagnostics row; or say something only when the verified answer
+is the processor.
+
+Trade-offs: silence keeps the window calm and keeps jargon out of a screen
+with five controls, and it is right whenever acceleration works. A
+diagnostics row is honest for everyone and turns a product surface into a
+status panel, which the experience document refuses. A processor-only line
+is a third thing rather than a weaker version of the second: it tells the
+one person who will otherwise report slowness what is happening, in words
+instead of a backend name, and it says nothing on a machine where the
+answer is uninteresting.
+
+Recommendation: the processor-only line, shown only after a launch has
+actually verified that path and a model is on disk. Before that the probe
+answers processor for a reason that has nothing to do with the machine,
+and the current code caches that answer as verified. The experience
+document's rule stays intact for the accelerated case, which is the case
+it was written for.
+
+Status: open. Approval changes `04-experience.md`'s diagnostic rule into a
+narrow exception rather than removing it.
+
 ## ADR process
 - A decision becomes an ADR only after explicit approval of the
   recommendation or an alternative.

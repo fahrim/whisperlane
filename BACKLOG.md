@@ -77,8 +77,61 @@ Closed decisions this milestone:
 | 5 | Windows packaging: install, offline, clean uninstall | blocked on decision item 6 |
 | 6 | Delivery routed through the target abstraction | next |
 
+## Queued — outside review of insertion and setup (2026-10-29)
+
+A Reddit comment on insertion and setup raised four things. Two are queued
+work, one does not apply because the product types rather than pastes, and
+one is right about the symptom but wrong about the mechanism: insertion
+does not fail silently, the hook does. It is queued rather than started, and
+M2 slice 6 stays next. What is already true is stated with each item so
+none of it is re-litigated, and the two facts it surfaced are recorded in
+ADR-001 and ADR-005.
+
+- **Name the elevated window.** Insertion already refuses quietly rather
+  than silently: when the platform accepts nothing, the transcript goes to
+  the clipboard and the pill says so. What the notice never says is why,
+  and the genuinely silent case is one step earlier — the low-level hook
+  does not see keys aimed at a window above us in integrity, so the chord
+  may start no take at all, and nothing can detect a key that never
+  arrived. Scope: compare the foreground window's token elevation with our
+  own, pass that fact into the insertion decision as a pure input, and say
+  plainly that the window runs as administrator and that dictating into it
+  needs whisperlane started the same way. Not in scope: elevating
+  automatically — that is a privilege increase the product should not make
+  on its own, and a startup entry registered at logon does not inherit it.
+  Verification is manual: an elevated terminal focused, once for insertion
+  and once for whether the chord reaches the hook at all. The second
+  answer is the one the code cannot observe.
+- **Capture an arbitrary chord on first run.** The default is the approved
+  one, but a remap that offers three presets is a remap in name only, and
+  two of the three are worse than the default. Scope: a press-your-keys
+  control on the first-run screen and in settings, persisted like every
+  other setting, with the hook's matcher extended to whatever is captured
+  and the presets kept as alternates. The VS Code collision goes into the
+  binding's label as part of this, not before. Verification is manual, in
+  an editor and in a terminal.
+- **Say when the machine is on the processor.** Download size is already
+  on the model row and on the first-run action — the default is 547 MB —
+  and fetch progress is bytes over bytes. The backend is established by
+  launching the engine and reading its banner, then cached, and
+  `docs/04-experience.md` deliberately keeps it off the settings surface.
+  That rule needs a narrow exception, which is proposed as item 17 of
+  `docs/08-decisions.md` and must be approved before any surface shows it.
+  One defect belongs to the same slice whichever way item 17 goes: the
+  probe records a CPU answer as verified even when a missing model made it
+  skip the launch, so `backend_verified` can be true about a machine
+  nothing was measured on.
+- **Not queued: clipboard restoration.** The product types; it never
+  pastes, so there is no clipboard to put back. The fallback leaves the
+  transcript on the clipboard on purpose, because that copy is what the
+  user is about to paste. If auto-paste ever leaves `IDEAS.md`, restoration
+  belongs to that slice, after the paste has landed and only if the
+  clipboard has not changed in between.
+
 ## Open (decided nowhere yet)
 
+- What the settings screen says about a machine on the processor — item
+  17. Recommended: one line, only after a real launch verified it.
 - Optional cleanup scope — item 5. Recommended rules-only or none,
   default off.
 - Name, packaging identity, and collision check — item 6. Recommended

@@ -859,3 +859,23 @@ body {
   opacity: 0.35;
   cursor: default;
 }
+
+
+.last-take-card.pill-status-card {
+  cursor: grab;
+  touch-action: pan-y;
+  will-change: transform, opacity;
+  transition:
+    transform 210ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 210ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.last-take-card.pill-status-card.is-swiping {
+  cursor: grabbing;
+  animation: none;
+}
+
+.last-take-card.pill-status-card.is-exiting {
+  pointer-events: none;
+  animation: none;
+}

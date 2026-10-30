@@ -6,8 +6,14 @@
 // and transcript cards belong to one optical family while keeping the pill
 // capsule itself completely free of text.
 
+import { useEffect, useRef, useState } from "react";
 import { LiquidGlassSurface } from "./LiquidGlassSurface";
 import type { Phase } from "./types";
+
+const STATUS_AUTO_DISMISS_MS = 5000;
+const SWIPE_DISMISS_DISTANCE_PX = 54;
+const SWIPE_DISMISS_VELOCITY_PX_PER_MS = 0.42;
+const EXIT_ANIMATION_MS = 210;
 
 /** The document mark, at the size the header reads at. */
 function TextIcon() {
@@ -190,12 +196,136 @@ export function StatusNoticeCard({
   const effectivePhase: Phase = isError ? "failed" : phase;
   const title = statusHeaderTitle(effectivePhase, isError, isDownloadingModel);
 
+  const [dragX, setDragX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [exitMode, setExitMode] = useState<"left" | "right" | "auto" | null>(
+    null,
+  );
+
+  const gestureRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startTime: number;
+  } | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  // Reset swipe & exit state whenever the status message or phase changes
+  useEffect(() => {
+    setDragX(0);
+    setIsDragging(false);
+    setExitMode(null);
+    gestureRef.current = null;
+  }, [effectivePhase, text]);
+
+  // Auto-dismiss after 5 seconds (paused while actively dragging)
+  useEffect(() => {
+    if (isDragging || exitMode !== null) return;
+    const timer = window.setTimeout(() => {
+      setExitMode("auto");
+    }, STATUS_AUTO_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [effectivePhase, text, isDragging, exitMode]);
+
+  // Complete dismissal after exit animation finishes
+  useEffect(() => {
+    if (exitMode === null) return;
+    const timer = window.setTimeout(() => {
+      onCloseRef.current();
+    }, EXIT_ANIMATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [exitMode]);
+
+  function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || exitMode !== null) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("button")) return;
+
+    gestureRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startTime: performance.now(),
+    };
+    setIsDragging(true);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Ignore capture errors
+    }
+  }
+
+  function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const g = gestureRef.current;
+    if (!g || event.pointerId !== g.pointerId || exitMode !== null) return;
+    const dx = event.clientX - g.startX;
+    setDragX(dx);
+  }
+
+  function finishSwipe(event: React.PointerEvent<HTMLDivElement>) {
+    const g = gestureRef.current;
+    if (!g || event.pointerId !== g.pointerId) return;
+    gestureRef.current = null;
+    try {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    } catch {
+      // Ignore release errors
+    }
+
+    const dx = event.clientX - g.startX;
+    const dt = Math.max(16, performance.now() - g.startTime);
+    const vx = dx / dt;
+
+    setIsDragging(false);
+    if (
+      Math.abs(dx) >= SWIPE_DISMISS_DISTANCE_PX ||
+      Math.abs(vx) >= SWIPE_DISMISS_VELOCITY_PX_PER_MS
+    ) {
+      setExitMode(dx >= 0 ? "right" : "left");
+    } else {
+      setDragX(0);
+    }
+  }
+
+  const swipeStyle: React.CSSProperties | undefined =
+    exitMode === "left"
+      ? {
+          transform: "translate3d(-310px, 0, 0)",
+          opacity: 0,
+        }
+      : exitMode === "right"
+        ? {
+            transform: "translate3d(310px, 0, 0)",
+            opacity: 0,
+          }
+        : exitMode === "auto"
+          ? {
+              transform: "translate3d(0, -6px, 0) scale(0.96)",
+              opacity: 0,
+            }
+          : isDragging || dragX !== 0
+            ? {
+                transform: `translate3d(${dragX}px, 0, 0)`,
+                opacity: Math.max(0.15, 1 - Math.abs(dragX) / 210),
+                transition: isDragging ? "none" : undefined,
+              }
+            : undefined;
+
   return (
     <div
-      className="last-take-card pill-status-card"
+      className={`last-take-card pill-status-card${
+        isDragging ? " is-swiping" : ""
+      }${exitMode ? " is-exiting" : ""}`}
       data-status-phase={effectivePhase}
+      data-exiting={exitMode ? "true" : undefined}
       role={effectivePhase === "failed" ? "alert" : "status"}
       aria-live="polite"
+      style={swipeStyle}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={finishSwipe}
+      onPointerCancel={finishSwipe}
     >
       <LiquidGlassSurface geometry="panel" />
       <div className="card-header">

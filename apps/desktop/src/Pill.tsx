@@ -349,8 +349,9 @@ export function Pill() {
       if (pillRect.width <= 0 || pillRect.height <= 0) return;
       const panelEl = panelRef.current;
       const panelSurface = panelEl?.firstElementChild as HTMLElement | null;
+      const isExiting = panelSurface?.getAttribute("data-exiting") === "true";
       const panelRect =
-        activePanel && placement && panelSurface
+        activePanel && placement && panelSurface && !isExiting
           ? panelSurface.getBoundingClientRect()
           : null;
       const panelRadius =

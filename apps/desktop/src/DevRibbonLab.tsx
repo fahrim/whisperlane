@@ -2,6 +2,10 @@ import { useEffect, useState } from "react";
 import type { RibbonId } from "./brandmarkGeometry";
 import { BrandWave } from "./BrandWave";
 import {
+  downloadBrandRibbonPng,
+  downloadBrandRibbonSvg,
+} from "./ribbonExport";
+import {
   cloneRibbonTuningConfig,
   DEFAULT_RIBBON_TUNING_CONFIG,
   getRibbonTuningConfig,
@@ -233,6 +237,34 @@ export function DevRibbonLab() {
     }
   };
 
+  const handleDownloadPng = () => {
+    downloadBrandRibbonPng({
+      state: selectedState,
+      motionMode,
+      config,
+    });
+    setCopyFeedback(
+      `✓ Yüksek çözünürlüklü PNG indirildi (whisperlane-ribbon-${
+        motionMode === "static" ? "static" : selectedState
+      }.png)`,
+    );
+    setTimeout(() => setCopyFeedback(null), 2600);
+  };
+
+  const handleDownloadSvg = () => {
+    downloadBrandRibbonSvg({
+      state: selectedState,
+      motionMode,
+      config,
+    });
+    setCopyFeedback(
+      `✓ Vektörel SVG indirildi (whisperlane-ribbon-${
+        motionMode === "static" ? "static" : selectedState
+      }.svg)`,
+    );
+    setTimeout(() => setCopyFeedback(null), 2600);
+  };
+
   const curState = config.states[selectedState];
   const defState = DEFAULT_RIBBON_TUNING_CONFIG.states[selectedState];
   const curShaping = config.shaping;
@@ -268,9 +300,29 @@ export function DevRibbonLab() {
           </div>
 
           <div className="dev-preview-box dev-preview-box-zoom">
-            <span className="dev-preview-caption">
-              Detay İnceleme (186px · 2.4x)
-            </span>
+            <div className="dev-preview-box-top">
+              <span className="dev-preview-caption">
+                Detay İnceleme (186px · 2.4x)
+              </span>
+              <div className="dev-preview-download-btns">
+                <button
+                  type="button"
+                  className="dev-download-chip"
+                  onClick={handleDownloadPng}
+                  title="Seçili ayarlarla yüksek çözünürlüklü şeffaf PNG indir"
+                >
+                  ⬇ PNG İndir
+                </button>
+                <button
+                  type="button"
+                  className="dev-download-chip"
+                  onClick={handleDownloadSvg}
+                  title="Seçili ayarlarla katmanlı vektörel SVG indir"
+                >
+                  ⬇ SVG İndir
+                </button>
+              </div>
+            </div>
             <div className="dev-zoom-stage">
               <BrandWave
                 state={selectedState}

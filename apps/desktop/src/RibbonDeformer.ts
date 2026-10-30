@@ -529,6 +529,58 @@ export function getStateProfile(
   return buildStateMotionProfile(config.states[state]);
 }
 
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t;
+}
+
+/**
+ * Returns the active motion profile for a state, smoothly transitioning
+ * from the "done" preset into the "idle" preset over DONE_SETTLE_DURATION
+ * so "done" plays its completion effect and then settles into "idle" motion
+ * instead of freezing.
+ */
+export function getBlendedStateProfile(
+  state: BrandWaveState,
+  doneElapsed = 0,
+  config: RibbonTuningConfig = activeTuningConfig,
+): StateMotionProfile {
+  if (state !== "done" || doneElapsed <= 0) {
+    return getStateProfile(state, config);
+  }
+  if (doneElapsed >= DONE_SETTLE_DURATION) {
+    return getStateProfile("idle", config);
+  }
+  const doneP = getStateProfile("done", config);
+  const idleP = getStateProfile("idle", config);
+  const t = smoothstep(0, DONE_SETTLE_DURATION, doneElapsed);
+  return {
+    amplitudeA1: lerp(doneP.amplitudeA1, idleP.amplitudeA1, t),
+    amplitudeA2: lerp(doneP.amplitudeA2, idleP.amplitudeA2, t),
+    amplitudeA3: lerp(doneP.amplitudeA3, idleP.amplitudeA3, t),
+    widthModB1: lerp(doneP.widthModB1, idleP.widthModB1, t),
+    widthModB2: lerp(doneP.widthModB2, idleP.widthModB2, t),
+    widthModB3: lerp(doneP.widthModB3, idleP.widthModB3, t),
+    k1Cycles: lerp(doneP.k1Cycles, idleP.k1Cycles, t),
+    k2Cycles: lerp(doneP.k2Cycles, idleP.k2Cycles, t),
+    k3Cycles: lerp(doneP.k3Cycles, idleP.k3Cycles, t),
+    cycleSeconds1: lerp(doneP.cycleSeconds1, idleP.cycleSeconds1, t),
+    cycleSeconds2: lerp(doneP.cycleSeconds2, idleP.cycleSeconds2, t),
+    cycleSeconds3: lerp(doneP.cycleSeconds3, idleP.cycleSeconds3, t),
+    sheenPeriod: idleP.sheenPeriod,
+    filmSpeed: lerp(doneP.filmSpeed, idleP.filmSpeed, t),
+    glowOpacity: lerp(doneP.glowOpacity, idleP.glowOpacity, t),
+    specularIntensity: lerp(doneP.specularIntensity, idleP.specularIntensity, t),
+    primaryGlowColor: t < 0.5 ? doneP.primaryGlowColor : idleP.primaryGlowColor,
+    secondaryGlowColor: t < 0.5 ? doneP.secondaryGlowColor : idleP.secondaryGlowColor,
+    k1: lerp(doneP.k1, idleP.k1, t),
+    k2: lerp(doneP.k2, idleP.k2, t),
+    k3: lerp(doneP.k3, idleP.k3, t),
+    omega1: lerp(doneP.omega1, idleP.omega1, t),
+    omega2: lerp(doneP.omega2, idleP.omega2, t),
+    omega3: lerp(doneP.omega3, idleP.omega3, t),
+  };
+}
+
 export function isMutedState(state: BrandWaveState): boolean {
   return state === "muted";
 }
@@ -581,26 +633,8 @@ export function evaluateWaveParameters(
     };
   }
 
-  const profile = getStateProfile(motion.state, config);
-  let settle = motion.amplitudeScale ?? 1;
-
-  if (motion.state === "done") {
-    if (motion.doneElapsed >= DONE_SETTLE_DURATION) {
-      return {
-        A1: 0,
-        A2: 0,
-        A3: 0,
-        B1: 0,
-        B2: 0,
-        B3: 0,
-        psi1: 0,
-        psi2: 0,
-        psi3: 0,
-      };
-    }
-    const progress = clamp01(motion.doneElapsed / DONE_SETTLE_DURATION);
-    settle *= Math.pow(1 - progress, 2.0);
-  }
+  const profile = getBlendedStateProfile(motion.state, motion.doneElapsed, config);
+  const settle = motion.amplitudeScale ?? 1;
 
   const targetW = motion.renderWidth ?? DEFAULT_RIBBON_WIDTH_PX;
   const sizeCompensation = Math.min(
@@ -837,7 +871,7 @@ export function deformRibbonSurface(
   motion: RibbonMotion,
   config: RibbonTuningConfig = activeTuningConfig,
 ): DeformedRibbonSurface {
-  const profile = getStateProfile(motion.state, config);
+  const profile = getBlendedStateProfile(motion.state, motion.doneElapsed, config);
   const params = evaluateWaveParameters(motion, config);
   const slices = surface.slices.map((s) =>
     deformSlice(surface.id, s, profile, params, config),
@@ -864,7 +898,7 @@ export function buildInternalWaveStrip(
   motion: RibbonMotion,
   config: RibbonTuningConfig = activeTuningConfig,
 ): { readonly upperPts: Vec2[]; readonly lowerPts: Vec2[] } {
-  const profile = getStateProfile(motion.state, config);
+  const profile = getBlendedStateProfile(motion.state, motion.doneElapsed, config);
   const coupling = config.ribbons[deformed.id];
   const baseSwing = config.material.filmSwing;
   const baseT = motion.still
@@ -925,7 +959,7 @@ export function buildSpecularCoreStrip(
   motion: RibbonMotion,
   config: RibbonTuningConfig = activeTuningConfig,
 ): { readonly upperPts: Vec2[]; readonly lowerPts: Vec2[] } {
-  const profile = getStateProfile(motion.state, config);
+  const profile = getBlendedStateProfile(motion.state, motion.doneElapsed, config);
   const coupling = config.ribbons[deformed.id];
   const t = motion.still
     ? 0
@@ -963,9 +997,17 @@ export function evaluateSheenProgress(
   if (motion.still) return 0.48;
 
   if (motion.state === "done") {
-    if (motion.doneElapsed >= 1.35) return null;
-    const raw = clamp01(motion.doneElapsed / 1.2);
-    return 1 - Math.pow(1 - raw, 1.8);
+    if (motion.doneElapsed < 1.35) {
+      const raw = clamp01(motion.doneElapsed / 1.2);
+      return 1 - Math.pow(1 - raw, 1.8);
+    }
+    if (motion.doneElapsed < DONE_SETTLE_DURATION) {
+      return null;
+    }
+    const idlePeriod = getStateProfile("idle", config).sheenPeriod;
+    if (idlePeriod <= 0) return null;
+    const idleTime = motion.doneElapsed - DONE_SETTLE_DURATION;
+    return (idleTime % idlePeriod) / idlePeriod;
   }
 
   const period = getStateProfile(motion.state, config).sheenPeriod;

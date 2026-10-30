@@ -25,10 +25,9 @@ import {
   buildInternalWaveStrip,
   buildSpecularCoreStrip,
   deformRibbonSurface,
-  DONE_SETTLE_DURATION,
-  evaluateSheenProgress,
+   evaluateSheenProgress,
+  getBlendedStateProfile,
   getRibbonTuningConfig,
-  getStateProfile,
   isMutedState,
   pointOnDeformedSlice,
   subscribeRibbonTuningConfig,
@@ -366,7 +365,6 @@ export function BrandRibbonRenderer({
       const currentMode = modeRef.current;
       const config = tuningRef.current ?? getRibbonTuningConfig();
       const { material } = config;
-      const profile = getStateProfile(currentState, config);
       const muted = isMutedState(currentState);
       const isStatic =
         currentMode === "static" || reducedMotionQuery.matches;
@@ -377,6 +375,15 @@ export function BrandRibbonRenderer({
           : Math.min(0.064, Math.max(0, (now - clock.lastFrameMs) / 1000));
       clock.lastFrameMs = now;
 
+      if (!isStatic && !muted && currentState === "done") {
+        clock.doneElapsedSec += dt;
+      }
+      const profile = getBlendedStateProfile(
+        currentState,
+        clock.doneElapsedSec,
+        config,
+      );
+
       if (!isStatic && !muted) {
         clock.elapsedSec += dt;
         clock.phase1 = (clock.phase1 + profile.omega1 * dt) % (Math.PI * 200);
@@ -384,9 +391,6 @@ export function BrandRibbonRenderer({
         clock.phase3 = (clock.phase3 + profile.omega3 * dt) % (Math.PI * 200);
         clock.filmPhase =
           (clock.filmPhase + profile.filmSpeed * dt) % (Math.PI * 200);
-        if (currentState === "done") {
-          clock.doneElapsedSec += dt;
-        }
       }
 
       const targetScale = isStatic || muted ? 0 : 1;
@@ -781,9 +785,6 @@ export function BrandRibbonRenderer({
       }
       if (stateRef.current === "muted") {
         return clockRef.current.amplitudeScale > 0.01;
-      }
-      if (stateRef.current === "done") {
-        return clockRef.current.doneElapsedSec <= DONE_SETTLE_DURATION + 0.15;
       }
       return true;
     };

@@ -43,6 +43,8 @@ export interface Settings {
   glass: "live" | "performance";
   /** Whether a finished transcript is published on the local socket. */
   transcript_service: boolean;
+  /** Whether the pill opens a separate popup card for status notifications (off by default). */
+  status_popup?: boolean;
 }
 
 export interface TranscriptServiceStatus {

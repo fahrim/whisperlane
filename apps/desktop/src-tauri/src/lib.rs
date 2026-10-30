@@ -24,6 +24,7 @@ use pipeline::{get_pipeline_state, PipelineState, PipelineStatus};
 use settings::{
     complete_onboarding, get_settings, is_start_with_windows, list_languages, list_themes, load,
     set_glass_mode, set_hotkey, set_language, set_microphone, set_model, set_start_with_windows,
+    set_status_popup,
     set_theme, set_transcript_service, SettingsState,
 };
 use stt::{get_stt_status, sweep_idle, SttState};
@@ -93,6 +94,7 @@ pub fn run() {
             is_start_with_windows,
             set_theme,
             set_glass_mode,
+            set_status_popup,
             list_themes,
             set_transcript_service,
             transcript_service_status

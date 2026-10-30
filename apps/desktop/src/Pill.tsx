@@ -9,8 +9,9 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { BrandWave, type BrandWaveState } from "./BrandWave";
 import { deliveryNote } from "./delivery";
-import { LastTakeCard } from "./LastTakeCard";
+import { LastTakeCard, StatusNoticeCard } from "./LastTakeCard";
 import {
   GlassProbeBackdrop,
   LiquidGlassSurface,
@@ -20,7 +21,7 @@ import {
   parseBackdropPacket,
   renderLiquidGlassCanvas,
 } from "./liquidGlassWebGL";
-import { LiquidWaveform, type WaveState } from "./LiquidWaveform";
+import { LiquidWaveform } from "./LiquidWaveform";
 import type {
   LanguageChoice,
   MainAction,
@@ -208,25 +209,30 @@ function LiquidRefraction() {
 }
 
 /**
- * Which face the waveform / equalizer shows:
- * - "recording" (Listening): full colored Siri ribbons
- * - "processing" (Thinking): white equalizer with left-to-right scanner wave
- * - "muted" (Failed / Cancelled): white equalizer with right-middle bars (11 & 14)
- * - "idle" (Idle / Done): white equalizer with left-start bars (3 & 4)
+ * Which face the brand wave shows while no take is live:
+ * - "idle" (Idle): the mark is drawn once, then a slow light travels it
+ * - "thinking" (Thinking): the same mark, a quicker highlight, blue glow
+ * - "done" (Done): one confirming light pass and a green glow
+ * - "muted" (Failed / Cancelled): dimmed and still, so the line does the talking
+ *
+ * Listening is not in this map: a live take keeps the coloured ribbons.
  */
-function waveStateFor(phase: PipelineStatus["phase"]): WaveState {
+function brandWaveFor(
+  phase: PipelineStatus["phase"],
+  readyToSpeak: boolean,
+): BrandWaveState {
   switch (phase) {
-    case "listening":
-      return "recording";
     case "thinking":
-      return "processing";
+      return "thinking";
+    case "done":
+      return "done";
     case "failed":
     case "cancelled":
       return "muted";
     case "idle":
-    case "done":
+    case "listening":
     default:
-      return "idle";
+      return readyToSpeak ? "ready" : "idle";
   }
 }
 
@@ -246,11 +252,44 @@ export function Pill() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [languages, setLanguages] = useState<LanguageChoice[]>([]);
   const [readiness, setReadiness] = useState<ModelReadiness | null>(null);
+  const [noticeDismissed, setNoticeDismissed] = useState(false);
 
   const phase: Phase = status?.phase ?? "idle";
   const isRecording = phase === "listening";
   const isProcessing = phase === "thinking";
   const liveGlass = (settings?.glass ?? "live") !== "performance";
+  const action: MainAction = status?.main_action ?? "start";
+  const signal = signalFor(status);
+  const idleReadiness = phase === "idle" ? readiness : null;
+  const facePhase: Phase = idleReadiness?.downloading
+    ? "thinking"
+    : idleReadiness && !idleReadiness.present
+      ? "failed"
+      : phase;
+  const faceLine = idleReadiness?.downloading
+    ? MODEL_FETCH_LINE
+    : (idleReadiness?.hint ?? signal);
+  const isReadyWaiting =
+    facePhase === "idle" && Boolean(idleReadiness?.present);
+  const waveSignal = brandWaveFor(facePhase, isReadyWaiting);
+  const currentLangLabel =
+    settings?.language === "auto" || !settings?.language
+      ? "Auto"
+      : (languages.find((l) => l.code === settings.language)?.label ??
+          settings.language.toUpperCase());
+  const statusNoticeText = error
+    ? error
+    : facePhase !== "idle" && !isRecording
+      ? faceLine || status?.label || ""
+      : "";
+  const statusPopupEnabled = Boolean(settings?.status_popup);
+  const isCriticalNotice = Boolean(error) || facePhase === "failed";
+  const showStatusPopup =
+    (statusPopupEnabled || isCriticalNotice) &&
+    Boolean(statusNoticeText) &&
+    !noticeDismissed;
+  const activePanel: "menu" | "take" | "status" | null =
+    panel ?? (showStatusPopup ? "status" : null);
   const pillBoxRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const selectedLangRef = useRef<HTMLButtonElement | null>(null);
@@ -315,11 +354,13 @@ export function Pill() {
       if (pillRect.width <= 0 || pillRect.height <= 0) return;
       const panelEl = panelRef.current;
       const panelSurface = panelEl?.firstElementChild as HTMLElement | null;
+      const isExiting = panelSurface?.getAttribute("data-exiting") === "true";
       const panelRect =
-        panel && placement && panelSurface
+        activePanel && placement && panelSurface && !isExiting
           ? panelSurface.getBoundingClientRect()
           : null;
-      const panelRadius = panel === "take" ? 22 : 16;
+      const panelRadius =
+        activePanel === "take" || activePanel === "status" ? 22 : 16;
 
       blurBusyRef.current = true;
       void invoke<ArrayBuffer>("set_pill_blur_region", {
@@ -343,7 +384,7 @@ export function Pill() {
           blurBusyRef.current = false;
         });
     },
-    [applyBackdropPacket, liveGlass, panel, placement],
+    [applyBackdropPacket, liveGlass, activePanel, placement],
   );
 
   /**
@@ -393,6 +434,7 @@ export function Pill() {
       // somewhere puts it away. The core closes it too, for the frames
       // this side has not rendered yet.
       setPanel(null);
+      setNoticeDismissed(true);
     }
     // Coalesced by the round trip rather than by a frame callback: a
     // window that never takes focus does not get animation frames, so a
@@ -526,6 +568,10 @@ export function Pill() {
     setCopied(false);
   }, [lastText]);
 
+  useEffect(() => {
+    setNoticeDismissed(false);
+  }, [facePhase, faceLine, status?.detail, error]);
+
   /**
    * Opens or closes the panel by growing the window toward the side
    * that has room.
@@ -559,7 +605,7 @@ export function Pill() {
 
   useLayoutEffect(() => {
     void resizeForPanel();
-  }, [panel, resizeForPanel]);
+  }, [activePanel, statusNoticeText, resizeForPanel]);
 
   useLayoutEffect(() => {
     syncBlurRegion(true);
@@ -578,7 +624,7 @@ export function Pill() {
     if (pillEl) observer.observe(pillEl);
     if (panelEl) observer.observe(panelEl);
     return () => observer.disconnect();
-  }, [panel, resizeForPanel, syncBlurRegion]);
+  }, [activePanel, statusNoticeText, resizeForPanel, syncBlurRegion]);
 
   // Continuously sample the live desktop behind the pill while visible so
   // switching windows (Alt+Tab), moving other windows underneath the pill,
@@ -662,31 +708,6 @@ export function Pill() {
     }
   }
 
-  const action: MainAction = status?.main_action ?? "start";
-  const signal = signalFor(status);
-
-  // A take is the moment and keeps its own words; the model fills only
-  // the resting line. A missing model is shown in the pill's failure
-  // face and a model on its way in its working face, because "ready" is
-  // not true until the model can take a word, and a take that finds no
-  // model says exactly this sentence anyway. Nothing here changes what
-  // the control does: the core's own action still decides that.
-  const idleReadiness = phase === "idle" ? readiness : null;
-  const facePhase: Phase = idleReadiness?.downloading
-    ? "thinking"
-    : idleReadiness && !idleReadiness.present
-      ? "failed"
-      : phase;
-  const faceLine = idleReadiness?.downloading
-    ? MODEL_FETCH_LINE
-    : (idleReadiness?.hint ?? signal);
-  const waveState = waveStateFor(facePhase);
-  const currentLangLabel =
-    settings?.language === "auto" || !settings?.language
-      ? "Auto"
-      : (languages.find((l) => l.code === settings.language)?.label ??
-          settings.language.toUpperCase());
-
   return (
     <div
       className="pill"
@@ -743,10 +764,12 @@ export function Pill() {
             <OrbIcon phase={facePhase} />
           </button>
 
-          {/* 2. CENTER — Waveform / State-Aware White Equalizer + Status Text.
-              The center doubles as the grip: pressing it and moving takes
-              the pill somewhere, while a press that never moves is left
-              alone so it stays a click. */}
+          {/* 2. CENTER — Live Waveform / Brand Wave. A live take keeps the
+              coloured ribbons; the resting face is the drawn wave alone,
+              with no status word. Other faces keep their written line. The
+              center doubles as the grip: pressing it and moving takes the
+              pill somewhere, while a press that never moves is left alone
+              so it stays a click. */}
           <div
             className="pill-center"
             onPointerDown={beginDrag}
@@ -755,23 +778,10 @@ export function Pill() {
             onPointerCancel={endDrag}
           >
             {isRecording ? (
-              <LiquidWaveform
-                state="recording"
-                audioLevel={audioLevel}
-                width={165}
-                height={44}
-              />
+              <LiquidWaveform audioLevel={audioLevel} width={165} height={44} />
             ) : (
               <div className="pill-status-row">
-                <LiquidWaveform
-                  state={waveState}
-                  audioLevel={0}
-                  width={90}
-                  height={22}
-                />
-                <p className="pill-state" role="status" aria-live="polite">
-                  {faceLine || status?.label || ""}
-                </p>
+                <BrandWave state={waveSignal} />
               </div>
             )}
           </div>
@@ -795,11 +805,12 @@ export function Pill() {
               </>
             )}
 
-            {!isRecording && !isProcessing && (
+            {!isRecording && (
               <button
                 type="button"
                 className="pill-options"
                 aria-label="More options"
+                disabled={isProcessing}
                 aria-expanded={panel === "menu"}
                 title="Options"
                 onClick={() => {
@@ -813,15 +824,14 @@ export function Pill() {
             )}
           </div>
 
-          {error && <span role="alert">{error}</span>}
           </div>
 
           {/* The panel anchors against the dock, out of flow: it can
               neither push the pill nor wait on a reflow. Which way it
               opens was decided by the core before this element existed. */}
-          {panel && (
+          {activePanel && (
             <div className="pill-panel" ref={panelRef}>
-              {panel === "take" ? (
+              {activePanel === "take" ? (
                 <LastTakeCard
                   text={lastText}
                   languageLabel={currentLangLabel}
@@ -831,6 +841,19 @@ export function Pill() {
                   onClear={() => setCleared(true)}
                   copied={copied}
                   cleared={cleared}
+                />
+              ) : activePanel === "status" ? (
+                <StatusNoticeCard
+                  phase={facePhase}
+                  text={statusNoticeText}
+                  isError={Boolean(error)}
+                  isDownloadingModel={Boolean(idleReadiness?.downloading)}
+                  hasLastTake={Boolean(lastText)}
+                  onOpenLastTake={() => setPanel("take")}
+                  onClose={() => {
+                    setNoticeDismissed(true);
+                    if (error) setError(null);
+                  }}
                 />
               ) : (
                 <div className="pill-popover" role="menu" aria-label="Quick options">

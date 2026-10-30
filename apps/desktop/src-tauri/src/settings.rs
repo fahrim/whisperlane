@@ -558,6 +558,9 @@ pub struct Settings {
     /// assumed. The setting is the switch; the service itself lives in
     /// `transcript_service`.
     pub transcript_service: bool,
+    /// Whether the pill opens a separate popup card for status notifications.
+    /// Off by default; users can enable it in Settings.
+    pub status_popup: bool,
 }
 
 impl Default for Settings {
@@ -575,6 +578,7 @@ impl Default for Settings {
             theme: Theme::System,
             glass: GlassMode::Live,
             transcript_service: false,
+            status_popup: false,
         }
     }
 }
@@ -697,10 +701,21 @@ pub fn set_model(app: AppHandle, model: String) -> Settings {
             .map(|state| state.0.lock().expect("settings state poisoned").clone())
             .unwrap_or_default();
     };
+    let is_onboarded = app
+        .try_state::<SettingsState>()
+        .map(|state| state.0.lock().expect("settings state poisoned").onboarded)
+        .unwrap_or(false);
+    if is_onboarded && !crate::models::is_present(&app, choice) {
+        return app
+            .try_state::<SettingsState>()
+            .map(|state| state.0.lock().expect("settings state poisoned").clone())
+            .unwrap_or_default();
+    }
     let updated = persist(&app, |settings| settings.model = choice.id.to_string());
     if let Ok(path) = settings_path(&app) {
         let _ = write_settings(&path, &updated);
     }
+    let _ = app.emit(SETTINGS_CHANGED, &updated);
     crate::stt::reload(&app);
     // The chosen model is what readiness — and so the tray's resting line
     // — is about: a choice can change the answer without a phase moving.
@@ -800,6 +815,14 @@ pub fn set_glass_mode(app: AppHandle, glass: GlassMode) -> Settings {
     if let Ok(path) = settings_path(&app) {
         let _ = write_settings(&path, &updated);
     }
+    let _ = app.emit(SETTINGS_CHANGED, &updated);
+    updated
+}
+
+/// Turns the pill status notification popup card on or off (off by default).
+#[tauri::command]
+pub fn set_status_popup(app: AppHandle, enabled: bool) -> Settings {
+    let updated = persist_public(&app, |settings| settings.status_popup = enabled);
     let _ = app.emit(SETTINGS_CHANGED, &updated);
     updated
 }
@@ -955,6 +978,7 @@ mod tests {
             theme: Theme::Dark,
             glass: GlassMode::Performance,
             transcript_service: true,
+            status_popup: false,
         };
         write_settings(&path, &settings).unwrap();
         assert_eq!(read_settings(&path), settings);

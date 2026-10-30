@@ -1,12 +1,19 @@
-// The card that shows what the last finished take said.
+// The card that shows what the last finished take said, and the companion
+// status popup card that displays pill notifications outside the capsule.
 //
-// The name is deliberate. v1 transcribes a whole take after capture ends
-// and never streams words while the user is still speaking, so a card
-// that called itself live and carried a blinking caret would be claiming
-// a capability the core does not have. What it shows is real: the words
-// the last take produced, and where they went.
+// Both cards share the exact same LiquidGlassSurface(geometry="panel")
+// material, header bar, and left-accented body typography so status notices
+// and transcript cards belong to one optical family while keeping the pill
+// capsule itself completely free of text.
 
+import { useEffect, useRef, useState } from "react";
 import { LiquidGlassSurface } from "./LiquidGlassSurface";
+import type { Phase } from "./types";
+
+const STATUS_AUTO_DISMISS_MS = 5000;
+const SWIPE_DISMISS_DISTANCE_PX = 54;
+const SWIPE_DISMISS_VELOCITY_PX_PER_MS = 0.42;
+const EXIT_ANIMATION_MS = 210;
 
 /** The document mark, at the size the header reads at. */
 function TextIcon() {
@@ -104,6 +111,255 @@ function CheckIcon() {
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+function StatusPhaseIcon({ phase }: { phase: Phase }) {
+  if (phase === "done") {
+    return <CheckIcon />;
+  }
+  if (phase === "thinking") {
+    return (
+      <svg
+        className="card-icon pill-orb-spinner"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        aria-hidden="true"
+      >
+        <path
+          d="M12 2.5C12.4 7.2 16.8 11.6 21.5 12C16.8 12.4 12.4 16.8 12 21.5C11.6 16.8 7.2 12.4 2.5 12C7.2 11.6 11.6 7.2 12 2.5Z"
+          fill="currentColor"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg
+      className="card-icon"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+      <path
+        d="M12 8v4.5M12 16h.01"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function statusHeaderTitle(
+  phase: Phase,
+  isError: boolean,
+  isDownloadingModel: boolean,
+): string {
+  if (isError || phase === "failed") return "Notice";
+  if (isDownloadingModel) return "Model";
+  switch (phase) {
+    case "thinking":
+      return "Processing";
+    case "done":
+      return "Delivered";
+    case "cancelled":
+      return "Discarded";
+    default:
+      return "Status";
+  }
+}
+
+export interface StatusNoticeCardProps {
+  phase: Phase;
+  text: string;
+  isError?: boolean;
+  isDownloadingModel?: boolean;
+  hasLastTake?: boolean;
+  onOpenLastTake?: () => void;
+  onClose: () => void;
+}
+
+export function StatusNoticeCard({
+  phase,
+  text,
+  isError = false,
+  isDownloadingModel = false,
+  hasLastTake = false,
+  onOpenLastTake,
+  onClose,
+}: StatusNoticeCardProps) {
+  const effectivePhase: Phase = isError ? "failed" : phase;
+  const title = statusHeaderTitle(effectivePhase, isError, isDownloadingModel);
+
+  const [dragX, setDragX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [exitMode, setExitMode] = useState<"left" | "right" | "auto" | null>(
+    null,
+  );
+
+  const gestureRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startTime: number;
+  } | null>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  // Reset swipe & exit state whenever the status message or phase changes
+  useEffect(() => {
+    setDragX(0);
+    setIsDragging(false);
+    setExitMode(null);
+    gestureRef.current = null;
+  }, [effectivePhase, text]);
+
+  // Auto-dismiss after 5 seconds (paused while actively dragging)
+  useEffect(() => {
+    if (isDragging || exitMode !== null) return;
+    const timer = window.setTimeout(() => {
+      setExitMode("auto");
+    }, STATUS_AUTO_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [effectivePhase, text, isDragging, exitMode]);
+
+  // Complete dismissal after exit animation finishes
+  useEffect(() => {
+    if (exitMode === null) return;
+    const timer = window.setTimeout(() => {
+      onCloseRef.current();
+    }, EXIT_ANIMATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [exitMode]);
+
+  function handlePointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || exitMode !== null) return;
+    const target = event.target as HTMLElement | null;
+    if (target?.closest("button")) return;
+
+    gestureRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startTime: performance.now(),
+    };
+    setIsDragging(true);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Ignore capture errors
+    }
+  }
+
+  function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+    const g = gestureRef.current;
+    if (!g || event.pointerId !== g.pointerId || exitMode !== null) return;
+    const dx = event.clientX - g.startX;
+    setDragX(dx);
+  }
+
+  function finishSwipe(event: React.PointerEvent<HTMLDivElement>) {
+    const g = gestureRef.current;
+    if (!g || event.pointerId !== g.pointerId) return;
+    gestureRef.current = null;
+    try {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    } catch {
+      // Ignore release errors
+    }
+
+    const dx = event.clientX - g.startX;
+    const dt = Math.max(16, performance.now() - g.startTime);
+    const vx = dx / dt;
+
+    setIsDragging(false);
+    if (
+      Math.abs(dx) >= SWIPE_DISMISS_DISTANCE_PX ||
+      Math.abs(vx) >= SWIPE_DISMISS_VELOCITY_PX_PER_MS
+    ) {
+      setExitMode(dx >= 0 ? "right" : "left");
+    } else {
+      setDragX(0);
+    }
+  }
+
+  const swipeStyle: React.CSSProperties | undefined =
+    exitMode === "left"
+      ? {
+          transform: "translate3d(-310px, 0, 0)",
+          opacity: 0,
+        }
+      : exitMode === "right"
+        ? {
+            transform: "translate3d(310px, 0, 0)",
+            opacity: 0,
+          }
+        : exitMode === "auto"
+          ? {
+              transform: "translate3d(0, -6px, 0) scale(0.96)",
+              opacity: 0,
+            }
+          : isDragging || dragX !== 0
+            ? {
+                transform: `translate3d(${dragX}px, 0, 0)`,
+                opacity: Math.max(0.15, 1 - Math.abs(dragX) / 210),
+                transition: isDragging ? "none" : undefined,
+              }
+            : undefined;
+
+  return (
+    <div
+      className={`last-take-card pill-status-card${
+        isDragging ? " is-swiping" : ""
+      }${exitMode ? " is-exiting" : ""}`}
+      data-status-phase={effectivePhase}
+      data-exiting={exitMode ? "true" : undefined}
+      role={effectivePhase === "failed" ? "alert" : "status"}
+      aria-live="polite"
+      style={swipeStyle}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={finishSwipe}
+      onPointerCancel={finishSwipe}
+    >
+      <LiquidGlassSurface geometry="panel" />
+      <div className="card-header">
+        <div className="card-header-left">
+          <StatusPhaseIcon phase={effectivePhase} />
+          <span className="card-title">{title}</span>
+        </div>
+        <div className="card-header-right">
+          {effectivePhase === "done" && hasLastTake && onOpenLastTake && (
+            <button
+              type="button"
+              className="card-language"
+              onClick={onOpenLastTake}
+              title="Open Last Take"
+            >
+              Last Take
+            </button>
+          )}
+          <button
+            type="button"
+            className="card-icon-button"
+            aria-label="Close notification"
+            title="Close"
+            onClick={onClose}
+          >
+            <span className="pill-glyph pill-close" />
+          </button>
+        </div>
+      </div>
+
+      <div className="card-body">
+        <p className="card-text">{text}</p>
+      </div>
+    </div>
   );
 }
 

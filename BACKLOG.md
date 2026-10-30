@@ -13,11 +13,25 @@ packaging slice has replaced the engine package that failed on a clean
 machine. The remaining packaging work is verification against the
 published runtime and the installer, not more code.
 
-Blocked on the engine release: CI builds tag `engine-vulkan-b5454-static`
-from `f984095`; `scripts/fetch-runtime.ps1` still has an empty
-`$EXPECTED_SHA256` until that run publishes `SHA256SUMS.txt`. Clean-VM
-acceptance and installer verification wait on the same artifact. The app
-changes are otherwise complete and uncommitted.
+The published runtime is pinned and verified:
+`engine-vulkan-b5454-static` (commit `f984095`) publishes
+`whisper-vulkan-win-x64-v1.9.5.zip`, whose reviewed SHA-256 is now the
+constant in `scripts/fetch-runtime.ps1`. Both released executables were
+smoke-tested with real models and served HTTP 200; the Vulkan one reported
+the AMD device. A local NSIS installer built from the final source carries
+`runtime\whisper-server.exe`, `runtime\whisper-server-cpu.exe`, and
+`runtime\vcomp140.dll`.
+
+The upgrade path is verified against real app data: a flat runtime left by
+the previous version was replaced by the versioned directory, the pointer
+moved, the locked legacy files were removed once the stale engine exited,
+and unrelated files and directories survived. A failed cleanup removal is
+now written to the engine log rather than swallowed.
+
+Still open: clean-VM acceptance against that installer (no Visual C++
+redistributable, first take, offline use, uninstall). The local installer
+was built with updater artifacts disabled because no signing key is
+available; the signed installer comes from the release pipeline.
 
 ## Done
 
@@ -221,7 +235,11 @@ Closed during M2:
   and verifies the backend on the first real take. The eager probe and the
   single `did not become ready` sentence are gone. Model presence is
   exact-length with a `.size` sidecar, so an incomplete file is named
-  instead of handed to the engine.
+  instead of handed to the engine. Cleanup after an upgrade touches only
+  engine-shaped files and directories that actually contain an engine, so
+  a person's file or folder in the runtime root survives; a removal the OS
+  refuses (a stale engine still holding its executable) is logged instead
+  of silently skipped.
 
 ## Next (in order)
 

@@ -96,8 +96,12 @@ The application copies the bundled runtime into
 first and renamed into place only when complete. `runtime\current` is a plain
 text file containing the pin, written through `current.tmp` and renamed. The
 current and previous versions are kept; older ones are pruned after the pointer
-moves. The flat files older installs used are removed, but only engine-shaped
-files: anything else a person placed there survives.
+moves. A directory is pruned only when it carries an engine or the staging
+suffix, so it cannot take unrelated data with it. The flat files older installs
+used are removed, but only engine-shaped files: anything else a person placed
+there survives. A removal the OS refuses — a stale engine still holding its own
+executable, for instance — does not fail the install and is written to the
+engine log instead of disappearing.
 
 The pin lives in `scripts/fetch-runtime.ps1`, which fetches the archive by tag,
 checks the release's digest and the reviewed digest, and verifies every

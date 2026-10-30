@@ -219,14 +219,24 @@ fn write_current(root: &Path, id: &str) -> Result<(), String> {
 pub fn seed_runtime(app: &AppHandle) -> Result<(), String> {
     let source = installed_runtime_dir(app)?;
     let root = runtime_root(app)?;
-    let result = seed_from(&source, &root, RUNTIME_PIN);
-    if let Err(detail) = &result {
-        append_engine_log(app, &format!("runtime install failed: {detail}"));
+    match seed_from(&source, &root, RUNTIME_PIN) {
+        Ok(leftovers) => {
+            for leftover in leftovers {
+                append_engine_log(app, &format!("runtime cleanup could not remove {leftover}"));
+            }
+            Ok(())
+        }
+        Err(detail) => {
+            append_engine_log(app, &format!("runtime install failed: {detail}"));
+            Err(detail)
+        }
     }
-    result
 }
 
-fn seed_from(source: &Path, root: &Path, pin: &str) -> Result<(), String> {
+/// Returns the files and directories the cleanup could not remove. A
+/// locked obsolete file must not fail the install, but it must not be
+/// invisible either: the next start is where someone would look.
+fn seed_from(source: &Path, root: &Path, pin: &str) -> Result<Vec<String>, String> {
     if !has_server(source) {
         // Said plainly rather than guessed at: an install with no engine
         // cannot be repaired by trying harder.
@@ -241,13 +251,11 @@ fn seed_from(source: &Path, root: &Path, pin: &str) -> Result<(), String> {
     let previous = read_current(root);
     let installed = root.join(pin);
     if previous.as_deref() == Some(pin) && has_server(&installed) {
-        finish_install(root, pin, previous.as_deref());
-        return Ok(());
+        return Ok(finish_install(root, pin, previous.as_deref()));
     }
     if has_server(&installed) {
         write_current(root, pin)?;
-        finish_install(root, pin, previous.as_deref());
-        return Ok(());
+        return Ok(finish_install(root, pin, previous.as_deref()));
     }
     let staging = root.join(format!("{pin}.new"));
     let _ = fs::remove_dir_all(&staging);
@@ -263,26 +271,27 @@ fn seed_from(source: &Path, root: &Path, pin: &str) -> Result<(), String> {
     fs::rename(&staging, &installed)
         .map_err(|e| format!("could not install the runtime at {}: {e}", installed.display()))?;
     write_current(root, pin)?;
-    finish_install(root, pin, previous.as_deref());
-    Ok(())
+    Ok(finish_install(root, pin, previous.as_deref()))
 }
 
 /// Keeps the current and previous versions, drops older ones, and clears
 /// the flat files an older install used.
-fn finish_install(root: &Path, pin: &str, previous: Option<&str>) {
+fn finish_install(root: &Path, pin: &str, previous: Option<&str>) -> Vec<String> {
     let mut keep = vec![pin];
     if let Some(previous) = previous {
         if previous != pin {
             keep.push(previous);
         }
     }
-    prune_runtimes(root, &keep);
-    remove_legacy_files(root);
+    let mut leftovers = prune_runtimes(root, &keep);
+    leftovers.extend(remove_legacy_files(root));
+    leftovers
 }
 
-fn prune_runtimes(root: &Path, keep: &[&str]) {
+fn prune_runtimes(root: &Path, keep: &[&str]) -> Vec<String> {
+    let mut leftovers = Vec::new();
     let Ok(entries) = fs::read_dir(root) else {
-        return;
+        return leftovers;
     };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -293,16 +302,27 @@ fn prune_runtimes(root: &Path, keep: &[&str]) {
         if keep.contains(&name.as_str()) {
             continue;
         }
-        let _ = fs::remove_dir_all(&path);
+        // Only directories this application installed are pruned. A
+        // runtime directory carries an engine; a staging directory is
+        // named for the pin it will become. Anything else belongs to
+        // whoever put it there.
+        if !name.ends_with(".new") && !has_server(&path) {
+            continue;
+        }
+        if let Err(e) = fs::remove_dir_all(&path) {
+            leftovers.push(format!("directory {name}: {e}"));
+        }
     }
+    leftovers
 }
 
 /// Removes the flat engine files older installs kept directly in the
 /// runtime root. Only engine-shaped files are touched; anything else a
 /// person put there survives.
-fn remove_legacy_files(root: &Path) {
+fn remove_legacy_files(root: &Path) -> Vec<String> {
+    let mut leftovers = Vec::new();
     let Ok(entries) = fs::read_dir(root) else {
-        return;
+        return leftovers;
     };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -319,9 +339,12 @@ fn remove_legacy_files(root: &Path) {
                 .and_then(|extension| extension.to_str())
                 .is_some_and(|extension| matches!(extension, "exe" | "dll" | "pin"));
         if removable {
-            let _ = fs::remove_file(&path);
+            if let Err(e) = fs::remove_file(&path) {
+                leftovers.push(format!("file {name}: {e}"));
+            }
         }
     }
+    leftovers
 }
 
 /// Copies an installed engine into the directory the app runs it from.
@@ -1107,6 +1130,8 @@ mod tests {
         std::fs::write(data.join(VULKAN_SERVER), b"old engine").unwrap();
         std::fs::write(data.join(".pin"), b"old").unwrap();
         std::fs::write(data.join("notes.txt"), b"keep me").unwrap();
+        std::fs::create_dir_all(data.join("personal")).unwrap();
+        std::fs::write(data.join("personal").join("notes.txt"), b"keep me too").unwrap();
 
         seed_from(&source, &data, "pin-a").unwrap();
 
@@ -1114,6 +1139,37 @@ mod tests {
         assert!(!data.join(VULKAN_SERVER).exists(), "legacy engine remains");
         assert!(!data.join(".pin").exists(), "legacy marker remains");
         assert!(data.join("notes.txt").is_file(), "a person's file was deleted");
+        assert!(
+            data.join("personal").join("notes.txt").is_file(),
+            "a person's directory was deleted"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_cleanup_failure_is_reported_not_swallowed() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let root = temp_root("cleanup-failure");
+        std::fs::create_dir_all(&root).unwrap();
+        let locked = root.join("whisper.dll");
+        std::fs::write(&locked, b"old").unwrap();
+        // An open handle that refuses delete sharing has the same shape
+        // as a stale engine still holding its own executable.
+        let lock = OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&locked)
+            .unwrap();
+
+        let leftovers = remove_legacy_files(&root);
+        assert_eq!(leftovers.len(), 1, "a failed removal must be reported");
+        assert!(
+            locked.exists(),
+            "the locked file was reported but also gone"
+        );
+
+        drop(lock);
         let _ = std::fs::remove_dir_all(&root);
     }
 

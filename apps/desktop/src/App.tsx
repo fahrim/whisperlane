@@ -392,6 +392,7 @@ function App() {
   const [startBusy, setStartBusy] = useState(false);
   const [_askMic, setAskMic] = useState(false);
   const [modelOptions, setModelOptions] = useState<ModelOption[]>([]);
+  const [pendingModelId, setPendingModelId] = useState<string | null>(null);
   const [download, setDownload] = useState<Download | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [updateState, setUpdateState] = useState<UpdateState>({ kind: "idle" });
@@ -511,6 +512,7 @@ function App() {
 
   async function hideWindow() {
     stopMicTest();
+    setPendingModelId(null);
     try {
       await invoke("toggle_settings");
     } catch (e) {
@@ -586,6 +588,14 @@ function App() {
 
   async function chooseModel(id: string) {
     try {
+      const latestModels = await invoke<ModelOption[]>("list_models");
+      setModelOptions(latestModels);
+      const target = latestModels.find((option) => option.id === id);
+      if (showSettings && target && !target.present) {
+        setPendingModelId(id);
+        return;
+      }
+      setPendingModelId(null);
       setSettings(await invoke<Settings>("set_model", { model: id }));
       await refreshModels();
     } catch (e) {
@@ -608,7 +618,13 @@ function App() {
         state = await invoke<Download>("get_download");
         setDownload(state);
       }
-      await refreshModels();
+      const latestModels = await invoke<ModelOption[]>("list_models");
+      setModelOptions(latestModels);
+      const downloaded = latestModels.find((option) => option.id === id);
+      if (downloaded?.present) {
+        setPendingModelId(null);
+        setSettings(await invoke<Settings>("set_model", { model: id }));
+      }
     } catch (e) {
       setError(String(e));
     }
@@ -770,6 +786,14 @@ function App() {
     }
   }
 
+  async function chooseStatusPopup(enabled: boolean) {
+    try {
+      setSettings(await invoke<Settings>("set_status_popup", { enabled }));
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
   async function chooseStartWithWindows(start: boolean): Promise<boolean> {
     setStartBusy(true);
     try {
@@ -827,6 +851,7 @@ function App() {
         // the finished introduction back in front of the user every time
         // they look for a setting.
         setLeaving(false);
+        setPendingModelId(null);
       }
     });
     return () => {
@@ -842,8 +867,12 @@ function App() {
     status !== null &&
     (status.phase === "listening" || status.phase === "thinking");
 
+  const activeModelId = showSettings
+    ? (pendingModelId ?? settings?.model)
+    : settings?.model;
+
   const chosenModel =
-    modelOptions.find((option) => option.id === settings?.model) ??
+    modelOptions.find((option) => option.id === activeModelId) ??
     modelOptions.find((option) => option.is_default) ??
     null;
 
@@ -1339,19 +1368,20 @@ function App() {
                           <Picker
                             label="Speech Model"
                             leadingIcon={<BrainIcon />}
-                            value={settings.model}
+                            value={activeModelId ?? settings.model}
                             options={modelOptions.map((option) => ({
                               code: option.id,
                               label: option.label,
                             }))}
-                            onChange={chooseModel}
+                            onChange={(id) => void chooseModel(id)}
+                            disabled={Boolean(download?.running)}
                           />
                           {canDownload && chosenModel && (
                             <button
                               type="button"
                               className="download-button"
                               aria-label={`Download the speech model, ${chosenModel.size_mb} MB`}
-                              onClick={() => downloadModel(chosenModel.id)}
+                              onClick={() => void downloadModel(chosenModel.id)}
                             >
                               <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
                                 <path
@@ -1366,8 +1396,17 @@ function App() {
                             </button>
                           )}
                         </div>
-                        {modelLine && (
-                          <p className="settings-card-status">{modelLine}</p>
+                        {canDownload && chosenModel ? (
+                          <p role="alert" className="settings-card-warning">
+                            <InfoIcon size={14} />
+                            <span>
+                              Model not downloaded ({chosenModel.size_mb} MB) — click the download button to install it. If you close Settings without downloading, this selection will not be saved.
+                            </span>
+                          </p>
+                        ) : (
+                          modelLine && (
+                            <p className="settings-card-status">{modelLine}</p>
+                          )
                         )}
                         {download?.error &&
                           download.model === chosenModel?.id && (
@@ -1436,6 +1475,31 @@ function App() {
                           checked={(settings.glass ?? "live") !== "performance"}
                           label="Live liquid glass"
                           onChange={(next) => void chooseGlass(next)}
+                        />
+                      </div>
+                    </section>
+
+                    <section
+                      className="settings-card settings-card-inline"
+                      aria-label="Status notification popup"
+                    >
+                      <div className="settings-card-icon">
+                        <InfoIcon />
+                      </div>
+                      <div className="settings-card-body">
+                        <h2 className="settings-card-title">
+                          Status notification popup
+                        </h2>
+                        <p className="settings-card-desc">
+                          Show status and delivery notices in a separate popup card
+                          next to the pill. Off by default.
+                        </p>
+                      </div>
+                      <div className="settings-card-inline-control">
+                        <Switch
+                          checked={Boolean(settings.status_popup)}
+                          label="Status notification popup"
+                          onChange={(next) => void chooseStatusPopup(next)}
                         />
                       </div>
                     </section>

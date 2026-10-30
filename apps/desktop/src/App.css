@@ -684,6 +684,31 @@ body {
   color: var(--text-tertiary);
 }
 
+.settings-card-warning {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 9px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #fbbf24;
+  background: rgb(251 191 36 / 10%);
+  border: 1px solid rgb(251 191 36 / 24%);
+}
+
+.settings-card-warning svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+:root[data-theme="light"] .settings-card-warning {
+  color: #b45309;
+  background: rgb(245 158 11 / 10%);
+  border-color: rgb(245 158 11 / 28%);
+}
+
 /* --- Keycaps inside Hold to Talk Picker ----------------------------- */
 
 .hotkey-caps {

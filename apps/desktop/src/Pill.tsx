@@ -282,7 +282,12 @@ export function Pill() {
     : facePhase !== "idle" && !isRecording
       ? faceLine || status?.label || ""
       : "";
-  const showStatusPopup = Boolean(statusNoticeText) && !noticeDismissed;
+  const statusPopupEnabled = Boolean(settings?.status_popup);
+  const isCriticalNotice = Boolean(error) || facePhase === "failed";
+  const showStatusPopup =
+    (statusPopupEnabled || isCriticalNotice) &&
+    Boolean(statusNoticeText) &&
+    !noticeDismissed;
   const activePanel: "menu" | "take" | "status" | null =
     panel ?? (showStatusPopup ? "status" : null);
   const pillBoxRef = useRef<HTMLDivElement | null>(null);

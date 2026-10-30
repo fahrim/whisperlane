@@ -10,8 +10,8 @@ inserts the transcript into the focused application: press the chord,
 speak, release, and the words appear where the caret was. M2 is under
 way: first run is one screen, the pill carries every state, and the
 packaging slice has replaced the engine package that failed on a clean
-machine. The remaining packaging work is verification against the
-published runtime and the installer, not more code.
+machine. A review of that slice closed its remaining code gaps; what
+stays is clean-VM acceptance.
 
 The published runtime is pinned and verified:
 `engine-vulkan-b5454-static` (commit `f984095`) publishes
@@ -27,6 +27,17 @@ the previous version was replaced by the versioned directory, the pointer
 moved, the locked legacy files were removed once the stale engine exited,
 and unrelated files and directories survived. A failed cleanup removal is
 now written to the engine log rather than swallowed.
+
+The review of the slice closed what the first pass left open. The app now
+stops its own engine on quit instead of leaving it running with the model
+loaded — the stale process that held the old flat runtime came from a quit
+that never did this. A launch whose banner never reached the log is no
+longer recorded as a measured processor. The engine import guard is an
+allowlist rather than a denylist, and it reads imports correctly under
+Windows PowerShell 5.1 with a Turkish locale, where the old case-insensitive
+match silently dropped `ADVAPI32.dll` and `VCOMP140.DLL`. A model download
+that declares no length is checked against the catalog instead of the bytes
+it happened to receive.
 
 Still open: clean-VM acceptance against that installer (no Visual C++
 redistributable, first take, offline use, uninstall). The local installer
@@ -96,7 +107,7 @@ Closed decisions this milestone:
 | 2 | The pill carries every state | done |
 | 3 | Advanced concerns folded away | done |
 | 4 | Premium pass: tokens, motion, spacing, wording | done |
-| 5 | Windows packaging: install, offline, clean uninstall | in progress — runtime fixed; release and installer verification pending |
+| 5 | Windows packaging: install, offline, clean uninstall | in progress — runtime and installer contents verified; clean-VM acceptance pending |
 | 6 | Delivery routed through the target abstraction | next |
 
 ## Queued — outside review of insertion and setup (2026-10-29)

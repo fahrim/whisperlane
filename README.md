@@ -42,9 +42,8 @@ Escape                →  throw the take away, type nothing
 Two things were missing from the dictation tools that already exist.
 
 **Windows graphics coverage.** Most accelerated speech tooling assumes one
-vendor. whisperlane walks the backends on your machine — CUDA where it is
-there, **Vulkan for AMD and Intel**, CPU as the floor — so the fast path is
-not reserved for one brand of card.
+vendor. whisperlane uses **Vulkan for AMD, Intel, and NVIDIA GPUs**, with the
+processor as the floor, so the fast path is not reserved for one brand of card.
 
 **A shorter path to the agent.** Dictation should reach the thing you are
 talking to, not the thing that happens to be in front. That starts with the

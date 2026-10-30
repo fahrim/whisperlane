@@ -85,8 +85,8 @@ pub struct SttStatus {
     pub model_file: String,
     pub model_present: bool,
     pub backend: String,
-    /// Whether the backend above came from a real launch rather than
-    /// from a runtime directory's contents.
+    /// Whether the backend above came from a launch's own banner. False
+    /// means the processor is the conservative default, not a result.
     pub backend_verified: bool,
     pub service: ServiceState,
     pub detail: Option<String>,
@@ -102,9 +102,9 @@ pub(crate) struct SttInner {
     consecutive_crashes: u32,
     last_error: Option<String>,
     reload_pending: bool,
-    /// Backend a real launch loaded, probed once and remembered: the
-    /// answer cannot change without the machine or the runtime
-    /// changing, and the probe is far too slow for a status poll.
+    /// Backend a real launch proved: the accelerated build's banner, or
+    /// the processor-only binary's identity. `None` until a launch has
+    /// proved one; an unmeasured answer must not be stored as verified.
     verified_backend: Option<Backend>,
     /// The build this run has settled on. A Vulkan launch that fails
     /// before it is ready moves this to the processor for the rest of
@@ -578,26 +578,28 @@ fn failure_sentence(exit: Option<u32>, log: &str, timed_out: bool) -> String {
             "the speech engine files are damaged — reinstall".to_string()
         }
         Some(0xC000_0005) => "the speech engine crashed while starting".to_string(),
-        Some(code) if code != 0 => format!("the speech engine did not start (0x{code:08X})"),
-        _ => "the speech engine did not start".to_string(),
+        Some(code) if code != 0 => {
+            format!("the speech engine did not start (0x{code:08X}); see the engine log")
+        }
+        _ => "the speech engine did not start; see the engine log".to_string(),
     }
 }
 
-fn backend_from_log(app: &AppHandle) -> Backend {
+fn backend_from_log(app: &AppHandle) -> Option<Backend> {
     // The server answers the ping before the pipe thread has necessarily
     // flushed its last line. Waiting briefly is cheap here because this
-    // runs once per launch, not on a status poll. A processor answer is
-    // also the honest default, so the wait is bounded rather than
-    // endless.
+    // runs once per launch, not on a status poll. `None` is the honest
+    // answer when no evidence arrived: the old probe's lie was recording
+    // the processor for a launch that never happened, and defaulting a
+    // missing banner to the processor would repeat it.
     for _ in 0..20 {
         let text = engine_log_text(app);
-        let backend = backend_from_banner(last_launch_text(&text));
-        if backend != Backend::Cpu {
-            return backend;
+        if let Some(backend) = verified_backend_from_banner(last_launch_text(&text)) {
+            return Some(backend);
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    Backend::Cpu
+    None
 }
 
 fn child_alive(child: &mut Child) -> bool {
@@ -636,14 +638,20 @@ fn pick_port() -> u16 {
 
 /// Reads the loaded backend out of a startup banner. Pure, so the
 /// decision is unit-tested against real banners rather than a live
-/// device.
-pub fn backend_from_banner(banner: &str) -> Backend {
-    if banner.contains("ggml_vulkan: Found") && banner.contains("Vulkan devices") {
-        Backend::Vulkan
+/// device. `None` means the log has not produced evidence yet; the
+/// caller must not turn that into a measured answer.
+pub fn verified_backend_from_banner(banner: &str) -> Option<Backend> {
+    if banner.contains("ggml_vulkan: Found")
+        && banner.contains("Vulkan devices")
+        && !banner.contains("Found 0 Vulkan devices")
+    {
+        Some(Backend::Vulkan)
     } else if banner.contains("ggml_cuda") && banner.contains("devices") {
-        Backend::Cuda
+        Some(Backend::Cuda)
+    } else if banner.contains("whisper_model_load") || banner.contains("whisper_init") {
+        Some(Backend::Cpu)
     } else {
-        Backend::Cpu
+        None
     }
 }
 
@@ -755,16 +763,17 @@ pub fn ensure_ready(app: &AppHandle) -> Result<u16, String> {
         };
         match wait_until_ready(&mut child, port, START_TIMEOUT) {
             StartOutcome::Ready => {
+                // The processor-only executable cannot be anything else,
+                // so its identity is the verification. The accelerated
+                // build is verified by its banner; if the log has not
+                // produced one, the answer stays unverified instead of
+                // being rounded up to a measured processor.
                 let verified = if *attempt == Backend::Cpu {
-                    Backend::Cpu
+                    Some(Backend::Cpu)
                 } else {
                     backend_from_log(app)
                 };
-                let settled = if *attempt == Backend::Cpu {
-                    Backend::Cpu
-                } else {
-                    verified
-                };
+                let settled = verified.unwrap_or(*attempt);
                 let state = app
                     .try_state::<SttState>()
                     .ok_or_else(|| "stt state missing".to_string())?;
@@ -776,7 +785,7 @@ pub fn ensure_ready(app: &AppHandle) -> Result<u16, String> {
                 inner.consecutive_crashes = 0;
                 inner.last_error = None;
                 inner.backend = Some(settled);
-                inner.verified_backend = Some(verified);
+                inner.verified_backend = verified;
                 return Ok(port);
             }
             StartOutcome::Exited(code) => {
@@ -824,6 +833,18 @@ fn stop_locked(inner: &mut SttInner) {
         let _ = child.wait();
     }
     inner.port = None;
+}
+
+/// Stops the engine this process started, for the app's exit path. A
+/// server the app did not start is never touched: the stored child is
+/// the proof of ownership. Without this, quitting left the engine
+/// running with the model loaded until the machine restarted.
+pub fn shutdown(app: &AppHandle) {
+    if let Some(state) = app.try_state::<SttState>() {
+        let mut inner = state.0.lock().expect("stt state poisoned");
+        stop_locked(&mut inner);
+        inner.starting = false;
+    }
 }
 
 /// Pure reload decision, unit-tested: a setting change never kills a
@@ -1273,12 +1294,39 @@ mod tests {
             .contains("graphics memory"));
         assert!(failure_sentence(Some(1), "whisper_model_load: failed", false)
             .contains("model could not be loaded"));
+        // An unknown cause points at the evidence without printing it.
+        assert!(failure_sentence(Some(1), "", false).contains("engine log"));
+        assert!(failure_sentence(None, "", false).contains("engine log"));
     }
 
     #[test]
     fn the_last_launch_is_the_one_described() {
         let log = "=== launch backend=vulkan\nvulkan failed\n=== launch backend=cpu\ncpu failed\n";
         assert_eq!(last_launch_text(log), " backend=cpu\ncpu failed\n");
+    }
+
+    #[test]
+    fn stopping_the_service_kills_the_child_it_started() {
+        // The ownership rule is the point: the stored child is the only
+        // process this code is allowed to stop, and quitting must stop
+        // it rather than leave the model loaded after the window is gone.
+        let child = Command::new("cmd")
+            .args(["/C", "ping", "-n", "10", "127.0.0.1"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("could not spawn a stand-in child");
+        let mut inner = SttInner {
+            child: Some(child),
+            port: Some(8811),
+            ..SttInner::default()
+        };
+
+        stop_locked(&mut inner);
+
+        assert!(inner.child.is_none(), "the child handle was left behind");
+        assert!(inner.port.is_none(), "the port was left behind");
     }
 
     #[test]
@@ -1303,15 +1351,44 @@ mod tests {
         let vulkan = "ggml_vulkan: Found 1 Vulkan devices:\n\
                       ggml_vulkan: 0 = AMD Radeon RX 7700 XT (AMD proprietary driver)\n\
                       load_backend = true\n";
-        assert_eq!(backend_from_banner(vulkan), Backend::Vulkan);
+        assert_eq!(
+            verified_backend_from_banner(vulkan),
+            Some(Backend::Vulkan)
+        );
 
         let cuda = "ggml_cuda: loaded 1 CUDA devices\nload_backend = true\n";
-        assert_eq!(backend_from_banner(cuda), Backend::Cuda);
+        assert_eq!(verified_backend_from_banner(cuda), Some(Backend::Cuda));
 
-        // No acceleration banner at all: the honest answer is the CPU.
+        // A processor launch leaves model-load lines and no device line.
         let cpu = "whisper_model_load: n_ctx = 0\nserver is listening on http://127.0.0.1\n";
-        assert_eq!(backend_from_banner(cpu), Backend::Cpu);
-        assert_eq!(backend_from_banner(""), Backend::Cpu);
+        assert_eq!(verified_backend_from_banner(cpu), Some(Backend::Cpu));
+
+        // No banner at all is not a backend answer.
+        assert_eq!(verified_backend_from_banner(""), None);
+
+        // A zero-device line is not acceleration; the engine fell back
+        // to the processor after printing it.
+        let zero = "ggml_vulkan: Found 0 Vulkan devices:\n\
+                    whisper_model_load: loading model\n";
+        assert_eq!(verified_backend_from_banner(zero), Some(Backend::Cpu));
+    }
+
+    #[test]
+    fn an_unread_banner_is_not_a_verified_answer() {
+        // The defect this guards: a launch whose banner never reached the
+        // log must not be recorded as a measured processor.
+        assert_eq!(verified_backend_from_banner(""), None);
+        assert_eq!(
+            verified_backend_from_banner("=== launch backend=vulkan\nexe=whisper-server.exe\n"),
+            None
+        );
+
+        let cpu = "whisper_model_load: loading model\n\
+                   whisper_init_from_file_with_params_no_state\n";
+        assert_eq!(verified_backend_from_banner(cpu), Some(Backend::Cpu));
+
+        let vulkan = "ggml_vulkan: Found 1 Vulkan devices:\n";
+        assert_eq!(verified_backend_from_banner(vulkan), Some(Backend::Vulkan));
     }
 
     #[test]
@@ -1320,8 +1397,8 @@ mod tests {
         // runtime carries the Vulkan library, the device is gone.
         let library_without_device = "ggml_vulkan: Skipping device enumeration: none found\n";
         assert_eq!(
-            backend_from_banner(library_without_device),
-            Backend::Cpu,
+            verified_backend_from_banner(library_without_device),
+            None,
             "a runtime library is not proof of a usable device"
         );
     }

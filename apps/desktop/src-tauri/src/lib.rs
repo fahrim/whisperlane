@@ -36,7 +36,7 @@ use windows::{
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         // Without Always, Tauri only accepts device events while a window
         // is focused, which starves our global keyboard hook whenever our
         // own window has focus (wry#1761). Always keeps the hook fed.
@@ -173,6 +173,14 @@ pub fn run() {
             });
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building the tauri application");
+    app.run(|app_handle, event| {
+        if let tauri::RunEvent::Exit = event {
+            // Quitting must take the engine with it. The stored child is
+            // the proof of ownership: this stops only the server this
+            // process started, never one it found already running.
+            stt::shutdown(app_handle);
+        }
+    });
 }

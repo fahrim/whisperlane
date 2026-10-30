@@ -59,17 +59,19 @@ The speech engine runs as a supervised companion service, not inside the
 application process (ADR-002). It ships as two single executables built from
 unmodified upstream sources:
 
-- `whisper-server.exe` carries the Vulkan backend for AMD and Intel graphics.
+- `whisper-server.exe` carries the Vulkan backend for GPUs with a Vulkan
+  driver.
 - `whisper-server-cpu.exe` carries the processor backend as the floor.
 
 Both are linked with the static MSVC runtime and `BUILD_SHARED_LIBS=OFF`, so a
 machine that has never had the Visual C++ redistributable can still start the
 engine. `vcomp140.dll` travels beside them because OpenMP remains the faster
 processor path; it imports only `KERNEL32.dll`, so it brings no CRT of its own.
-The engine build verifies the import tables and smoke-launches both
-executables before publishing, so a package that reintroduces a CRT, a
-`whisper` DLL, or a `ggml` DLL fails the build rather than the user's first
-take.
+The engine build verifies every import against an allowlist of Windows
+components, API sets, the Vulkan loader for the accelerated build, and the
+files the package ships; a redistributable CRT under any name, or a separate
+`whisper`/`ggml` DLL, fails the build rather than the user's first take. Both
+executables are smoke-launched before publishing.
 
 The installer bundles that runtime; the application does not run it from the
 resource directory. On first use it stages the files under

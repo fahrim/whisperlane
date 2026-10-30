@@ -87,9 +87,11 @@ Both are built with `BUILD_SHARED_LIBS=OFF` and the static MSVC runtime
 (`/MT`). `vcomp140.dll` travels beside them because OpenMP is still the faster
 processor path; it imports only `KERNEL32.dll`, so no CRT boundary crosses the
 package. The build verifies the staged executables' import tables, not just a
-successful compile: a build that reintroduces `vcruntime140`, `msvcp140`, the
-UCRT API set, or a `whisper`/`ggml` DLL fails before it can be released. A
-smoke launch of each executable is part of the same gate.
+successful compile. The guard is an allowlist: every import must be a Windows
+component (API sets included), the Vulkan loader for the accelerated build, or
+a file the package ships. A redistributable CRT under any name, or a separate
+`whisper`/`ggml` DLL, fails before it can be released. A smoke launch of each
+executable is part of the same gate.
 
 The application copies the bundled runtime into
 `%APPDATA%\com.whisperlane.desktop\runtime\<pin>\`. The directory is staged
@@ -142,10 +144,10 @@ means a previous transfer went wrong.
   the previous engine working. The cost is disk space for one previous version
   until the next install prunes it.
 - A Vulkan failure is no longer the end of the take. The processor build is the
-  honest floor, and the interface reports which path actually served.
-- The settings screen still does not show the backend or its verification
-  state. That remains item 17, which is open; this record settles the failure
-  sentence, not the diagnostics row.
+  honest floor. The engine log records which path actually served; the settings
+  screen still does not show the backend or its verification state. That remains
+  item 17, which is open; this record settles the failure sentence, not the
+  diagnostics row.
 - Engine stderr is kept on disk for support without being shown to the user.
   The log is rewritten at the start of each start attempt and holds the
   attempts from that cycle.

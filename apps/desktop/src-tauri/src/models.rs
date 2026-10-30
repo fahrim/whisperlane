@@ -449,7 +449,8 @@ fn run_download(app: &AppHandle, model: ModelChoice) {
         }
         let partial = target.with_extension("part");
         let agent = fetch_agent(CONNECT_TIMEOUT, READ_TIMEOUT);
-        let expected = fetch(&agent, &model.url(), &partial, app)?;
+        let declared = fetch(&agent, &model.url(), &partial, app)?;
+        let expected = expected_download_length(declared, model.size_bytes);
         verify_size(&partial, expected)?;
         std::fs::rename(&partial, &target)
             .map_err(|e| format!("could not store the model: {e}"))?;
@@ -485,10 +486,23 @@ fn run_download(app: &AppHandle, model: ModelChoice) {
     crate::tray::refresh_now(app);
 }
 
-/// Streams the model to disk, reporting progress as it goes. Returns
-/// the length the source declared, which is what the file is checked
-/// against afterwards.
-fn fetch(agent: &ureq::Agent, url: &str, target: &Path, app: &AppHandle) -> Result<u64, String> {
+/// The length a download must match: the source's declared length when it
+/// gives one, otherwise the catalog's exact length. A source that declares
+/// nothing must not make a short file look complete just because it is the
+/// only length the transfer happened to produce.
+fn expected_download_length(declared: Option<u64>, catalog: u64) -> u64 {
+    declared.unwrap_or(catalog)
+}
+
+/// Streams the model to disk, reporting progress as it goes. Returns the
+/// length the source declared, if it declared one; the caller supplies the
+/// catalog length when it did not.
+fn fetch(
+    agent: &ureq::Agent,
+    url: &str,
+    target: &Path,
+    app: &AppHandle,
+) -> Result<Option<u64>, String> {
     let response = agent
         .get(url)
         .call()
@@ -525,7 +539,7 @@ fn fetch(agent: &ureq::Agent, url: &str, target: &Path, app: &AppHandle) -> Resu
     writer
         .flush()
         .map_err(|e| format!("could not write the model file: {e}"))?;
-    Ok(declared.unwrap_or(received))
+    Ok(declared)
 }
 
 /// Refuses a file whose length does not match what the source said.
@@ -684,6 +698,17 @@ mod tests {
         assert!(present.present);
         assert!(!present.damaged);
         assert_eq!(present.hint, None);
+    }
+
+    #[test]
+    fn a_source_that_declares_no_length_is_checked_against_the_catalog() {
+        // A silent source must not make a short transfer look complete
+        // just because it is the only length the transfer produced.
+        assert_eq!(expected_download_length(None, 4096), 4096);
+        assert_eq!(expected_download_length(Some(4096), 4096), 4096);
+        // A source that moved the file and declared the new length wins
+        // over this build's older catalog entry.
+        assert_eq!(expected_download_length(Some(8192), 4096), 8192);
     }
 
     #[test]

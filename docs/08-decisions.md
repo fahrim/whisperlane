@@ -802,11 +802,10 @@ instead of a backend name, and it says nothing on a machine where the
 answer is uninteresting.
 
 Recommendation: the processor-only line, shown only after a launch has
-actually verified that path and a model is on disk. Before that the probe
-answers processor for a reason that has nothing to do with the machine,
-and the current code caches that answer as verified. The experience
-document's rule stays intact for the accelerated case, which is the case
-it was written for.
+actually verified that path and a model is on disk. Before that there is no
+measured answer: the status defaults to the processor but is not verified, and
+the surface must stay silent. The experience document's rule stays intact for
+the accelerated case, which is the case it was written for.
 
 Status: open. Approval changes `04-experience.md`'s diagnostic rule into a
 narrow exception rather than removing it.
@@ -858,8 +857,9 @@ for Vulkan and `whisper-server-cpu.exe` for the processor, both with
 `BUILD_SHARED_LIBS=OFF` and the static MSVC runtime. `vcomp140.dll` travels
 beside them because OpenMP remains the faster processor path and imports only
 `KERNEL32.dll`. The build refuses to release a package whose import tables
-reintroduce the CRT or a `whisper`/`ggml` DLL, and smoke-launches both
-executables.
+reintroduce the CRT under any name or a `whisper`/`ggml` DLL: every import
+must be a Windows component, the Vulkan loader for the accelerated build, or a
+file the package ships. Both executables are smoke-launched.
 
 The application installs the runtime under
 `%APPDATA%\com.whisperlane.desktop\runtime\<pin>\`, staging the directory

@@ -139,15 +139,21 @@
   way the traffic goes.
 - State presence in the pill. Idle, listening, thinking, done, and failure
   are carried by the pill itself — the signal animates while listening,
-  settles into a calm waiting presence while thinking, confirms briefly on
-  done, and states failure plainly — rather than by text walls. The signal
-  is state-aware rather than decorative: each non-listening state draws the
-  same quiet dotted row with its emphasis placed differently, so the pill
-  can be read without parsing a word, and the written line beside it still
-  says what happened in plain language. The resting line is not a promise
-  the install cannot keep: with no model on disk the pill says what is
-  missing instead of ready, and while the model is being fetched it shows
-  the fetch as its working state.
+  confirms briefly on done, and states failure plainly — rather than by
+  text walls. The signal is state-aware rather than decorative: listening
+  keeps a live ribbon of colour, while the resting face is the brandmark's
+  own filled ribbon — its original closed contours, filled with the brand
+  gradient, under a blurred duplicate for glow, a specular clipped inside
+  the body and a measured edge light. The body breathes slowly as one
+  surface, so the sign stays alive without being redrawn as a line; idle
+  carries no status word beside it. Thinking quickens the trail under a
+  cooler glow, done runs one confirming pass and rests complete, and a
+  failed or cancelled take leaves the ribbon in place but dimmed and still,
+  so the pill can be read without parsing a word, and, where it has words,
+  the written line says what happened in plain language. The resting face
+  is not a promise the install cannot keep: with no model on disk the pill
+  says what is missing instead of ready, and while the model is being
+  fetched it shows the fetch as its working state.
 - Transcript panel (hybrid). Closed by default: on success the text goes
   straight to the focused application and the pill settles. It can be
   opened on demand from the pill's menu, which unfolds a card beside the

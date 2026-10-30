@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { BrandWave, type BrandWaveState } from "./BrandWave";
 import { deliveryNote } from "./delivery";
 import { LastTakeCard } from "./LastTakeCard";
 import {
@@ -20,7 +21,7 @@ import {
   parseBackdropPacket,
   renderLiquidGlassCanvas,
 } from "./liquidGlassWebGL";
-import { LiquidWaveform, type WaveState } from "./LiquidWaveform";
+import { LiquidWaveform } from "./LiquidWaveform";
 import type {
   LanguageChoice,
   MainAction,
@@ -208,25 +209,30 @@ function LiquidRefraction() {
 }
 
 /**
- * Which face the waveform / equalizer shows:
- * - "recording" (Listening): full colored Siri ribbons
- * - "processing" (Thinking): white equalizer with left-to-right scanner wave
- * - "muted" (Failed / Cancelled): white equalizer with right-middle bars (11 & 14)
- * - "idle" (Idle / Done): white equalizer with left-start bars (3 & 4)
+ * Which face the brand wave shows while no take is live:
+ * - "idle" (Idle): the mark is drawn once, then a slow light travels it
+ * - "thinking" (Thinking): the same mark, a quicker highlight, blue glow
+ * - "done" (Done): one confirming light pass and a green glow
+ * - "muted" (Failed / Cancelled): dimmed and still, so the line does the talking
+ *
+ * Listening is not in this map: a live take keeps the coloured ribbons.
  */
-function waveStateFor(phase: PipelineStatus["phase"]): WaveState {
+function brandWaveFor(
+  phase: PipelineStatus["phase"],
+  readyToSpeak: boolean,
+): BrandWaveState {
   switch (phase) {
-    case "listening":
-      return "recording";
     case "thinking":
-      return "processing";
+      return "thinking";
+    case "done":
+      return "done";
     case "failed":
     case "cancelled":
       return "muted";
     case "idle":
-    case "done":
+    case "listening":
     default:
-      return "idle";
+      return readyToSpeak ? "ready" : "idle";
   }
 }
 
@@ -680,7 +686,9 @@ export function Pill() {
   const faceLine = idleReadiness?.downloading
     ? MODEL_FETCH_LINE
     : (idleReadiness?.hint ?? signal);
-  const waveState = waveStateFor(facePhase);
+  const isReadyWaiting =
+    facePhase === "idle" && Boolean(idleReadiness?.present);
+  const waveSignal = brandWaveFor(facePhase, isReadyWaiting);
   const currentLangLabel =
     settings?.language === "auto" || !settings?.language
       ? "Auto"
@@ -743,10 +751,12 @@ export function Pill() {
             <OrbIcon phase={facePhase} />
           </button>
 
-          {/* 2. CENTER — Waveform / State-Aware White Equalizer + Status Text.
-              The center doubles as the grip: pressing it and moving takes
-              the pill somewhere, while a press that never moves is left
-              alone so it stays a click. */}
+          {/* 2. CENTER — Live Waveform / Brand Wave. A live take keeps the
+              coloured ribbons; the resting face is the drawn wave alone,
+              with no status word. Other faces keep their written line. The
+              center doubles as the grip: pressing it and moving takes the
+              pill somewhere, while a press that never moves is left alone
+              so it stays a click. */}
           <div
             className="pill-center"
             onPointerDown={beginDrag}
@@ -755,23 +765,15 @@ export function Pill() {
             onPointerCancel={endDrag}
           >
             {isRecording ? (
-              <LiquidWaveform
-                state="recording"
-                audioLevel={audioLevel}
-                width={165}
-                height={44}
-              />
+              <LiquidWaveform audioLevel={audioLevel} width={165} height={44} />
             ) : (
               <div className="pill-status-row">
-                <LiquidWaveform
-                  state={waveState}
-                  audioLevel={0}
-                  width={90}
-                  height={22}
-                />
-                <p className="pill-state" role="status" aria-live="polite">
-                  {faceLine || status?.label || ""}
-                </p>
+                <BrandWave state={waveSignal} />
+                {facePhase !== "idle" && (
+                  <p className="pill-state" role="status" aria-live="polite">
+                    {faceLine || status?.label || ""}
+                  </p>
+                )}
               </div>
             )}
           </div>

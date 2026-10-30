@@ -1,5 +1,7 @@
 // The live waveform in the pill: a single speaking motion rather than
-// a row of bars that only says "something is happening".
+// a row of bars that only says "something is happening". This is the
+// listening face only; every resting and waiting face is the brand wave
+// (BrandWave.tsx).
 //
 // Two decisions shape this file. The level is smoothed with an
 // asymmetric attack and release, because a meter that falls as fast as
@@ -10,10 +12,7 @@
 
 import { useEffect, useRef } from "react";
 
-export type WaveState = "idle" | "recording" | "processing" | "muted";
-
 interface LiquidWaveformProps {
-  state: WaveState;
   /** Normalised microphone level, 0.0 to 1.0. */
   audioLevel: number;
   width?: number;
@@ -89,7 +88,6 @@ const IDLE_BREATH = 0.24;
 const SWING = 1.4;
 
 export function LiquidWaveform({
-  state,
   audioLevel,
   width = 160,
   // Tall enough that an ordinary voice visibly moves the ribbon rather
@@ -124,10 +122,7 @@ export function LiquidWaveform({
 
       // Asymmetric smoothing. The target is read from a ref so this
       // loop keeps its own pace instead of restarting on every reading.
-      const target =
-        state === "recording"
-          ? Math.min(1, levelRef.current * LEVEL_GAIN)
-          : 0;
+      const target = Math.min(1, levelRef.current * LEVEL_GAIN);
       const rate = target > smoothedRef.current ? ATTACK : RELEASE;
       smoothedRef.current += (target - smoothedRef.current) * rate;
 
@@ -135,21 +130,17 @@ export function LiquidWaveform({
         timeRef.current += 1;
       }
 
-      if (state === "recording") {
-        // A live take breathes even in silence, so the pill never looks
-        // switched off mid-sentence.
-        const effectiveAmp = Math.max(IDLE_BREATH, smoothedRef.current);
-        drawRibbons(ctx, width, centerY, height, effectiveAmp, timeRef.current);
-      } else {
-        drawEqualizer(ctx, width, centerY, state, timeRef.current, reducedMotion);
-      }
+      // A live take breathes even in silence, so the pill never looks
+      // switched off mid-sentence.
+      const effectiveAmp = Math.max(IDLE_BREATH, smoothedRef.current);
+      drawRibbons(ctx, width, centerY, height, effectiveAmp, timeRef.current);
 
       frame = requestAnimationFrame(render);
     };
 
     frame = requestAnimationFrame(render);
     return () => cancelAnimationFrame(frame);
-  }, [state, width, height]);
+  }, [width, height]);
 
   return (
     <canvas
@@ -161,72 +152,10 @@ export function LiquidWaveform({
         height: `${height}px`,
         display: "block",
         filter:
-          state === "recording"
-            ? "drop-shadow(0 0 8px rgba(168, 85, 247, 0.55)) drop-shadow(0 0 16px rgba(56, 189, 248, 0.35))"
-            : "none",
-        transition: "filter 220ms ease, opacity 220ms ease",
-        pointerEvents: "none",
+          "drop-shadow(0 0 8px rgba(168, 85, 247, 0.55)) drop-shadow(0 0 16px rgba(56, 189, 248, 0.35))",
       }}
     />
   );
-}
-
-/**
- * State-aware white dotted equalizer indicator for non-recording states:
- * - "idle" (Idle / Success): accent bars at left-start (bars 3 & 4), calm breath
- * - "muted" (Discarded / Failed): accent bars at right-middle (bars 11 & 14), steadier
- * - "processing" (Thinking): traveling scanner wave moving left-to-right
- */
-function drawEqualizer(
-  ctx: CanvasRenderingContext2D,
-  width: number,
-  centerY: number,
-  state: Exclude<WaveState, "recording">,
-  phaseTime: number,
-  reducedMotion: boolean,
-) {
-  const barCount = 18;
-  const gap = width / (barCount + 1);
-
-  for (let i = 1; i <= barCount; i++) {
-    const x = i * gap;
-    let barH = 2.5;
-    let alpha = 0.38;
-
-    if (state === "processing") {
-      if (reducedMotion) {
-        const accent = i === 8 || i === 9 || i === 10;
-        barH = accent ? 9 : 2.5;
-        alpha = accent ? 0.85 : 0.35;
-      } else {
-        const wavePos = (phaseTime * 0.18) % (barCount + 1);
-        const dist = Math.abs(i - wavePos);
-        if (dist < 2.5) {
-          const factor = Math.cos((dist / 2.5) * (Math.PI / 2));
-          barH = 2.5 + factor * 9;
-          alpha = 0.4 + factor * 0.55;
-        }
-      }
-    } else if (state === "muted") {
-      const accent = i === 11 || i === 14;
-      if (accent) {
-        barH = reducedMotion ? 6.5 : 6.5 + Math.sin(phaseTime * 0.025 + i) * 0.8;
-        alpha = 0.72;
-      }
-    } else {
-      // "idle" (Idle & Done/Success): 3rd and 4th bars high on the left
-      const accent = i === 3 || i === 4;
-      if (accent) {
-        barH = reducedMotion ? 9 : 9 + Math.sin(phaseTime * 0.05 + i) * 2;
-        alpha = 0.85;
-      }
-    }
-
-    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
-    ctx.beginPath();
-    ctx.roundRect(x - 1, centerY - barH / 2, 2, barH, 999);
-    ctx.fill();
-  }
 }
 
 /** The speaking face: four additive ribbons and a bright centre line. */

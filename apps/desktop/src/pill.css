@@ -124,7 +124,6 @@ body {
   box-sizing: border-box;
   height: var(--pill-height);
   width: max-content;
-  min-width: 240px;
   max-width: 430px;
   padding: 0 8px 0 4px;
   display: flex;
@@ -135,10 +134,10 @@ body {
   transition: width var(--motion-spring-expand);
 }
 
-/* Center content area: waveform during recording, or state-aware white
-   equalizer + status text in all other states. It sits above the glass
-   layers, which are positioned siblings and would otherwise paint over
-   the words. */
+/* Center content area: the live waveform during recording, or the
+   self-drawing brand line + status text in all other states. It sits above
+   the glass layers, which are positioned siblings and would otherwise
+   paint over the words. */
 .pill-center {
   position: relative;
   z-index: 3;
@@ -163,6 +162,34 @@ body {
 
 .pill-waveform {
   flex: none;
+}
+
+/* The resting signal is the brandmark's own filled ribbon, not a stroke
+   around it (docs/04-experience.md). BrandRibbonRenderer.tsx draws the closed
+   surfaces, their glow, the internal specular and the edge light on a
+   transparent canvas, so the pill's glass stays behind the mark. */
+.pill-brand-wave {
+  flex: none;
+  display: block;
+  filter: drop-shadow(0 0 4px rgb(149 96 255 / 28%));
+  transition: filter var(--motion-smooth-fade), opacity var(--motion-smooth-fade);
+}
+
+.pill-brand-wave[data-state="ready"] {
+  filter: drop-shadow(0 0 5px rgb(149 96 255 / 38%)) drop-shadow(0 0 9px rgb(34 221 235 / 22%));
+}
+
+.pill-brand-wave[data-state="thinking"] {
+  filter: drop-shadow(0 0 5px rgb(34 221 235 / 44%)) drop-shadow(0 0 10px rgb(227 74 231 / 28%));
+}
+
+.pill-brand-wave[data-state="done"] {
+  filter: drop-shadow(0 0 5px rgb(34 221 235 / 40%)) drop-shadow(0 0 9px rgb(52 215 75 / 28%));
+}
+
+.pill-brand-wave[data-state="muted"] {
+  filter: saturate(0.35) brightness(0.88);
+  opacity: 0.78;
 }
 
 /* The state line doubles as the drag handle, so the pill can be moved
@@ -783,7 +810,8 @@ body {
 /* Reduced motion drops the springs. The states stay legible through
    colour and the written line, never through movement alone. When the
    lens is ever turned on in the product, it drops with the motion too —
-   the flip note beside it in liquid-glass.css carries that condition. */
+   the flip note beside it in liquid-glass.css carries that condition.
+   BrandRibbon draws the ribbon still when the preference is set. */
 @media (prefers-reduced-motion: reduce) {
   .pill-cancel,
   .pill-control,

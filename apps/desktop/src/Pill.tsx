@@ -11,7 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { BrandWave, type BrandWaveState } from "./BrandWave";
 import { deliveryNote } from "./delivery";
-import { LastTakeCard } from "./LastTakeCard";
+import { LastTakeCard, StatusNoticeCard } from "./LastTakeCard";
 import {
   GlassProbeBackdrop,
   LiquidGlassSurface,
@@ -252,11 +252,39 @@ export function Pill() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [languages, setLanguages] = useState<LanguageChoice[]>([]);
   const [readiness, setReadiness] = useState<ModelReadiness | null>(null);
+  const [noticeDismissed, setNoticeDismissed] = useState(false);
 
   const phase: Phase = status?.phase ?? "idle";
   const isRecording = phase === "listening";
   const isProcessing = phase === "thinking";
   const liveGlass = (settings?.glass ?? "live") !== "performance";
+  const action: MainAction = status?.main_action ?? "start";
+  const signal = signalFor(status);
+  const idleReadiness = phase === "idle" ? readiness : null;
+  const facePhase: Phase = idleReadiness?.downloading
+    ? "thinking"
+    : idleReadiness && !idleReadiness.present
+      ? "failed"
+      : phase;
+  const faceLine = idleReadiness?.downloading
+    ? MODEL_FETCH_LINE
+    : (idleReadiness?.hint ?? signal);
+  const isReadyWaiting =
+    facePhase === "idle" && Boolean(idleReadiness?.present);
+  const waveSignal = brandWaveFor(facePhase, isReadyWaiting);
+  const currentLangLabel =
+    settings?.language === "auto" || !settings?.language
+      ? "Auto"
+      : (languages.find((l) => l.code === settings.language)?.label ??
+          settings.language.toUpperCase());
+  const statusNoticeText = error
+    ? error
+    : facePhase !== "idle" && !isRecording
+      ? faceLine || status?.label || ""
+      : "";
+  const showStatusPopup = Boolean(statusNoticeText) && !noticeDismissed;
+  const activePanel: "menu" | "take" | "status" | null =
+    panel ?? (showStatusPopup ? "status" : null);
   const pillBoxRef = useRef<HTMLDivElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const selectedLangRef = useRef<HTMLButtonElement | null>(null);
@@ -322,10 +350,11 @@ export function Pill() {
       const panelEl = panelRef.current;
       const panelSurface = panelEl?.firstElementChild as HTMLElement | null;
       const panelRect =
-        panel && placement && panelSurface
+        activePanel && placement && panelSurface
           ? panelSurface.getBoundingClientRect()
           : null;
-      const panelRadius = panel === "take" ? 22 : 16;
+      const panelRadius =
+        activePanel === "take" || activePanel === "status" ? 22 : 16;
 
       blurBusyRef.current = true;
       void invoke<ArrayBuffer>("set_pill_blur_region", {
@@ -349,7 +378,7 @@ export function Pill() {
           blurBusyRef.current = false;
         });
     },
-    [applyBackdropPacket, liveGlass, panel, placement],
+    [applyBackdropPacket, liveGlass, activePanel, placement],
   );
 
   /**
@@ -399,6 +428,7 @@ export function Pill() {
       // somewhere puts it away. The core closes it too, for the frames
       // this side has not rendered yet.
       setPanel(null);
+      setNoticeDismissed(true);
     }
     // Coalesced by the round trip rather than by a frame callback: a
     // window that never takes focus does not get animation frames, so a
@@ -532,6 +562,10 @@ export function Pill() {
     setCopied(false);
   }, [lastText]);
 
+  useEffect(() => {
+    setNoticeDismissed(false);
+  }, [facePhase, faceLine, status?.detail, error]);
+
   /**
    * Opens or closes the panel by growing the window toward the side
    * that has room.
@@ -565,7 +599,7 @@ export function Pill() {
 
   useLayoutEffect(() => {
     void resizeForPanel();
-  }, [panel, resizeForPanel]);
+  }, [activePanel, statusNoticeText, resizeForPanel]);
 
   useLayoutEffect(() => {
     syncBlurRegion(true);
@@ -584,7 +618,7 @@ export function Pill() {
     if (pillEl) observer.observe(pillEl);
     if (panelEl) observer.observe(panelEl);
     return () => observer.disconnect();
-  }, [panel, resizeForPanel, syncBlurRegion]);
+  }, [activePanel, statusNoticeText, resizeForPanel, syncBlurRegion]);
 
   // Continuously sample the live desktop behind the pill while visible so
   // switching windows (Alt+Tab), moving other windows underneath the pill,
@@ -668,33 +702,6 @@ export function Pill() {
     }
   }
 
-  const action: MainAction = status?.main_action ?? "start";
-  const signal = signalFor(status);
-
-  // A take is the moment and keeps its own words; the model fills only
-  // the resting line. A missing model is shown in the pill's failure
-  // face and a model on its way in its working face, because "ready" is
-  // not true until the model can take a word, and a take that finds no
-  // model says exactly this sentence anyway. Nothing here changes what
-  // the control does: the core's own action still decides that.
-  const idleReadiness = phase === "idle" ? readiness : null;
-  const facePhase: Phase = idleReadiness?.downloading
-    ? "thinking"
-    : idleReadiness && !idleReadiness.present
-      ? "failed"
-      : phase;
-  const faceLine = idleReadiness?.downloading
-    ? MODEL_FETCH_LINE
-    : (idleReadiness?.hint ?? signal);
-  const isReadyWaiting =
-    facePhase === "idle" && Boolean(idleReadiness?.present);
-  const waveSignal = brandWaveFor(facePhase, isReadyWaiting);
-  const currentLangLabel =
-    settings?.language === "auto" || !settings?.language
-      ? "Auto"
-      : (languages.find((l) => l.code === settings.language)?.label ??
-          settings.language.toUpperCase());
-
   return (
     <div
       className="pill"
@@ -769,11 +776,6 @@ export function Pill() {
             ) : (
               <div className="pill-status-row">
                 <BrandWave state={waveSignal} />
-                {facePhase !== "idle" && (
-                  <p className="pill-state" role="status" aria-live="polite">
-                    {faceLine || status?.label || ""}
-                  </p>
-                )}
               </div>
             )}
           </div>
@@ -797,11 +799,12 @@ export function Pill() {
               </>
             )}
 
-            {!isRecording && !isProcessing && (
+            {!isRecording && (
               <button
                 type="button"
                 className="pill-options"
                 aria-label="More options"
+                disabled={isProcessing}
                 aria-expanded={panel === "menu"}
                 title="Options"
                 onClick={() => {
@@ -815,15 +818,14 @@ export function Pill() {
             )}
           </div>
 
-          {error && <span role="alert">{error}</span>}
           </div>
 
           {/* The panel anchors against the dock, out of flow: it can
               neither push the pill nor wait on a reflow. Which way it
               opens was decided by the core before this element existed. */}
-          {panel && (
+          {activePanel && (
             <div className="pill-panel" ref={panelRef}>
-              {panel === "take" ? (
+              {activePanel === "take" ? (
                 <LastTakeCard
                   text={lastText}
                   languageLabel={currentLangLabel}
@@ -833,6 +835,19 @@ export function Pill() {
                   onClear={() => setCleared(true)}
                   copied={copied}
                   cleared={cleared}
+                />
+              ) : activePanel === "status" ? (
+                <StatusNoticeCard
+                  phase={facePhase}
+                  text={statusNoticeText}
+                  isError={Boolean(error)}
+                  isDownloadingModel={Boolean(idleReadiness?.downloading)}
+                  hasLastTake={Boolean(lastText)}
+                  onOpenLastTake={() => setPanel("take")}
+                  onClose={() => {
+                    setNoticeDismissed(true);
+                    if (error) setError(null);
+                  }}
                 />
               ) : (
                 <div className="pill-popover" role="menu" aria-label="Quick options">

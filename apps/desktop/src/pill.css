@@ -821,3 +821,41 @@ body {
     animation: none !important;
   }
 }
+
+
+/* Status Notification Popup Card — shares LastTakeCard's LiquidGlassSurface
+   (geometry="panel", radius 22px) so pill status notices render outside the
+   capsule in the same visual language while the pill itself stays text-free. */
+.last-take-card.pill-status-card {
+  width: 288px;
+  min-height: 0;
+  max-height: 168px;
+  padding: 12px 15px 13px;
+  gap: 8px;
+}
+
+.pill-status-card .card-text {
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.pill-status-card[data-status-phase="done"] .card-body {
+  border-left-color: rgba(56, 224, 248, 0.85);
+}
+
+.pill-status-card[data-status-phase="thinking"] .card-body {
+  border-left-color: rgba(168, 130, 255, 0.88);
+}
+
+.pill-status-card[data-status-phase="failed"] .card-body {
+  border-left-color: rgba(251, 113, 133, 0.88);
+}
+
+.pill-status-card[data-status-phase="cancelled"] .card-body {
+  border-left-color: rgba(196, 203, 230, 0.65);
+}
+
+.pill-options:disabled {
+  opacity: 0.35;
+  cursor: default;
+}

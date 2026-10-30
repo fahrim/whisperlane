@@ -1,12 +1,13 @@
-// The card that shows what the last finished take said.
+// The card that shows what the last finished take said, and the companion
+// status popup card that displays pill notifications outside the capsule.
 //
-// The name is deliberate. v1 transcribes a whole take after capture ends
-// and never streams words while the user is still speaking, so a card
-// that called itself live and carried a blinking caret would be claiming
-// a capability the core does not have. What it shows is real: the words
-// the last take produced, and where they went.
+// Both cards share the exact same LiquidGlassSurface(geometry="panel")
+// material, header bar, and left-accented body typography so status notices
+// and transcript cards belong to one optical family while keeping the pill
+// capsule itself completely free of text.
 
 import { LiquidGlassSurface } from "./LiquidGlassSurface";
+import type { Phase } from "./types";
 
 /** The document mark, at the size the header reads at. */
 function TextIcon() {
@@ -104,6 +105,131 @@ function CheckIcon() {
         strokeLinejoin="round"
       />
     </svg>
+  );
+}
+
+function StatusPhaseIcon({ phase }: { phase: Phase }) {
+  if (phase === "done") {
+    return <CheckIcon />;
+  }
+  if (phase === "thinking") {
+    return (
+      <svg
+        className="card-icon pill-orb-spinner"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        aria-hidden="true"
+      >
+        <path
+          d="M12 2.5C12.4 7.2 16.8 11.6 21.5 12C16.8 12.4 12.4 16.8 12 21.5C11.6 16.8 7.2 12.4 2.5 12C7.2 11.6 11.6 7.2 12 2.5Z"
+          fill="currentColor"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg
+      className="card-icon"
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.8" />
+      <path
+        d="M12 8v4.5M12 16h.01"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function statusHeaderTitle(
+  phase: Phase,
+  isError: boolean,
+  isDownloadingModel: boolean,
+): string {
+  if (isError || phase === "failed") return "Notice";
+  if (isDownloadingModel) return "Model";
+  switch (phase) {
+    case "thinking":
+      return "Processing";
+    case "done":
+      return "Delivered";
+    case "cancelled":
+      return "Discarded";
+    default:
+      return "Status";
+  }
+}
+
+export interface StatusNoticeCardProps {
+  phase: Phase;
+  text: string;
+  isError?: boolean;
+  isDownloadingModel?: boolean;
+  hasLastTake?: boolean;
+  onOpenLastTake?: () => void;
+  onClose: () => void;
+}
+
+export function StatusNoticeCard({
+  phase,
+  text,
+  isError = false,
+  isDownloadingModel = false,
+  hasLastTake = false,
+  onOpenLastTake,
+  onClose,
+}: StatusNoticeCardProps) {
+  const effectivePhase: Phase = isError ? "failed" : phase;
+  const title = statusHeaderTitle(effectivePhase, isError, isDownloadingModel);
+
+  return (
+    <div
+      className="last-take-card pill-status-card"
+      data-status-phase={effectivePhase}
+      role={effectivePhase === "failed" ? "alert" : "status"}
+      aria-live="polite"
+    >
+      <LiquidGlassSurface geometry="panel" />
+      <div className="card-header">
+        <div className="card-header-left">
+          <StatusPhaseIcon phase={effectivePhase} />
+          <span className="card-title">{title}</span>
+        </div>
+        <div className="card-header-right">
+          {effectivePhase === "done" && hasLastTake && onOpenLastTake && (
+            <button
+              type="button"
+              className="card-language"
+              onClick={onOpenLastTake}
+              title="Open Last Take"
+            >
+              Last Take
+            </button>
+          )}
+          <button
+            type="button"
+            className="card-icon-button"
+            aria-label="Close notification"
+            title="Close"
+            onClick={onClose}
+          >
+            <span className="pill-glyph pill-close" />
+          </button>
+        </div>
+      </div>
+
+      <div className="card-body">
+        <p className="card-text">{text}</p>
+      </div>
+    </div>
   );
 }
 

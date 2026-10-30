@@ -1,17 +1,16 @@
-// Volumetric Brand Ribbon Renderer (Section 5 & 8).
+// Volumetric Brand Ribbon Renderer — Horizontal Wave Propagation & Multi-Layer
+// Chromatic Interference (Section 4, 5 & 6).
 //
 // Renders the three closed ribbon surfaces of the Whisperline brandmark in
 // back-to-front depth order with five distinct optical layers per ribbon:
 //   A. Ribbon Body (closed filled geometry + longitudinal & transverse gradients
-//      + translucent intersecting chromatic film sub-ribbons)
+//      + three counter-propagating translucent chromatic wave sub-ribbons that
+//      optically interfere and brighten where they cross)
 //   B. Volumetric Glow (1:1 duplicate of the deformed closed ribbon geometry)
-//   C. Internal Specular Highlight (parametric centerline ridge strip clipped
-//      strictly inside each ribbon boundary)
-//   D. Edge Highlight (true upper v=+1 and lower v=-1 rim highlights)
+//   C. Internal Specular Highlight & Central Signal Core (parametric centerline
+//      strip clipped strictly inside each ribbon boundary)
+//   D. Edge Highlight (true upper v=+1 and lower v=-1 deformed rim highlights)
 //   E. Layer Overlap (under-fold occlusion shadows and over-fold caustic lift)
-//
-// Continuous delta-time phase integration ensures smooth wave propagation at
-// 60, 120, and 144 Hz without phase jumps or canvas resets on state changes.
 
 import { useEffect, useRef } from "react";
 
@@ -42,13 +41,13 @@ export interface BrandRibbonRendererProps {
   state: BrandWaveState;
   width?: number;
   /**
-   * "animated" (default) runs the organic liquid wave deformation;
+   * "animated" (default) runs the horizontal wave propagation;
    * "static" locks the renderer to the resting reference brandmark geometry.
    */
   motionMode?: BrandRibbonMotionMode;
 }
 
-// Brand chromatic family (Section 5.A)
+// Brand chromatic family (Section 6)
 const COLOR_CYAN = "#22DDEB";
 const COLOR_ELECTRIC_BLUE = "#328CFF";
 const COLOR_VIOLET = "#9560FF";
@@ -157,8 +156,7 @@ function createRibbonBodyGradient(
     return grad;
   }
 
-  // Smooth chromatic breathing coupled to the integrated film phase
-  const shift = Math.sin(filmPhase * 0.65) * 0.065;
+  const shift = Math.sin(filmPhase * 0.75) * 0.075;
 
   if (id === "ribbon-left") {
     const grad = ctx.createLinearGradient(0, 80, 455, 390);
@@ -236,9 +234,9 @@ function renderOverlapZones(
       ctx.fillRect(x0 - 12, -90, x1 - x0 + 24, BRAND_VIEWBOX.height + 180);
       ctx.restore();
     } else if (!muted) {
-      const alpha = 0.34 * z.strength;
+      const alpha = 0.38 * z.strength;
       grad.addColorStop(0, "rgba(255, 255, 255, 0)");
-      grad.addColorStop(0.5, `rgba(176, 232, 255, ${alpha})`);
+      grad.addColorStop(0.5, `rgba(195, 240, 255, ${alpha})`);
       grad.addColorStop(1, "rgba(255, 255, 255, 0)");
       ctx.save();
       ctx.globalCompositeOperation = "screen";
@@ -255,6 +253,7 @@ interface AnimationClock {
   doneElapsedSec: number;
   phase1: number;
   phase2: number;
+  phase3: number;
   filmPhase: number;
   amplitudeScale: number;
   lastState: BrandWaveState;
@@ -276,12 +275,12 @@ export function BrandRibbonRenderer({
     doneElapsedSec: 0,
     phase1: 0,
     phase2: 0,
+    phase3: 0,
     filmPhase: 0,
     amplitudeScale: 1,
     lastState: state,
   });
 
-  // Update refs without tearing down the canvas or resetting the phase integrator
   if (clockRef.current.lastState !== state) {
     if (state === "done") {
       clockRef.current.doneElapsedSec = 0;
@@ -295,8 +294,6 @@ export function BrandRibbonRenderer({
     1,
     Math.round((width * BRAND_VIEWBOX.height) / BRAND_VIEWBOX.width),
   );
-  // Generous vertical margin (6 CSS px = ~90 viewBox units top and bottom) so
-  // the 1.5-2.8 CSS px wave displacement and glow never clip at canvas edges.
   const padY = 6;
   const padX = 4;
   const cssWidth = width + padX * 2;
@@ -343,7 +340,6 @@ export function BrandRibbonRenderer({
       const isStatic =
         currentMode === "static" || reducedMotionQuery.matches;
 
-      // Delta-time integration (clamped to 64ms so background tab wakeups do not jump)
       const dt =
         clock.lastFrameMs === null
           ? 0
@@ -354,6 +350,7 @@ export function BrandRibbonRenderer({
         clock.elapsedSec += dt;
         clock.phase1 = (clock.phase1 + profile.omega1 * dt) % (Math.PI * 200);
         clock.phase2 = (clock.phase2 + profile.omega2 * dt) % (Math.PI * 200);
+        clock.phase3 = (clock.phase3 + profile.omega3 * dt) % (Math.PI * 200);
         clock.filmPhase =
           (clock.filmPhase + profile.filmSpeed * dt) % (Math.PI * 200);
         if (currentState === "done") {
@@ -361,7 +358,6 @@ export function BrandRibbonRenderer({
         }
       }
 
-      // Smoothly damp amplitude scale across state transitions
       const targetScale = isStatic || muted ? 0 : 1;
       const dampRate = dt > 0 ? 1 - Math.exp(-dt * 8) : 1;
       clock.amplitudeScale += (targetScale - clock.amplitudeScale) * dampRate;
@@ -373,6 +369,7 @@ export function BrandRibbonRenderer({
         still: isStatic,
         phase1: clock.phase1,
         phase2: clock.phase2,
+        phase3: clock.phase3,
         filmPhase: clock.filmPhase,
         amplitudeScale: clock.amplitudeScale,
         renderWidth: width,
@@ -384,7 +381,7 @@ export function BrandRibbonRenderer({
       ctx.lineJoin = "round";
       ctx.lineCap = "round";
 
-      // 1. Deform all three ribbon surfaces in their local (u, v) frames
+      // 1. Deform all three ribbon surfaces with horizontal wave propagation
       const deformedRibbons = BRAND_RIBBON_SURFACES.map((surface) =>
         deformRibbonSurface(surface, motion),
       );
@@ -436,64 +433,18 @@ export function BrandRibbonRenderer({
         ctx.fillStyle = baseGrad;
         ctx.fill(bodyPath);
 
-        // Clip all internal volumetric, film, occlusion, and specular layers
-        // strictly to this ribbon's deformed closed contour.
+        // Clip all internal chromatic wave strips, volume shading, occlusion,
+        // and specular core strictly to this ribbon's deformed closed contour.
         ctx.save();
         ctx.clip(bodyPath);
 
-        if (!muted) {
-          // --- A2. Optical Film Sub-Ribbons (Translucent Chromatic Waves) ---
-          const film0 = buildInternalWaveStrip(deformed, 0, motion);
-          const film0Path = buildClosedStripPath(
-            film0.upperPts,
-            film0.lowerPts,
-          );
-          const film0Grad = ctx.createLinearGradient(
-            surface.xMin,
-            120,
-            surface.xMax,
-            440,
-          );
-          film0Grad.addColorStop(0, "rgba(34, 221, 235, 0.54)");
-          film0Grad.addColorStop(0.5, "rgba(50, 140, 255, 0.46)");
-          film0Grad.addColorStop(1, "rgba(149, 96, 255, 0.50)");
-
-          ctx.save();
-          ctx.globalCompositeOperation = "screen";
-          ctx.fillStyle = film0Grad;
-          ctx.fill(film0Path);
-          ctx.restore();
-
-          const film1 = buildInternalWaveStrip(deformed, 1, motion);
-          const film1Path = buildClosedStripPath(
-            film1.upperPts,
-            film1.lowerPts,
-          );
-          const film1Grad = ctx.createLinearGradient(
-            surface.xMin,
-            460,
-            surface.xMax,
-            140,
-          );
-          film1Grad.addColorStop(0, "rgba(50, 140, 255, 0.42)");
-          film1Grad.addColorStop(0.45, "rgba(149, 96, 255, 0.48)");
-          film1Grad.addColorStop(0.78, "rgba(227, 74, 231, 0.54)");
-          film1Grad.addColorStop(1, "rgba(255, 113, 159, 0.52)");
-
-          ctx.save();
-          ctx.globalCompositeOperation = "screen";
-          ctx.fillStyle = film1Grad;
-          ctx.fill(film1Path);
-          ctx.restore();
-        }
-
-        // --- A3. Transverse Cylindrical Shading (v in [-1, 1] roundness) ---
-        const upperCrownPath = buildTransverseBandPath(slices, 1.0, 0.32);
+        // --- A2. Transverse Cylindrical Shading (v in [-1, 1] roundness) ---
+        const upperCrownPath = buildTransverseBandPath(slices, 1.0, 0.34);
         ctx.save();
         ctx.globalCompositeOperation = "screen";
         ctx.fillStyle = muted
           ? "rgba(255, 255, 255, 0.10)"
-          : "rgba(224, 248, 255, 0.19)";
+          : "rgba(224, 248, 255, 0.18)";
         ctx.fill(upperCrownPath);
         ctx.restore();
 
@@ -502,9 +453,83 @@ export function BrandRibbonRenderer({
         ctx.globalCompositeOperation = "source-over";
         ctx.fillStyle = muted
           ? "rgba(15, 18, 34, 0.24)"
-          : "rgba(16, 12, 48, 0.26)";
+          : "rgba(16, 12, 48, 0.24)";
         ctx.fill(lowerBellyPath);
         ctx.restore();
+
+        if (!muted) {
+          // --- A3. Three Intersecting Chromatic Wave Sub-Ribbons (Section 4 & 5) ---
+          // Layer 0: Cyan -> Electric Blue -> Violet forward travelling wave
+          const film0 = buildInternalWaveStrip(deformed, 0, motion);
+          const film0Path = buildClosedStripPath(
+            film0.upperPts,
+            film0.lowerPts,
+          );
+          const film0Grad = ctx.createLinearGradient(
+            surface.xMin,
+            100,
+            surface.xMax,
+            460,
+          );
+          film0Grad.addColorStop(0, "rgba(34, 221, 235, 0.62)");
+          film0Grad.addColorStop(0.48, "rgba(50, 140, 255, 0.54)");
+          film0Grad.addColorStop(1, "rgba(149, 96, 255, 0.56)");
+
+          ctx.save();
+          ctx.globalCompositeOperation = "screen";
+          ctx.fillStyle = film0Grad;
+          ctx.fill(film0Path);
+          ctx.restore();
+
+          // Layer 1: Electric Blue -> Violet -> Magenta -> Pink counter-phased wave
+          const film1 = buildInternalWaveStrip(deformed, 1, motion);
+          const film1Path = buildClosedStripPath(
+            film1.upperPts,
+            film1.lowerPts,
+          );
+          const film1Grad = ctx.createLinearGradient(
+            surface.xMin,
+            480,
+            surface.xMax,
+            120,
+          );
+          film1Grad.addColorStop(0, "rgba(50, 140, 255, 0.48)");
+          film1Grad.addColorStop(0.42, "rgba(149, 96, 255, 0.56)");
+          film1Grad.addColorStop(0.75, "rgba(227, 74, 231, 0.62)");
+          film1Grad.addColorStop(1, "rgba(255, 113, 159, 0.58)");
+
+          ctx.save();
+          ctx.globalCompositeOperation = "screen";
+          ctx.fillStyle = film1Grad;
+          ctx.fill(film1Path);
+          ctx.restore();
+
+          // Layer 2: Additive interference wave strip (mirroring LiquidWaveform's
+          // "lighter" composite mode so where the internal layers cross in the
+          // central signal region, they sum into a bright luminous core).
+          const film2 = buildInternalWaveStrip(deformed, 2, motion);
+          const film2Path = buildClosedStripPath(
+            film2.upperPts,
+            film2.lowerPts,
+          );
+          const film2Grad = ctx.createLinearGradient(
+            BRAND_VIEWBOX.width * 0.12,
+            0,
+            BRAND_VIEWBOX.width * 0.88,
+            0,
+          );
+          film2Grad.addColorStop(0, "rgba(34, 221, 235, 0.08)");
+          film2Grad.addColorStop(0.32, "rgba(56, 224, 248, 0.34)");
+          film2Grad.addColorStop(0.55, "rgba(216, 180, 254, 0.42)");
+          film2Grad.addColorStop(0.78, "rgba(244, 114, 182, 0.32)");
+          film2Grad.addColorStop(1, "rgba(255, 113, 159, 0.08)");
+
+          ctx.save();
+          ctx.globalCompositeOperation = "lighter";
+          ctx.fillStyle = film2Grad;
+          ctx.fill(film2Path);
+          ctx.restore();
+        }
 
         // --- E. Layer Overlap Occlusion & Overpass Caustics ---
         renderOverlapZones(
@@ -524,37 +549,42 @@ export function BrandRibbonRenderer({
           muted,
         );
 
-        // --- C. Internal Specular Highlight (Parametric Centerline Core) ---
+        // --- C. Internal Specular Highlight & Central Signal Core ---
         const specStrip = buildSpecularCoreStrip(deformed, motion);
         const specPath = buildClosedStripPath(
           specStrip.upperPts,
           specStrip.lowerPts,
         );
 
-        const spineGrad = ctx.createLinearGradient(
-          surface.xMin,
+        // Central luminous core gradient: brighter in the central signal zone
+        // (x in [0.22, 0.78]) where the ribbon folds and wave layers overlap.
+        const coreGrad = ctx.createLinearGradient(
           0,
-          surface.xMax,
+          0,
+          BRAND_VIEWBOX.width,
           0,
         );
-        const baseLuster =
-          (muted ? 0.12 : 0.25 + 0.04 * Math.sin(clock.filmPhase)) *
-          profile.specularIntensity;
-        spineGrad.addColorStop(0, "rgba(255, 255, 255, 0.04)");
-        spineGrad.addColorStop(0.3, `rgba(215, 250, 255, ${baseLuster})`);
-        spineGrad.addColorStop(0.7, `rgba(245, 230, 255, ${baseLuster})`);
-        spineGrad.addColorStop(1, "rgba(255, 255, 255, 0.06)");
+        const corePulse =
+          0.5 + 0.5 * Math.sin(clock.filmPhase * 1.15 + surface.phaseOffset);
+        const coreAlpha =
+          (muted ? 0.12 : 0.24 + 0.12 * corePulse) * profile.specularIntensity;
+
+        coreGrad.addColorStop(0, "rgba(255, 255, 255, 0.02)");
+        coreGrad.addColorStop(0.22, `rgba(185, 245, 255, ${coreAlpha * 0.65})`);
+        coreGrad.addColorStop(0.48, `rgba(255, 255, 255, ${coreAlpha * 1.25})`);
+        coreGrad.addColorStop(0.72, `rgba(235, 210, 255, ${coreAlpha * 0.75})`);
+        coreGrad.addColorStop(1, "rgba(255, 255, 255, 0.03)");
 
         ctx.save();
         ctx.globalCompositeOperation = "screen";
-        ctx.fillStyle = spineGrad;
+        ctx.fillStyle = coreGrad;
         ctx.fill(specPath);
         ctx.restore();
 
         if (sheenPos !== null && !muted) {
           const bandCenter =
             (-0.22 + sheenPos * 1.44) * BRAND_VIEWBOX.width;
-          const bandHalfWidth = currentState === "thinking" ? 210 : 185;
+          const bandHalfWidth = currentState === "thinking" ? 220 : 195;
           const travelGrad = ctx.createLinearGradient(
             bandCenter - bandHalfWidth,
             0,
@@ -568,7 +598,7 @@ export function BrandRibbonRenderer({
           travelGrad.addColorStop(0, "rgba(34, 221, 235, 0)");
           travelGrad.addColorStop(
             0.28,
-            `rgba(34, 221, 235, ${peakAlpha * 0.45})`,
+            `rgba(34, 221, 235, ${peakAlpha * 0.48})`,
           );
           travelGrad.addColorStop(
             0.5,
@@ -576,7 +606,7 @@ export function BrandRibbonRenderer({
           );
           travelGrad.addColorStop(
             0.72,
-            `rgba(195, 165, 255, ${peakAlpha * 0.45})`,
+            `rgba(195, 165, 255, ${peakAlpha * 0.48})`,
           );
           travelGrad.addColorStop(1, "rgba(149, 96, 255, 0)");
 
@@ -584,7 +614,7 @@ export function BrandRibbonRenderer({
           ctx.globalCompositeOperation = "screen";
           ctx.fillStyle = travelGrad;
           ctx.fill(specPath);
-          ctx.globalAlpha = 0.42;
+          ctx.globalAlpha = 0.4;
           ctx.fillRect(0, -90, BRAND_VIEWBOX.width, BRAND_VIEWBOX.height + 180);
           ctx.restore();
         }
@@ -622,11 +652,11 @@ export function BrandRibbonRenderer({
         );
         upperRimGrad.addColorStop(
           0.52,
-          muted ? "rgba(220, 228, 245, 0.28)" : "rgba(255, 255, 255, 0.78)",
+          muted ? "rgba(220, 228, 245, 0.28)" : "rgba(255, 255, 255, 0.80)",
         );
         upperRimGrad.addColorStop(
           0.86,
-          muted ? "rgba(220, 228, 245, 0.20)" : "rgba(245, 215, 255, 0.56)",
+          muted ? "rgba(220, 228, 245, 0.20)" : "rgba(245, 215, 255, 0.58)",
         );
         upperRimGrad.addColorStop(1, "rgba(255, 255, 255, 0)");
 
@@ -645,11 +675,11 @@ export function BrandRibbonRenderer({
         lowerRimGrad.addColorStop(0, "rgba(34, 221, 235, 0)");
         lowerRimGrad.addColorStop(
           0.35,
-          muted ? "rgba(180, 190, 210, 0.14)" : "rgba(34, 221, 235, 0.42)",
+          muted ? "rgba(180, 190, 210, 0.14)" : "rgba(34, 221, 235, 0.44)",
         );
         lowerRimGrad.addColorStop(
           0.75,
-          muted ? "rgba(180, 190, 210, 0.14)" : "rgba(227, 74, 231, 0.38)",
+          muted ? "rgba(180, 190, 210, 0.14)" : "rgba(227, 74, 231, 0.40)",
         );
         lowerRimGrad.addColorStop(1, "rgba(255, 113, 159, 0)");
 

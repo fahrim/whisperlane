@@ -1,25 +1,29 @@
-// Mathematical Ribbon Deformation Engine — Organic Liquid Wave Motion.
+// Mathematical Ribbon Deformation Engine — Horizontal Wave Propagation Model.
 //
-// Each ribbon is parameterized in its local geometric coordinate system:
-//   - Longitudinal parameter: u in [0, 1] (shared global u_g across the mark)
-//   - Transverse parameter:   v in [-1, 1]
-//   - Original centerline:    C0(u)
-//   - Unit liquid normal:     N_liquid(u)
-//   - Original half-width:    h0(u)
-//   - Original surface:       R0(u, v) = C0(u) + v * h0(u) * N_span(u)
+// Adapts the multi-layered travelling-wave morphology of LiquidWaveform.tsx to
+// the three closed volumetric ribbon surfaces of the Whisperline brandmark:
 //
-// Coordinated two-wave organic body undulation (Section 2.A):
-//   E(u)    = sin(pi * u)^1.3
-//   D(u, t) = E(u) * [A1(t) * sin(2*pi*k1*u - psi1(t) + phi1)
-//                   + A2(t) * sin(2*pi*k2*u - psi2(t) + phi2)] * N_liquid(u)
-//   C(u, t) = C0(u) + D(u, t)
+// 1. Three-Component Horizontal Travelling Wave Field (Section 3):
+//    d(x, t) = E(x) * [
+//      A1 * sin(k1 * x - w1 * t + phi1) +
+//      A2 * sin(k2 * x - w2 * t + phi2) +
+//      A3 * sin(k3 * x - w3 * t + phi3)
+//    ]
+//    where x in [0, 1] is the normalized horizontal position across the 1164-unit
+//    composition and E(x) = sin(pi * x)^1.45 concentrates energy in the central
+//    signal region while smoothly attenuating toward both horizontal ends.
 //
-// Transverse ribbon thickness breathing (Section 2.B):
-//   h(u, t) = h0(u) * [1 + E(u) * (B1(t) * cos(2*pi*k1*u - psi1(t) + phi1)
-//                                + B2(t) * cos(2*pi*k2*u - psi2(t) + phi2))]
+// 2. Differential Upper/Lower Contour Propagation & Pinch/Swell Breathing:
+//    The upper boundary (v = +1) and lower boundary (v = -1) carry phase-offset
+//    travelling wave components plus transverse thickness modulation delta_h(x, t)
+//    so neighboring horizontal sections simultaneously expand and contract as
+//    peaks and troughs propagate left-to-right through the logo.
 //
-// Deformed surface:
-//   R(u, v, t) = C(u, t) + v * h(u, t) * N_span(u, t)
+// 3. Coordinated Multi-Ribbon Phase & Frequency Separation (Section 5):
+//    The three brand ribbons share the global horizontal wave clock but apply
+//    distinct phase vectors, slight spatial frequency ratios, and amplitude
+//    weights (with smooth seam coupling at overlap crossings) so they behave as
+//    interacting wave components rather than a single rigid 3D object.
 
 import type {
   BrandRibbonSurface,
@@ -45,11 +49,13 @@ export interface RibbonMotion {
   readonly doneElapsed: number;
   /** True when static mode is selected or prefers-reduced-motion is active. */
   readonly still: boolean;
-  /** Optional integrated primary wave phase psi1(t) for seamless state transitions. */
+  /** Optional integrated dominant wave phase (w1 * t). */
   readonly phase1?: number;
-  /** Optional integrated secondary wave phase psi2(t) for seamless state transitions. */
+  /** Optional integrated secondary wave phase (w2 * t). */
   readonly phase2?: number;
-  /** Optional integrated internal film phase. */
+  /** Optional integrated tertiary wave phase (w3 * t). */
+  readonly phase3?: number;
+  /** Optional integrated internal chromatic film phase. */
   readonly filmPhase?: number;
   /** Optional smoothed amplitude scale [0, 1.5] across state transitions. */
   readonly amplitudeScale?: number;
@@ -58,33 +64,39 @@ export interface RibbonMotion {
 }
 
 export interface StateMotionProfile {
-  /** Primary wave normal amplitude A1 in viewBox units (at 78px reference width). */
+  /** Dominant horizontal wave amplitude A1 in viewBox units (at 78px width). */
   readonly amplitudeA1: number;
-  /** Secondary (weaker) wave normal amplitude A2 in viewBox units. */
+  /** Secondary harmonic amplitude A2 in viewBox units. */
   readonly amplitudeA2: number;
-  /** Primary transverse width modulation B1 (e.g. 0.058 = 5.8%). */
+  /** Tertiary interference harmonic amplitude A3 in viewBox units. */
+  readonly amplitudeA3: number;
+  /** Dominant thickness modulation B1 (e.g. 0.11 = 11%). */
   readonly widthModB1: number;
-  /** Secondary transverse width modulation B2 (e.g. 0.014 = 1.4%). */
+  /** Secondary thickness modulation B2. */
   readonly widthModB2: number;
-  /** Primary spatial wave number k1 across the mark. */
-  readonly waveNumberK1: number;
-  /** Secondary spatial wave number k2 across the mark. */
-  readonly waveNumberK2: number;
-  /** Primary wave cycle period T1 in seconds (omega1 = 2*pi / T1). */
+  /** Tertiary thickness modulation B3. */
+  readonly widthModB3: number;
+  /** Dominant spatial frequency k1 (radians across x in [0, 1]). */
+  readonly k1: number;
+  /** Secondary spatial frequency k2 (radians across x in [0, 1]). */
+  readonly k2: number;
+  /** Tertiary spatial frequency k3 (radians across x in [0, 1]). */
+  readonly k3: number;
+  /** Dominant wave cycle duration T1 in seconds (w1 = 2*pi / T1). */
   readonly cycleSeconds1: number;
-  /** Secondary wave cycle period T2 in seconds (omega2 = 2*pi / T2). */
+  /** Secondary wave cycle duration T2 in seconds. */
   readonly cycleSeconds2: number;
-  /** Primary angular velocity omega1 (rad/s). */
+  /** Tertiary wave cycle duration T3 in seconds. */
+  readonly cycleSeconds3: number;
+  /** Dominant angular velocity w1 (rad/s, positive = left-to-right). */
   readonly omega1: number;
-  /** Secondary angular velocity omega2 (rad/s). */
+  /** Secondary angular velocity w2 (rad/s). */
   readonly omega2: number;
-  /** Slow global breathing modulation rate (rad/s). */
-  readonly breathRate: number;
-  /** Slow global breathing depth [0, 0.2]. */
-  readonly breathDepth: number;
+  /** Tertiary angular velocity w3 (rad/s, counter-propagating interference). */
+  readonly omega3: number;
   /** Seconds per internal specular pass (0 = single pass on done). */
   readonly sheenPeriod: number;
-  /** Speed of internal chromatic film sub-layers (rad/s). */
+  /** Speed of internal chromatic film layers (rad/s). */
   readonly filmSpeed: number;
   /** Volumetric glow opacity multiplier. */
   readonly glowOpacity: number;
@@ -100,108 +112,178 @@ export const DONE_SETTLE_DURATION = 1.65;
 export const DEFAULT_RIBBON_WIDTH_PX = 78;
 
 /**
- * State motion profiles calibrated directly against CSS pixel output at the
- * 78px pill render size (where 1 CSS px = 14.923 viewBox units):
- * - Idle:     T1 = 4.4s cycle, peak ~1.92 CSS px normal displacement, ~6.3% thickness breath
- * - Ready:    T1 = 3.8s cycle, peak ~2.20 CSS px normal displacement, ~7.2% thickness breath
- * - Thinking: T1 = 2.3s cycle, peak ~2.64 CSS px (~1.35x Idle), ~9.1% thickness breath
- * - Done:     T1 = 2.2s single pulse decaying smoothly to static rest over 1.65s
- * - Muted:    Static exact geometry
+ * Per-ribbon wave coupling parameters (Section 3 & 5).
+ * Gives each of the three ribbon surfaces distinct phase offsets, spatial
+ * frequency ratios, and amplitude weights so overlapping horizontal regions
+ * move asynchronously like LiquidWaveform ribbons while remaining one signal.
+ */
+interface RibbonWaveCoupling {
+  readonly phase1: number;
+  readonly phase2: number;
+  readonly phase3: number;
+  readonly freqScale1: number;
+  readonly freqScale2: number;
+  readonly freqScale3: number;
+  readonly ampScale: number;
+  readonly thicknessScale: number;
+}
+
+const RIBBON_WAVE_COUPLING: Record<RibbonId, RibbonWaveCoupling> = {
+  "ribbon-left": {
+    phase1: 0.0,
+    phase2: 0.4,
+    phase3: 0.0,
+    freqScale1: 0.96,
+    freqScale2: 1.04,
+    freqScale3: 0.94,
+    ampScale: 0.94,
+    thicknessScale: 0.95,
+  },
+  "ribbon-center": {
+    // Central signal core: shifted in phase (~39 deg on primary, ~89 deg on
+    // secondary) and slightly higher amplitude so the center of the mark leads
+    // with rich multi-ribbon wave interference.
+    phase1: 0.68,
+    phase2: 1.55,
+    phase3: -1.1,
+    freqScale1: 1.05,
+    freqScale2: 1.1,
+    freqScale3: 1.06,
+    ampScale: 1.12,
+    thicknessScale: 1.15,
+  },
+  "ribbon-right": {
+    phase1: 1.34,
+    phase2: 2.8,
+    phase3: -2.15,
+    freqScale1: 0.93,
+    freqScale2: 0.95,
+    freqScale3: 1.02,
+    ampScale: 0.9,
+    thicknessScale: 0.92,
+  },
+};
+
+/**
+ * State motion profiles (Section 7):
+ * - k1 = 2*pi * 2.35 (~2.35 full waves across x in [0, 1]), so adjacent
+ *   horizontal landmarks (dx ~ 0.21) move in opposite vertical directions at
+ *   every instant rather than the whole logo swaying together.
+ * - Idle:     T1 = 4.8s dominant cycle (4-6s target), calm travelling peaks/troughs
+ * - Ready:    T1 = 4.2s dominant cycle (4-6s target), livelier signal flow
+ * - Thinking: T1 = 2.1s dominant cycle, faster propagation & stronger interference
+ * - Done:     T1 = 2.0s single finishing wave settling smoothly to rest
+ * - Muted:    Static resting geometry
  */
 const STATE_PROFILES: Record<BrandWaveState, StateMotionProfile> = {
   idle: {
-    amplitudeA1: 25.5,
-    amplitudeA2: 6.2,
-    widthModB1: 0.056,
-    widthModB2: 0.012,
-    waveNumberK1: 1.15,
-    waveNumberK2: 2.05,
-    cycleSeconds1: 4.4,
-    cycleSeconds2: 3.0,
-    omega1: TAU / 4.4,
-    omega2: TAU / 3.0,
-    breathRate: 0.65,
-    breathDepth: 0.08,
-    sheenPeriod: 6.4,
-    filmSpeed: 0.85,
+    amplitudeA1: 19.5,
+    amplitudeA2: 7.5,
+    amplitudeA3: 3.8,
+    widthModB1: 0.105,
+    widthModB2: 0.048,
+    widthModB3: 0.024,
+    k1: TAU * 2.35,
+    k2: TAU * 3.75,
+    k3: TAU * 5.2,
+    cycleSeconds1: 4.8,
+    cycleSeconds2: 2.9,
+    cycleSeconds3: 3.6,
+    omega1: TAU / 4.8,
+    omega2: TAU / 2.9,
+    omega3: -TAU / 3.6,
+    sheenPeriod: 5.8,
+    filmSpeed: 1.25,
     glowOpacity: 0.46,
-    specularIntensity: 0.64,
+    specularIntensity: 0.68,
     primaryGlowColor: "rgba(149, 96, 255, 0.54)",
     secondaryGlowColor: "rgba(34, 221, 235, 0.36)",
   },
   ready: {
-    amplitudeA1: 29.2,
-    amplitudeA2: 7.2,
-    widthModB1: 0.064,
-    widthModB2: 0.014,
-    waveNumberK1: 1.18,
-    waveNumberK2: 2.1,
-    cycleSeconds1: 3.8,
-    cycleSeconds2: 2.65,
-    omega1: TAU / 3.8,
-    omega2: TAU / 2.65,
-    breathRate: 1.1,
-    breathDepth: 0.1,
-    sheenPeriod: 4.5,
-    filmSpeed: 1.15,
+    amplitudeA1: 22.5,
+    amplitudeA2: 8.8,
+    amplitudeA3: 4.5,
+    widthModB1: 0.12,
+    widthModB2: 0.055,
+    widthModB3: 0.028,
+    k1: TAU * 2.35,
+    k2: TAU * 3.75,
+    k3: TAU * 5.2,
+    cycleSeconds1: 4.2,
+    cycleSeconds2: 2.5,
+    cycleSeconds3: 3.1,
+    omega1: TAU / 4.2,
+    omega2: TAU / 2.5,
+    omega3: -TAU / 3.1,
+    sheenPeriod: 4.2,
+    filmSpeed: 1.55,
     glowOpacity: 0.58,
-    specularIntensity: 0.78,
+    specularIntensity: 0.82,
     primaryGlowColor: "rgba(149, 96, 255, 0.64)",
     secondaryGlowColor: "rgba(50, 140, 255, 0.48)",
   },
   thinking: {
-    amplitudeA1: 34.8,
-    amplitudeA2: 8.6,
-    widthModB1: 0.08,
-    widthModB2: 0.018,
-    waveNumberK1: 1.32,
-    waveNumberK2: 2.35,
-    cycleSeconds1: 2.3,
-    cycleSeconds2: 1.6,
-    omega1: TAU / 2.3,
-    omega2: TAU / 1.6,
-    breathRate: 1.85,
-    breathDepth: 0.1,
-    sheenPeriod: 2.1,
-    filmSpeed: 2.25,
+    amplitudeA1: 28.0,
+    amplitudeA2: 11.2,
+    amplitudeA3: 5.8,
+    widthModB1: 0.145,
+    widthModB2: 0.068,
+    widthModB3: 0.035,
+    k1: TAU * 2.5,
+    k2: TAU * 4.0,
+    k3: TAU * 5.6,
+    cycleSeconds1: 2.1,
+    cycleSeconds2: 1.3,
+    cycleSeconds3: 1.65,
+    omega1: TAU / 2.1,
+    omega2: TAU / 1.3,
+    omega3: -TAU / 1.65,
+    sheenPeriod: 1.9,
+    filmSpeed: 2.75,
     glowOpacity: 0.72,
-    specularIntensity: 0.94,
+    specularIntensity: 0.96,
     primaryGlowColor: "rgba(34, 221, 235, 0.70)",
     secondaryGlowColor: "rgba(227, 74, 231, 0.56)",
   },
   done: {
-    amplitudeA1: 31.0,
-    amplitudeA2: 7.5,
-    widthModB1: 0.07,
-    widthModB2: 0.016,
-    waveNumberK1: 1.22,
-    waveNumberK2: 2.15,
-    cycleSeconds1: 2.2,
-    cycleSeconds2: 1.55,
-    omega1: TAU / 2.2,
-    omega2: TAU / 1.55,
-    breathRate: 1.4,
-    breathDepth: 0.06,
+    amplitudeA1: 24.0,
+    amplitudeA2: 9.2,
+    amplitudeA3: 4.6,
+    widthModB1: 0.12,
+    widthModB2: 0.052,
+    widthModB3: 0.025,
+    k1: TAU * 2.35,
+    k2: TAU * 3.75,
+    k3: TAU * 5.2,
+    cycleSeconds1: 2.0,
+    cycleSeconds2: 1.3,
+    cycleSeconds3: 1.6,
+    omega1: TAU / 2.0,
+    omega2: TAU / 1.3,
+    omega3: -TAU / 1.6,
     sheenPeriod: 0,
-    filmSpeed: 1.4,
+    filmSpeed: 1.8,
     glowOpacity: 0.62,
-    specularIntensity: 0.96,
+    specularIntensity: 0.98,
     primaryGlowColor: "rgba(34, 221, 235, 0.68)",
     secondaryGlowColor: "rgba(149, 96, 255, 0.52)",
   },
   muted: {
     amplitudeA1: 0,
     amplitudeA2: 0,
+    amplitudeA3: 0,
     widthModB1: 0,
     widthModB2: 0,
-    waveNumberK1: 1.15,
-    waveNumberK2: 2.05,
+    widthModB3: 0,
+    k1: TAU * 2.35,
+    k2: TAU * 3.75,
+    k3: TAU * 5.2,
     cycleSeconds1: 0,
     cycleSeconds2: 0,
+    cycleSeconds3: 0,
     omega1: 0,
     omega2: 0,
-    breathRate: 0,
-    breathDepth: 0,
+    omega3: 0,
     sheenPeriod: 0,
     filmSpeed: 0,
     glowOpacity: 0.22,
@@ -215,18 +297,20 @@ export interface DeformedSlice {
   readonly u: number;
   readonly uGlobal: number;
   readonly x: number;
-  /** Deformed centerline C(u, t) = C0(u) + D(u, t). */
+  /** Deformed centerline C(x, t). */
   readonly center: Vec2;
-  /** Deformed upper boundary R(u, +1, t). */
+  /** Deformed upper boundary R(x, +1, t). */
   readonly upper: Vec2;
-  /** Deformed lower boundary R(u, -1, t). */
+  /** Deformed lower boundary R(x, -1, t). */
   readonly lower: Vec2;
-  /** Deformed half-width h(u, t). */
+  /** Deformed half-width h(x, t). */
   readonly halfWidth: number;
-  /** Signed normal displacement scalar applied at this slice (in viewBox units). */
+  /** Signed vertical wave displacement at this slice (in viewBox units). */
   readonly normalDisplacement: number;
-  /** Multiplicative width scale h(u, t) / h0(u). */
+  /** Multiplicative width scale h(x, t) / h0(x). */
   readonly widthScale: number;
+  /** Instantaneous normalized wave energy [0, 1] for core luminescence. */
+  readonly waveEnergy: number;
   /** Effective transverse unit vector pointing from center (v=0) to upper (v=+1). */
   readonly spanUnit: Vec2;
 }
@@ -241,16 +325,19 @@ function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
 
+function smoothstep(edge0: number, edge1: number, x: number): number {
+  const t = clamp01((x - edge0) / (edge1 - edge0));
+  return t * t * (3 - 2 * t);
+}
+
 /**
- * Shared spatial envelope across the brandmark:
- *   E(u) = sin(pi * u)^1.3
- * Softly pins the extreme left tip (u = 0) and right tail exit (u = 1) while
- * keeping high, continuous wave transfer through all interior folds and
- * ribbon intersections (u in [0.15, 0.88]).
+ * Bell-shaped horizontal spatial envelope E(x) = sin(pi * x)^1.45 (Section 3 & 4).
+ * Concentrates wave motion in the central signal region while smoothly
+ * anchoring the left needle tip (x = 0) and right tail exit (x = 1).
  */
-export function ribbonEnvelope(u: number): number {
-  const s = Math.sin(Math.PI * clamp01(u));
-  return Math.pow(Math.max(0, s), 1.3);
+export function ribbonEnvelope(xNorm: number): number {
+  const s = Math.sin(Math.PI * clamp01(xNorm));
+  return Math.pow(Math.max(0, s), 1.45);
 }
 
 export function getStateProfile(state: BrandWaveState): StateMotionProfile {
@@ -275,79 +362,130 @@ export function createStaticRibbonMotion(
   };
 }
 
-/**
- * Evaluates time-varying wave amplitudes (A1, A2) and thickness modulations
- * (B1, B2), incorporating slow breathing, "done" settling, and CSS render-width
- * compensation so motion remains perceptible at small pill sizes.
- */
-export function evaluateWaveParameters(motion: RibbonMotion): {
+export interface EvaluatedWaveParams {
   readonly A1: number;
   readonly A2: number;
+  readonly A3: number;
   readonly B1: number;
   readonly B2: number;
+  readonly B3: number;
   readonly psi1: number;
   readonly psi2: number;
-} {
+  readonly psi3: number;
+}
+
+/**
+ * Evaluates time-varying wave amplitudes (A1, A2, A3), thickness modulations
+ * (B1, B2, B3), and temporal phases (psi1, psi2, psi3).
+ */
+export function evaluateWaveParameters(
+  motion: RibbonMotion,
+): EvaluatedWaveParams {
   if (motion.still || motion.state === "muted") {
-    return { A1: 0, A2: 0, B1: 0, B2: 0, psi1: 0, psi2: 0 };
+    return {
+      A1: 0,
+      A2: 0,
+      A3: 0,
+      B1: 0,
+      B2: 0,
+      B3: 0,
+      psi1: 0,
+      psi2: 0,
+      psi3: 0,
+    };
   }
 
   const profile = STATE_PROFILES[motion.state];
-  const breath =
-    1 + profile.breathDepth * Math.sin(profile.breathRate * motion.time);
-
   let settle = motion.amplitudeScale ?? 1;
+
   if (motion.state === "done") {
     if (motion.doneElapsed >= DONE_SETTLE_DURATION) {
-      return { A1: 0, A2: 0, B1: 0, B2: 0, psi1: 0, psi2: 0 };
+      return {
+        A1: 0,
+        A2: 0,
+        A3: 0,
+        B1: 0,
+        B2: 0,
+        B3: 0,
+        psi1: 0,
+        psi2: 0,
+        psi3: 0,
+      };
     }
     const progress = clamp01(motion.doneElapsed / DONE_SETTLE_DURATION);
-    settle *= Math.pow(1 - progress, 2.1);
+    settle *= Math.pow(1 - progress, 2.0);
   }
 
-  // Sub-linear width compensation so if rendered at 56-64px the CSS pixel
-  // displacement does not shrink proportionally below the 1.5px threshold.
   const targetW = motion.renderWidth ?? DEFAULT_RIBBON_WIDTH_PX;
   const sizeCompensation = Math.min(
     1.25,
-    Math.max(0.85, Math.pow(DEFAULT_RIBBON_WIDTH_PX / Math.max(48, targetW), 0.35)),
+    Math.max(
+      0.85,
+      Math.pow(DEFAULT_RIBBON_WIDTH_PX / Math.max(48, targetW), 0.35),
+    ),
   );
 
-  const scale = breath * settle * sizeCompensation;
+  const scale = settle * sizeCompensation;
   const psi1 = motion.phase1 ?? profile.omega1 * motion.time;
   const psi2 = motion.phase2 ?? profile.omega2 * motion.time;
+  const psi3 = motion.phase3 ?? profile.omega3 * motion.time;
 
   return {
     A1: profile.amplitudeA1 * scale,
     A2: profile.amplitudeA2 * scale,
-    B1: profile.widthModB1 * breath * settle,
-    B2: profile.widthModB2 * breath * settle,
+    A3: profile.amplitudeA3 * scale,
+    B1: profile.widthModB1 * settle,
+    B2: profile.widthModB2 * settle,
+    B3: profile.widthModB3 * settle,
     psi1,
     psi2,
+    psi3,
   };
 }
 
 /**
- * Evaluates a single ribbon slice at time t using the two-wave organic liquid
- * model (Section 2.A & 2.B):
- *   D(u, t) = E(u) * [A1 * sin(2*pi*k1*u - psi1 + phi1) + A2 * sin(2*pi*k2*u - psi2 + phi2)] * N_liquid(u)
- *   h(u, t) = h0(u) * [1 + E(u) * (B1 * cos(2*pi*k1*u - psi1 + phi1) + B2 * cos(2*pi*k2*u - psi2 + phi2))]
+ * Protects sensitive underpass cut seams so that when ribbon-left tucks under
+ * ribbon-center (u in [0.85, 1.0]) or ribbon-right emerges from under
+ * ribbon-center (u in [0.0, 0.20]), their phase divergence smoothly blends
+ * toward ribbon-center's phase and never breaks overlap topology.
+ */
+function evaluateSeamCoupling(
+  ribbonId: RibbonId,
+  uLocal: number,
+): { readonly phaseBlendToCenter: number; readonly seamAmpFactor: number } {
+  if (ribbonId === "ribbon-left") {
+    const seam = smoothstep(0.82, 0.98, uLocal);
+    return {
+      phaseBlendToCenter: seam * 0.75,
+      seamAmpFactor: 1 - seam * 0.32,
+    };
+  }
+  if (ribbonId === "ribbon-right") {
+    const seam = 1 - smoothstep(0.02, 0.22, uLocal);
+    return {
+      phaseBlendToCenter: seam * 0.75,
+      seamAmpFactor: 1 - seam * 0.32,
+    };
+  }
+  return { phaseBlendToCenter: 0, seamAmpFactor: 1 };
+}
+
+/**
+ * Evaluates a single ribbon slice at time t using the horizontal 3-wave
+ * propagation model (Section 3 & 5):
+ *   d(x, t) = E(x) * [A1 * sin(k1*x - w1*t + phi1)
+ *                   + A2 * sin(k2*x - w2*t + phi2)
+ *                   + A3 * sin(k3*x - w3*t + phi3)]
+ * with differential upper/lower contour phases and pinch/swell width modulation.
  */
 export function deformSlice(
+  ribbonId: RibbonId,
   slice: RibbonSlice,
-  phaseOffset: number,
   profile: StateMotionProfile,
-  params: {
-    readonly A1: number;
-    readonly A2: number;
-    readonly B1: number;
-    readonly B2: number;
-    readonly psi1: number;
-    readonly psi2: number;
-  },
+  params: EvaluatedWaveParams,
 ): DeformedSlice {
-  const { A1, A2, B1, B2, psi1, psi2 } = params;
-  if (A1 === 0 && A2 === 0 && B1 === 0 && B2 === 0) {
+  const { A1, A2, A3, B1, B2, B3, psi1, psi2, psi3 } = params;
+  if (A1 === 0 && A2 === 0 && A3 === 0 && B1 === 0) {
     return {
       u: slice.u,
       uGlobal: slice.uGlobal,
@@ -358,59 +496,130 @@ export function deformSlice(
       halfWidth: slice.halfWidth0,
       normalDisplacement: 0,
       widthScale: 1,
+      waveEnergy: 0,
       spanUnit: [0, -1],
     };
   }
 
-  // Shared global longitudinal coordinate u keeps all three ribbons locked into
-  // one continuous ocean wave across their intersections; a tiny 6% local u
-  // contribution adds subtle per-fold organic inflection.
-  const uWave = slice.uGlobal * 0.94 + slice.u * 0.06;
-  const env = ribbonEnvelope(slice.uGlobal);
+  const coupling = RIBBON_WAVE_COUPLING[ribbonId];
+  const centerCoupling = RIBBON_WAVE_COUPLING["ribbon-center"];
+  const { phaseBlendToCenter, seamAmpFactor } = evaluateSeamCoupling(
+    ribbonId,
+    slice.u,
+  );
 
-  const phi1 = phaseOffset;
-  const phi2 = phaseOffset * 1.4 + 0.85;
+  // Normalized horizontal coordinate x in [0, 1] across the composition
+  const x = slice.uGlobal;
+  const env = ribbonEnvelope(x) * seamAmpFactor;
 
-  const theta1 = TAU * profile.waveNumberK1 * uWave - psi1 + phi1;
-  const theta2 = TAU * profile.waveNumberK2 * uWave - psi2 + phi2;
+  // Blend phase slightly toward center ribbon right at cut seams to preserve overlap
+  const phi1 =
+    coupling.phase1 +
+    (centerCoupling.phase1 - coupling.phase1) * phaseBlendToCenter;
+  const phi2 =
+    coupling.phase2 +
+    (centerCoupling.phase2 - coupling.phase2) * phaseBlendToCenter;
+  const phi3 =
+    coupling.phase3 +
+    (centerCoupling.phase3 - coupling.phase3) * phaseBlendToCenter;
 
-  // A. Organic Body Undulation along unit liquid normal N_liquid(u)
-  const dispScalar =
-    env * (A1 * Math.sin(theta1) + A2 * Math.sin(theta2));
-  const nx = slice.liquidNormal[0];
-  const ny = slice.liquidNormal[1];
+  const k1 = profile.k1 * coupling.freqScale1;
+  const k2 = profile.k2 * coupling.freqScale2;
+  const k3 = profile.k3 * coupling.freqScale3;
 
-  const cx = slice.center0[0] + dispScalar * nx;
-  const cy = slice.center0[1] + dispScalar * ny;
+  const theta1 = k1 * x - psi1 + phi1;
+  const theta2 = k2 * x - psi2 + phi2;
+  const theta3 = k3 * x - psi3 + phi3;
 
-  // B. Ribbon Thickness Breathing (cos is in quadrature with sin so the film
-  // swells as crests pass and thins gently in the troughs)
-  const rawWidthDelta =
-    env * (B1 * Math.cos(theta1) + B2 * Math.cos(theta2));
-  const widthScale = Math.min(1.24, Math.max(0.78, 1 + rawWidthDelta));
-  const h = slice.halfWidth0 * widthScale;
+  // Centerline horizontal travelling wave d(x, t)
+  const w1Center = Math.sin(theta1);
+  const w2Center = Math.sin(theta2);
+  const w3Center = Math.sin(theta3);
 
-  // Transverse thickness breathing acts across the vertical cross-section while
-  // the centerline C(u, t) translates along the 2D unit liquidNormal (nx, ny).
-  // This guarantees upper[0] === lower[0] === cx and strictly prevents adjacent
-  // slice self-intersections even across 1-unit SVG vertex intervals.
-  const spanX = 0;
-  const spanY = -1;
+  const dCenter =
+    env *
+    coupling.ampScale *
+    (A1 * w1Center + A2 * w2Center + A3 * w3Center);
 
-  const upper: Vec2 = [cx, cy - h];
-  const lower: Vec2 = [cx, cy + h];
+  // Differential upper & lower contour wave components (inspired by LiquidWaveform's
+  // opening vs closing contour phase offset) so the top and bottom edges ripple
+  // independently as the wave travels horizontally.
+  const dUpperWave =
+    env *
+    coupling.ampScale *
+    (A1 * Math.sin(theta1 + 0.28) +
+      A2 * Math.sin(theta2 + 0.62) +
+      A3 * Math.cos(theta3 - 0.35));
+
+  const dLowerWave =
+    env *
+    coupling.ampScale *
+    (A1 * Math.sin(theta1 - 0.28) +
+      A2 * Math.sin(theta2 - 0.52) +
+      A3 * Math.sin(theta3 + 0.45));
+
+  // Explicit transverse thickness pinch/swell modulation
+  const breathWave =
+    env *
+    coupling.thicknessScale *
+    (B1 * Math.cos(theta1 + 0.35) +
+      B2 * Math.sin(theta2 + 1.05) +
+      B3 * Math.cos(theta3 - 0.5));
+
+  // Subtle horizontal shear along the smoothed liquid normal (kept small so
+  // motion is organized primarily as horizontal wave propagation, never whole-body sway)
+  const cx = slice.center0[0] + dCenter * slice.liquidNormal[0] * 0.35;
+
+  let upperY: number;
+  let lowerY: number;
+  let widthScale = 1;
+
+  if (slice.halfWidth0 <= 1e-3) {
+    // Preserve sharp single-vertex tips exactly closed
+    upperY = slice.center0[1] + dCenter;
+    lowerY = upperY;
+  } else {
+    const rawUpperY =
+      slice.upper0[1] + dUpperWave - slice.halfWidth0 * breathWave;
+    const rawLowerY =
+      slice.lower0[1] + dLowerWave + slice.halfWidth0 * breathWave;
+
+    const midY = (rawUpperY + rawLowerY) * 0.5;
+    const rawHalfW = (rawLowerY - rawUpperY) * 0.5;
+
+    // Clamp half-width to [0.72, 1.32] * h0(x) so the ribbon visibly expands
+    // and contracts without ever pinching shut or self-intersecting.
+    const minHalfW = slice.halfWidth0 * 0.72;
+    const maxHalfW = slice.halfWidth0 * 1.32;
+    const clampedHalfW = Math.min(maxHalfW, Math.max(minHalfW, rawHalfW));
+
+    upperY = midY - clampedHalfW;
+    lowerY = midY + clampedHalfW;
+    widthScale = clampedHalfW / slice.halfWidth0;
+  }
+
+  const cy = (upperY + lowerY) * 0.5;
+  const h = Math.max(0, (lowerY - upperY) * 0.5);
+
+  // Instantaneous local wave energy [0, 1] used by the renderer to brighten
+  // overlapping central regions as wave peaks pass through.
+  const normWave =
+    Math.abs(w1Center * 0.6 + w2Center * 0.28 + w3Center * 0.12) *
+    ribbonEnvelope(x);
+  const waveEnergy = clamp01(normWave * 1.25);
 
   return {
     u: slice.u,
     uGlobal: slice.uGlobal,
     x: cx,
     center: [cx, cy],
-    upper,
-    lower,
+    upper: [cx, upperY],
+    lower: [cx, lowerY],
     halfWidth: h,
-    normalDisplacement: dispScalar,
+    normalDisplacement: cy - slice.center0[1],
     widthScale,
-    spanUnit: [spanX, spanY],
+    waveEnergy,
+    spanUnit: [0, -1],
   };
 }
 
@@ -434,7 +643,7 @@ export function deformRibbonSurface(
   const profile = STATE_PROFILES[motion.state];
   const params = evaluateWaveParameters(motion);
   const slices = surface.slices.map((s) =>
-    deformSlice(s, surface.phaseOffset, profile, params),
+    deformSlice(surface.id, s, profile, params),
   );
   return {
     id: surface.id,
@@ -444,38 +653,61 @@ export function deformRibbonSurface(
 }
 
 /**
- * Computes an internal undulating sub-ribbon (v_low(u, t) to v_high(u, t))
- * inside the [-1, 1] transverse domain of a deformed ribbon. Used to render
- * translucent chromatic film layers that flow and optically intersect inside
- * the ribbon body.
+ * Computes three internal travelling wave sub-ribbons (layerIndex: 0 | 1 | 2)
+ * inside the [-1, 1] transverse domain of a deformed ribbon (Section 4 & 5).
+ *
+ * Adapted directly from LiquidWaveform.tsx's multi-ribbon interference model:
+ * Each chromatic film strip travels at a distinct velocity, spatial frequency,
+ * and phase with differential opening/closing contours so translucent color
+ * surfaces continuously cross, pinch, swell, and brighten at intersections.
  */
 export function buildInternalWaveStrip(
   deformed: DeformedRibbonSurface,
-  layerIndex: 0 | 1,
+  layerIndex: 0 | 1 | 2,
   motion: RibbonMotion,
 ): { readonly upperPts: Vec2[]; readonly lowerPts: Vec2[] } {
   const profile = STATE_PROFILES[motion.state];
-  const t = motion.still
+  const coupling = RIBBON_WAVE_COUPLING[deformed.id];
+  const baseT = motion.still
     ? 0
     : (motion.filmPhase ?? motion.time * profile.filmSpeed);
-  const freq = layerIndex === 0 ? 1.95 : 2.7;
-  const dir = layerIndex === 0 ? -1 : 1;
-  const basePhase =
-    deformed.surface.phaseOffset + (layerIndex === 0 ? 0.3 : 2.15);
+
+  // Distinct speeds, directions, and spatial frequencies per internal ribbon,
+  // mirroring LiquidWaveform.tsx's RIBBONS array.
+  const speedMul =
+    layerIndex === 0 ? 1.15 : layerIndex === 1 ? -0.92 : 1.48;
+  const freq =
+    layerIndex === 0 ? 2.2 : layerIndex === 1 ? 3.1 : 3.9;
+  const phase =
+    coupling.phase1 +
+    (layerIndex === 0 ? 0.2 : layerIndex === 1 ? 1.75 : 3.4);
+  const t = baseT * speedMul + phase;
 
   const upperPts: Vec2[] = [];
   const lowerPts: Vec2[] = [];
 
   for (const s of deformed.slices) {
-    const wave =
-      Math.sin(TAU * freq * s.uGlobal + dir * t + basePhase) * 0.38 +
-      Math.cos(TAU * (freq * 0.65) * s.u - dir * t * 0.72 + basePhase) * 0.18;
+    const x = s.uGlobal;
+    const bell = Math.pow(Math.sin(x * Math.PI), 1.35);
 
-    const centerV = (layerIndex === 0 ? 0.16 : -0.14) + wave;
-    const halfBand = layerIndex === 0 ? 0.45 : 0.43;
+    // Opening (upper) vs closing (lower) wave equations adapted from LiquidWaveform.tsx
+    const waveOpen =
+      Math.sin(x * TAU * freq - t) * 0.68 +
+      Math.cos(x * TAU * (freq * 1.75) + t * 0.55) * 0.32;
+    const waveClose =
+      Math.sin(x * TAU * freq - t + 0.65) * 0.64 +
+      Math.sin(x * TAU * (freq * 1.45) + t * 0.42) * 0.36;
 
-    const vHigh = Math.min(0.95, Math.max(-0.62, centerV + halfBand));
-    const vLow = Math.max(-0.95, Math.min(0.62, centerV - halfBand));
+    const biasV =
+      layerIndex === 0 ? 0.14 : layerIndex === 1 ? -0.14 : 0.0;
+    const swing =
+      (layerIndex === 2 ? 0.56 : 0.72) * (0.35 + 0.65 * bell);
+
+    const vA = biasV + waveOpen * swing;
+    const vB = biasV - waveClose * swing * 0.85;
+
+    const vHigh = Math.min(0.96, Math.max(-0.65, Math.max(vA, vB) + 0.16));
+    const vLow = Math.max(-0.96, Math.min(0.65, Math.min(vA, vB) - 0.16));
 
     upperPts.push(pointOnDeformedSlice(s, vHigh));
     lowerPts.push(pointOnDeformedSlice(s, vLow));
@@ -486,29 +718,31 @@ export function buildInternalWaveStrip(
 
 /**
  * Computes the parametric internal specular highlight strip along the ribbon's
- * centerline C(u, t), concentrated around the upper-center ridge (v in [-0.12, +0.48])
- * so light follows the 3D tubular curvature of the folds.
+ * centerline C(x, t), swelling in thickness where local wave interference
+ * peaks so the center of the signal brightens organically.
  */
 export function buildSpecularCoreStrip(
   deformed: DeformedRibbonSurface,
   motion: RibbonMotion,
 ): { readonly upperPts: Vec2[]; readonly lowerPts: Vec2[] } {
   const profile = STATE_PROFILES[motion.state];
+  const coupling = RIBBON_WAVE_COUPLING[deformed.id];
   const t = motion.still
     ? 0
-    : (motion.filmPhase ?? motion.time * profile.filmSpeed) * 0.82;
+    : (motion.filmPhase ?? motion.time * profile.filmSpeed);
 
   const upperPts: Vec2[] = [];
   const lowerPts: Vec2[] = [];
 
   for (const s of deformed.slices) {
+    const x = s.uGlobal;
     const shimmer =
-      0.11 *
-      Math.sin(
-        TAU * 1.65 * s.uGlobal - t + deformed.surface.phaseOffset,
-      );
-    const vTop = Math.min(0.7, 0.45 + shimmer);
-    const vBot = Math.max(-0.46, -0.1 + shimmer * 0.65);
+      0.16 *
+      Math.sin(TAU * 2.6 * x - t * 1.2 + coupling.phase1);
+    const energyLift = s.waveEnergy * 0.18;
+
+    const vTop = Math.min(0.76, 0.38 + shimmer + energyLift);
+    const vBot = Math.max(-0.58, -0.14 + shimmer * 0.5 - energyLift * 0.6);
 
     upperPts.push(pointOnDeformedSlice(s, vTop));
     lowerPts.push(pointOnDeformedSlice(s, vBot));

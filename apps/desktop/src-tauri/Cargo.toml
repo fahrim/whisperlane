@@ -1,6 +1,6 @@
 [package]
 name = "whisperlane"
-version = "0.8.1"
+version = "0.8.2"
 description = "whisperlane dictation desktop shell"
 authors = ["whisperlane"]
 edition = "2024"

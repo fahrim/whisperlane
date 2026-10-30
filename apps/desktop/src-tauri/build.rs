@@ -32,8 +32,8 @@ fn main() {
 /// is only a record of what that script last staged. A build script that
 /// short-circuits on "a marker exists and some server exists" can publish
 /// the old pin after the tag has moved, which is exactly the failure this
-/// arrangement removes. The script's own fast path checks the tag and
-/// every required file before it skips the download.
+/// arrangement removes. The script's own fast path checks the tag, the
+/// pinned digest, and every required file before it skips the download.
 fn ensure_runtime() {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
     // Windows PowerShell, not pwsh: the script is run from cmd or
@@ -47,6 +47,25 @@ fn ensure_runtime() {
     if !script.is_file() {
         panic!(
             "could not find the runtime fetch script at {}",
+            script.display()
+        );
+    }
+    // Windows PowerShell 5.1 reads a BOM-less file as the system code
+    // page, so a UTF-8 dash inside a string can be read as a quote and
+    // break the parse. Keep the script ASCII and fail here with a clear
+    // reason instead of letting the parser point at the wrong brace.
+    let script_bytes = std::fs::read(&script)
+        .unwrap_or_else(|e| panic!("could not read {}: {e}", script.display()));
+    if let Some(offset) = script_bytes.iter().position(|byte| !byte.is_ascii()) {
+        let line = script_bytes[..offset]
+            .iter()
+            .filter(|&&byte| byte == b'\n')
+            .count()
+            + 1;
+        panic!(
+            "{} has a non-ASCII byte on line {line}; the fetch script must \
+             stay ASCII because Windows PowerShell 5.1 misreads UTF-8 \
+             without a BOM",
             script.display()
         );
     }
@@ -103,7 +122,9 @@ fn publish_runtime_pin() {
     println!("cargo:rerun-if-changed={}", pin_file.display());
     let pin = std::fs::read_to_string(&pin_file)
         .unwrap_or_else(|e| panic!("could not read {}: {e}", pin_file.display()));
-    let pin = pin.trim();
+    // The marker records the pin first, then the staged archive digest.
+    // The pin is the directory name; the digest is the script's business.
+    let pin = pin.split_whitespace().next().unwrap_or_default();
     if pin.is_empty() {
         panic!("{} is empty", pin_file.display());
     }

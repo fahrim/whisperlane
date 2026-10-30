@@ -1085,6 +1085,22 @@ mod tests {
     }
 
     #[test]
+    fn the_runtime_pin_is_one_directory_name() {
+        // The marker records the pin and the staged digest; the pin is
+        // the directory name, so no whitespace or path separator may
+        // travel with it.
+        assert!(!RUNTIME_PIN.is_empty());
+        assert!(
+            !RUNTIME_PIN.chars().any(char::is_whitespace),
+            "the pin carries more than its name: {RUNTIME_PIN}"
+        );
+        assert!(
+            !RUNTIME_PIN.chars().any(|c| matches!(c, '/' | '\\' | ':')),
+            "the pin is not a directory name: {RUNTIME_PIN}"
+        );
+    }
+
+    #[test]
     fn a_pin_change_keeps_the_previous_version() {
         let root = temp_root("upgrade");
         let source = root.join("install");

@@ -105,10 +105,12 @@ engine log instead of disappearing.
 
 The pin lives in `scripts/fetch-runtime.ps1`, which fetches the archive by tag,
 checks the release's digest and the reviewed digest, and verifies every
-required file before it records the pin. `build.rs` always runs that script
-rather than deciding for itself that a marker and one executable are enough,
-so a moved tag cannot publish a stale runtime. The bundle fails to build if
-either server executable is absent.
+required file before it records the pin. The marker records the tag and the
+staged digest, so the script's fast path cannot accept bytes from an archive
+other than the pinned one when the digest changes under a fixed tag. `build.rs`
+always runs that script rather than deciding for itself that a marker and one
+executable are enough, so a moved tag cannot publish a stale runtime. The
+bundle fails to build if either server executable is absent.
 
 Startup is lazy. There is no eager probe: the first take launches the engine,
 and the banner of that launch is the backend verification. A child that exits

@@ -59,20 +59,34 @@ $marker = Join-Path $PSScriptRoot '..\apps\desktop\src-tauri\runtime.pin'
 function Say([string]$m) { Write-Host "[runtime] $m" }
 
 # --- already staged? -------------------------------------------------------
-if (-not $Force -and (Test-Path $marker)) {
-    $staged = (Get-Content $marker -Raw).Trim()
+# The marker records both the tag and the digest of the archive that
+# produced the staged files. Checking the tag alone would let a changed
+# $EXPECTED_SHA256 ship the old archive's bytes, which is the one thing
+# this pin exists to prevent.
+$markerTag = $null
+$markerSha = $null
+if (Test-Path $marker) {
+    $parts = @((Get-Content $marker -Raw).Trim() -split '\s+')
+    if ($parts.Count -ge 1) { $markerTag = $parts[0] }
+    if ($parts.Count -ge 2) { $markerSha = $parts[1].ToLower() }
+}
+
+if (-not $Force -and $markerTag) {
     $complete = $true
     foreach ($name in $wanted) {
         if (-not (Test-Path (Join-Path $stage $name))) { $complete = $false }
     }
-    if ($staged -eq $RUNTIME_TAG -and $complete) {
+    $digestMatches = (-not $EXPECTED_SHA256) -or ($markerSha -eq $EXPECTED_SHA256.ToLower())
+    if ($markerTag -eq $RUNTIME_TAG -and $digestMatches -and $complete) {
         Say "already staged: $RUNTIME_TAG"
         exit 0
     }
-    if ($staged -ne $RUNTIME_TAG) {
-        Say "staged runtime is $staged, pin is $RUNTIME_TAG — refetching"
+    if ($markerTag -ne $RUNTIME_TAG) {
+        Say "staged runtime is $markerTag, pin is $RUNTIME_TAG - refetching"
+    } elseif (-not $digestMatches) {
+        Say "staged runtime digest is not the pinned digest - refetching"
     } else {
-        Say "staged runtime is incomplete — refetching"
+        Say "staged runtime is incomplete - refetching"
     }
 }
 
@@ -104,7 +118,7 @@ if ($actual -ne $published) {
     Say "checksum mismatch: got $actual, release says $published"
     exit 1
 }
-Say "checksum matches the release ($($actual.Substring(0,16))…)"
+Say "checksum matches the release ($($actual.Substring(0,16))...)"
 
 # The pinned hash is the stronger statement of the two: the release page
 # can be edited after the fact, this file is reviewed.
@@ -143,6 +157,6 @@ if ($missing) {
 }
 
 $bytes = (Get-ChildItem $stage -File | Measure-Object Length -Sum).Sum
-Set-Content -Path $marker -Value $RUNTIME_TAG -NoNewline
+Set-Content -Path $marker -Value "$RUNTIME_TAG $actual" -NoNewline
 Say ("staged {0} files, {1:N1} MB, pin {2}" -f $wanted.Count, ($bytes / 1MB), $RUNTIME_TAG)
 Say "sha256 $actual"

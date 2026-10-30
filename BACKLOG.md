@@ -239,7 +239,10 @@ Closed during M2:
   engine-shaped files and directories that actually contain an engine, so
   a person's file or folder in the runtime root survives; a removal the OS
   refuses (a stale engine still holding its executable) is logged instead
-  of silently skipped.
+  of silently skipped. The staged marker records the tag and the archive
+  digest, so the fetch fast path cannot accept bytes from an archive other
+  than the pinned one, and the fetch script is held to ASCII because
+  Windows PowerShell 5.1 misreads BOM-less UTF-8.
 
 ## Next (in order)
 

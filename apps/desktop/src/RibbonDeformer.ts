@@ -10,7 +10,7 @@
 //      A3 * sin(k3 * x - w3 * t + phi3)
 //    ]
 //    where x in [0, 1] is the normalized horizontal position across the 1164-unit
-//    composition and E(x) = sin(pi * x)^1.45 concentrates energy in the central
+//    composition and E(x) = sin(pi * x)^p concentrates energy in the central
 //    signal region while smoothly attenuating toward both horizontal ends.
 //
 // 2. Differential Upper/Lower Contour Propagation & Pinch/Swell Breathing:
@@ -63,53 +63,62 @@ export interface RibbonMotion {
   readonly renderWidth?: number;
 }
 
-export interface StateMotionProfile {
+/**
+ * Serializable per-state wave preset parameters exposed in the DEV Tuning Lab
+ * and used by the deformation + rendering pipeline.
+ */
+export interface StatePresetTuning {
   /** Dominant horizontal wave amplitude A1 in viewBox units (at 78px width). */
-  readonly amplitudeA1: number;
+  amplitudeA1: number;
   /** Secondary harmonic amplitude A2 in viewBox units. */
-  readonly amplitudeA2: number;
+  amplitudeA2: number;
   /** Tertiary interference harmonic amplitude A3 in viewBox units. */
-  readonly amplitudeA3: number;
-  /** Dominant thickness modulation B1 (e.g. 0.11 = 11%). */
-  readonly widthModB1: number;
+  amplitudeA3: number;
+  /** Dominant thickness modulation B1 (e.g. 0.105 = 10.5%). */
+  widthModB1: number;
   /** Secondary thickness modulation B2. */
-  readonly widthModB2: number;
+  widthModB2: number;
   /** Tertiary thickness modulation B3. */
-  readonly widthModB3: number;
+  widthModB3: number;
+  /** Dominant spatial wave cycles across mark (k1 = 2*pi * k1Cycles). */
+  k1Cycles: number;
+  /** Secondary spatial wave cycles across mark (k2 = 2*pi * k2Cycles). */
+  k2Cycles: number;
+  /** Tertiary spatial wave cycles across mark (k3 = 2*pi * k3Cycles). */
+  k3Cycles: number;
+  /** Dominant wave cycle duration T1 in seconds (w1 = 2*pi / T1). */
+  cycleSeconds1: number;
+  /** Secondary wave cycle duration T2 in seconds (w2 = 2*pi / T2). */
+  cycleSeconds2: number;
+  /** Tertiary counter-wave cycle duration T3 in seconds (w3 = -2*pi / T3). */
+  cycleSeconds3: number;
+  /** Seconds per internal specular pass (0 = single pass on done / disabled). */
+  sheenPeriod: number;
+  /** Speed of internal chromatic film layers (rad/s). */
+  filmSpeed: number;
+  /** Volumetric glow opacity multiplier. */
+  glowOpacity: number;
+  /** Specular core intensity multiplier. */
+  specularIntensity: number;
+  /** Ambient glow colors. */
+  primaryGlowColor: string;
+  secondaryGlowColor: string;
+}
+
+export interface StateMotionProfile extends StatePresetTuning {
   /** Dominant spatial frequency k1 (radians across x in [0, 1]). */
   readonly k1: number;
   /** Secondary spatial frequency k2 (radians across x in [0, 1]). */
   readonly k2: number;
   /** Tertiary spatial frequency k3 (radians across x in [0, 1]). */
   readonly k3: number;
-  /** Dominant wave cycle duration T1 in seconds (w1 = 2*pi / T1). */
-  readonly cycleSeconds1: number;
-  /** Secondary wave cycle duration T2 in seconds. */
-  readonly cycleSeconds2: number;
-  /** Tertiary wave cycle duration T3 in seconds. */
-  readonly cycleSeconds3: number;
   /** Dominant angular velocity w1 (rad/s, positive = left-to-right). */
   readonly omega1: number;
   /** Secondary angular velocity w2 (rad/s). */
   readonly omega2: number;
   /** Tertiary angular velocity w3 (rad/s, counter-propagating interference). */
   readonly omega3: number;
-  /** Seconds per internal specular pass (0 = single pass on done). */
-  readonly sheenPeriod: number;
-  /** Speed of internal chromatic film layers (rad/s). */
-  readonly filmSpeed: number;
-  /** Volumetric glow opacity multiplier. */
-  readonly glowOpacity: number;
-  /** Specular core intensity multiplier. */
-  readonly specularIntensity: number;
-  /** Ambient glow colors. */
-  readonly primaryGlowColor: string;
-  readonly secondaryGlowColor: string;
 }
-
-const TAU = Math.PI * 2;
-export const DONE_SETTLE_DURATION = 1.65;
-export const DEFAULT_RIBBON_WIDTH_PX = 78;
 
 /**
  * Per-ribbon wave coupling parameters (Section 3 & 5).
@@ -117,181 +126,351 @@ export const DEFAULT_RIBBON_WIDTH_PX = 78;
  * frequency ratios, and amplitude weights so overlapping horizontal regions
  * move asynchronously like LiquidWaveform ribbons while remaining one signal.
  */
-interface RibbonWaveCoupling {
-  readonly phase1: number;
-  readonly phase2: number;
-  readonly phase3: number;
-  readonly freqScale1: number;
-  readonly freqScale2: number;
-  readonly freqScale3: number;
-  readonly ampScale: number;
-  readonly thicknessScale: number;
+export interface RibbonWaveCoupling {
+  phase1: number;
+  phase2: number;
+  phase3: number;
+  freqScale1: number;
+  freqScale2: number;
+  freqScale3: number;
+  ampScale: number;
+  thicknessScale: number;
 }
 
-const RIBBON_WAVE_COUPLING: Record<RibbonId, RibbonWaveCoupling> = {
-  "ribbon-left": {
-    phase1: 0.0,
-    phase2: 0.4,
-    phase3: 0.0,
-    freqScale1: 0.96,
-    freqScale2: 1.04,
-    freqScale3: 0.94,
-    ampScale: 0.94,
-    thicknessScale: 0.95,
+/**
+ * Global wave envelope, differential upper/lower contour phase offsets,
+ * width breathing clamps, and overlap seam protection parameters.
+ */
+export interface RibbonShapingTuning {
+  /** Power p in E(x) = sin(pi * x)^p (default 1.45). */
+  envelopePower: number;
+  /** Phase lead (rad) on the upper contour v = +1 (default 0.28). */
+  upperPhaseLead: number;
+  /** Phase lag (rad) on the lower contour v = -1 (default 0.28). */
+  lowerPhaseLag: number;
+  /** Minimum half-width pinch ratio relative to resting h0(x) (default 0.72). */
+  minWidthRatio: number;
+  /** Maximum half-width swell ratio relative to resting h0(x) (default 1.32). */
+  maxWidthRatio: number;
+  /** Horizontal shear factor along smoothed normal (default 0.35). */
+  horizontalShear: number;
+  /** Phase blend toward center ribbon at underpass seams (default 0.75). */
+  seamBlendStrength: number;
+  /** Amplitude damping at underpass seams (default 0.32). */
+  seamAmpDamping: number;
+}
+
+/**
+ * Optical material, internal chromatic wave sub-ribbons, rim lighting, and
+ * fold occlusion/caustic strengths used by BrandRibbonRenderer.tsx.
+ */
+export interface RibbonMaterialTuning {
+  /** Transverse swing amplitude of internal chromatic wave strips (default 0.72). */
+  filmSwing: number;
+  /** Opacity multiplier for forward cyan->blue->violet wave strip (default 0.58). */
+  film0Opacity: number;
+  /** Opacity multiplier for counter-phased blue->violet->magenta->pink strip (default 0.58). */
+  film1Opacity: number;
+  /** Opacity multiplier for additive ("lighter") central interference strip (default 0.42). */
+  film2AdditiveOpacity: number;
+  /** Stroke width of upper edge highlight (v = +1) in viewBox units (default 11.5). */
+  upperRimWidth: number;
+  /** Stroke width of lower edge highlight (v = -1) in viewBox units (default 8.0). */
+  lowerRimWidth: number;
+  /** Opacity multiplier for upper edge highlight (default 1.0). */
+  upperRimOpacity: number;
+  /** Opacity multiplier for lower edge highlight (default 1.0). */
+  lowerRimOpacity: number;
+  /** Underpass fold shadow strength (default 0.62). */
+  occlusionStrength: number;
+  /** Overpass fold caustic lift strength (default 0.38). */
+  overpassCausticStrength: number;
+}
+
+export interface RibbonTuningConfig {
+  states: Record<BrandWaveState, StatePresetTuning>;
+  ribbons: Record<RibbonId, RibbonWaveCoupling>;
+  shaping: RibbonShapingTuning;
+  material: RibbonMaterialTuning;
+}
+
+const TAU = Math.PI * 2;
+export const DONE_SETTLE_DURATION = 1.65;
+export const DEFAULT_RIBBON_WIDTH_PX = 78;
+const DEV_TUNING_STORAGE_KEY = "whisperlane.dev.ribbonTuning.v1";
+const DEV_TUNING_EVENT_NAME = "whisperlane-ribbon-tuning-change";
+
+export const DEFAULT_RIBBON_TUNING_CONFIG: RibbonTuningConfig = {
+  states: {
+    idle: {
+      amplitudeA1: 19.5,
+      amplitudeA2: 7.5,
+      amplitudeA3: 3.8,
+      widthModB1: 0.105,
+      widthModB2: 0.048,
+      widthModB3: 0.024,
+      k1Cycles: 2.35,
+      k2Cycles: 3.75,
+      k3Cycles: 5.2,
+      cycleSeconds1: 4.8,
+      cycleSeconds2: 2.9,
+      cycleSeconds3: 3.6,
+      sheenPeriod: 5.8,
+      filmSpeed: 1.25,
+      glowOpacity: 0.46,
+      specularIntensity: 0.68,
+      primaryGlowColor: "rgba(149, 96, 255, 0.54)",
+      secondaryGlowColor: "rgba(34, 221, 235, 0.36)",
+    },
+    ready: {
+      amplitudeA1: 22.5,
+      amplitudeA2: 8.8,
+      amplitudeA3: 4.5,
+      widthModB1: 0.12,
+      widthModB2: 0.055,
+      widthModB3: 0.028,
+      k1Cycles: 2.35,
+      k2Cycles: 3.75,
+      k3Cycles: 5.2,
+      cycleSeconds1: 4.2,
+      cycleSeconds2: 2.5,
+      cycleSeconds3: 3.1,
+      sheenPeriod: 4.2,
+      filmSpeed: 1.55,
+      glowOpacity: 0.58,
+      specularIntensity: 0.82,
+      primaryGlowColor: "rgba(149, 96, 255, 0.64)",
+      secondaryGlowColor: "rgba(50, 140, 255, 0.48)",
+    },
+    thinking: {
+      amplitudeA1: 28.0,
+      amplitudeA2: 11.2,
+      amplitudeA3: 5.8,
+      widthModB1: 0.145,
+      widthModB2: 0.068,
+      widthModB3: 0.035,
+      k1Cycles: 2.5,
+      k2Cycles: 4.0,
+      k3Cycles: 5.6,
+      cycleSeconds1: 2.1,
+      cycleSeconds2: 1.3,
+      cycleSeconds3: 1.65,
+      sheenPeriod: 1.9,
+      filmSpeed: 2.75,
+      glowOpacity: 0.72,
+      specularIntensity: 0.96,
+      primaryGlowColor: "rgba(34, 221, 235, 0.70)",
+      secondaryGlowColor: "rgba(227, 74, 231, 0.56)",
+    },
+    done: {
+      amplitudeA1: 24.0,
+      amplitudeA2: 9.2,
+      amplitudeA3: 4.6,
+      widthModB1: 0.12,
+      widthModB2: 0.052,
+      widthModB3: 0.025,
+      k1Cycles: 2.35,
+      k2Cycles: 3.75,
+      k3Cycles: 5.2,
+      cycleSeconds1: 2.0,
+      cycleSeconds2: 1.3,
+      cycleSeconds3: 1.6,
+      sheenPeriod: 0,
+      filmSpeed: 1.8,
+      glowOpacity: 0.62,
+      specularIntensity: 0.98,
+      primaryGlowColor: "rgba(34, 221, 235, 0.68)",
+      secondaryGlowColor: "rgba(149, 96, 255, 0.52)",
+    },
+    muted: {
+      amplitudeA1: 0,
+      amplitudeA2: 0,
+      amplitudeA3: 0,
+      widthModB1: 0,
+      widthModB2: 0,
+      widthModB3: 0,
+      k1Cycles: 2.35,
+      k2Cycles: 3.75,
+      k3Cycles: 5.2,
+      cycleSeconds1: 0,
+      cycleSeconds2: 0,
+      cycleSeconds3: 0,
+      sheenPeriod: 0,
+      filmSpeed: 0,
+      glowOpacity: 0.22,
+      specularIntensity: 0.22,
+      primaryGlowColor: "rgba(120, 128, 152, 0.24)",
+      secondaryGlowColor: "rgba(95, 102, 124, 0.18)",
+    },
   },
-  "ribbon-center": {
-    // Central signal core: shifted in phase (~39 deg on primary, ~89 deg on
-    // secondary) and slightly higher amplitude so the center of the mark leads
-    // with rich multi-ribbon wave interference.
-    phase1: 0.68,
-    phase2: 1.55,
-    phase3: -1.1,
-    freqScale1: 1.05,
-    freqScale2: 1.1,
-    freqScale3: 1.06,
-    ampScale: 1.12,
-    thicknessScale: 1.15,
+  ribbons: {
+    "ribbon-left": {
+      phase1: 0.0,
+      phase2: 0.4,
+      phase3: 0.0,
+      freqScale1: 0.96,
+      freqScale2: 1.04,
+      freqScale3: 0.94,
+      ampScale: 0.94,
+      thicknessScale: 0.95,
+    },
+    "ribbon-center": {
+      phase1: 0.68,
+      phase2: 1.55,
+      phase3: -1.1,
+      freqScale1: 1.05,
+      freqScale2: 1.1,
+      freqScale3: 1.06,
+      ampScale: 1.12,
+      thicknessScale: 1.15,
+    },
+    "ribbon-right": {
+      phase1: 1.34,
+      phase2: 2.8,
+      phase3: -2.15,
+      freqScale1: 0.93,
+      freqScale2: 0.95,
+      freqScale3: 1.02,
+      ampScale: 0.9,
+      thicknessScale: 0.92,
+    },
   },
-  "ribbon-right": {
-    phase1: 1.34,
-    phase2: 2.8,
-    phase3: -2.15,
-    freqScale1: 0.93,
-    freqScale2: 0.95,
-    freqScale3: 1.02,
-    ampScale: 0.9,
-    thicknessScale: 0.92,
+  shaping: {
+    envelopePower: 1.45,
+    upperPhaseLead: 0.28,
+    lowerPhaseLag: 0.28,
+    minWidthRatio: 0.72,
+    maxWidthRatio: 1.32,
+    horizontalShear: 0.35,
+    seamBlendStrength: 0.75,
+    seamAmpDamping: 0.32,
+  },
+  material: {
+    filmSwing: 0.72,
+    film0Opacity: 0.58,
+    film1Opacity: 0.58,
+    film2AdditiveOpacity: 0.42,
+    upperRimWidth: 11.5,
+    lowerRimWidth: 8.0,
+    upperRimOpacity: 1.0,
+    lowerRimOpacity: 1.0,
+    occlusionStrength: 0.62,
+    overpassCausticStrength: 0.38,
   },
 };
 
-/**
- * State motion profiles (Section 7):
- * - k1 = 2*pi * 2.35 (~2.35 full waves across x in [0, 1]), so adjacent
- *   horizontal landmarks (dx ~ 0.21) move in opposite vertical directions at
- *   every instant rather than the whole logo swaying together.
- * - Idle:     T1 = 4.8s dominant cycle (4-6s target), calm travelling peaks/troughs
- * - Ready:    T1 = 4.2s dominant cycle (4-6s target), livelier signal flow
- * - Thinking: T1 = 2.1s dominant cycle, faster propagation & stronger interference
- * - Done:     T1 = 2.0s single finishing wave settling smoothly to rest
- * - Muted:    Static resting geometry
- */
-const STATE_PROFILES: Record<BrandWaveState, StateMotionProfile> = {
-  idle: {
-    amplitudeA1: 19.5,
-    amplitudeA2: 7.5,
-    amplitudeA3: 3.8,
-    widthModB1: 0.105,
-    widthModB2: 0.048,
-    widthModB3: 0.024,
-    k1: TAU * 2.35,
-    k2: TAU * 3.75,
-    k3: TAU * 5.2,
-    cycleSeconds1: 4.8,
-    cycleSeconds2: 2.9,
-    cycleSeconds3: 3.6,
-    omega1: TAU / 4.8,
-    omega2: TAU / 2.9,
-    omega3: -TAU / 3.6,
-    sheenPeriod: 5.8,
-    filmSpeed: 1.25,
-    glowOpacity: 0.46,
-    specularIntensity: 0.68,
-    primaryGlowColor: "rgba(149, 96, 255, 0.54)",
-    secondaryGlowColor: "rgba(34, 221, 235, 0.36)",
-  },
-  ready: {
-    amplitudeA1: 22.5,
-    amplitudeA2: 8.8,
-    amplitudeA3: 4.5,
-    widthModB1: 0.12,
-    widthModB2: 0.055,
-    widthModB3: 0.028,
-    k1: TAU * 2.35,
-    k2: TAU * 3.75,
-    k3: TAU * 5.2,
-    cycleSeconds1: 4.2,
-    cycleSeconds2: 2.5,
-    cycleSeconds3: 3.1,
-    omega1: TAU / 4.2,
-    omega2: TAU / 2.5,
-    omega3: -TAU / 3.1,
-    sheenPeriod: 4.2,
-    filmSpeed: 1.55,
-    glowOpacity: 0.58,
-    specularIntensity: 0.82,
-    primaryGlowColor: "rgba(149, 96, 255, 0.64)",
-    secondaryGlowColor: "rgba(50, 140, 255, 0.48)",
-  },
-  thinking: {
-    amplitudeA1: 28.0,
-    amplitudeA2: 11.2,
-    amplitudeA3: 5.8,
-    widthModB1: 0.145,
-    widthModB2: 0.068,
-    widthModB3: 0.035,
-    k1: TAU * 2.5,
-    k2: TAU * 4.0,
-    k3: TAU * 5.6,
-    cycleSeconds1: 2.1,
-    cycleSeconds2: 1.3,
-    cycleSeconds3: 1.65,
-    omega1: TAU / 2.1,
-    omega2: TAU / 1.3,
-    omega3: -TAU / 1.65,
-    sheenPeriod: 1.9,
-    filmSpeed: 2.75,
-    glowOpacity: 0.72,
-    specularIntensity: 0.96,
-    primaryGlowColor: "rgba(34, 221, 235, 0.70)",
-    secondaryGlowColor: "rgba(227, 74, 231, 0.56)",
-  },
-  done: {
-    amplitudeA1: 24.0,
-    amplitudeA2: 9.2,
-    amplitudeA3: 4.6,
-    widthModB1: 0.12,
-    widthModB2: 0.052,
-    widthModB3: 0.025,
-    k1: TAU * 2.35,
-    k2: TAU * 3.75,
-    k3: TAU * 5.2,
-    cycleSeconds1: 2.0,
-    cycleSeconds2: 1.3,
-    cycleSeconds3: 1.6,
-    omega1: TAU / 2.0,
-    omega2: TAU / 1.3,
-    omega3: -TAU / 1.6,
-    sheenPeriod: 0,
-    filmSpeed: 1.8,
-    glowOpacity: 0.62,
-    specularIntensity: 0.98,
-    primaryGlowColor: "rgba(34, 221, 235, 0.68)",
-    secondaryGlowColor: "rgba(149, 96, 255, 0.52)",
-  },
-  muted: {
-    amplitudeA1: 0,
-    amplitudeA2: 0,
-    amplitudeA3: 0,
-    widthModB1: 0,
-    widthModB2: 0,
-    widthModB3: 0,
-    k1: TAU * 2.35,
-    k2: TAU * 3.75,
-    k3: TAU * 5.2,
-    cycleSeconds1: 0,
-    cycleSeconds2: 0,
-    cycleSeconds3: 0,
-    omega1: 0,
-    omega2: 0,
-    omega3: 0,
-    sheenPeriod: 0,
-    filmSpeed: 0,
-    glowOpacity: 0.22,
-    specularIntensity: 0.22,
-    primaryGlowColor: "rgba(120, 128, 152, 0.24)",
-    secondaryGlowColor: "rgba(95, 102, 124, 0.18)",
-  },
-};
+export function cloneRibbonTuningConfig(
+  src: RibbonTuningConfig = DEFAULT_RIBBON_TUNING_CONFIG,
+): RibbonTuningConfig {
+  return JSON.parse(JSON.stringify(src)) as RibbonTuningConfig;
+}
+
+function mergeWithDefaultConfig(
+  partial: Partial<RibbonTuningConfig> | null | undefined,
+): RibbonTuningConfig {
+  const base = cloneRibbonTuningConfig(DEFAULT_RIBBON_TUNING_CONFIG);
+  if (!partial || typeof partial !== "object") return base;
+
+  if (partial.states && typeof partial.states === "object") {
+    for (const key of Object.keys(base.states) as BrandWaveState[]) {
+      if (partial.states[key]) {
+        base.states[key] = { ...base.states[key], ...partial.states[key] };
+      }
+    }
+  }
+  if (partial.ribbons && typeof partial.ribbons === "object") {
+    for (const key of Object.keys(base.ribbons) as RibbonId[]) {
+      if (partial.ribbons[key]) {
+        base.ribbons[key] = { ...base.ribbons[key], ...partial.ribbons[key] };
+      }
+    }
+  }
+  if (partial.shaping && typeof partial.shaping === "object") {
+    base.shaping = { ...base.shaping, ...partial.shaping };
+  }
+  if (partial.material && typeof partial.material === "object") {
+    base.material = { ...base.material, ...partial.material };
+  }
+  return base;
+}
+
+function loadInitialTuningConfig(): RibbonTuningConfig {
+  if (typeof window === "undefined") {
+    return cloneRibbonTuningConfig(DEFAULT_RIBBON_TUNING_CONFIG);
+  }
+  try {
+    const raw = window.localStorage.getItem(DEV_TUNING_STORAGE_KEY);
+    if (!raw) return cloneRibbonTuningConfig(DEFAULT_RIBBON_TUNING_CONFIG);
+    return mergeWithDefaultConfig(
+      JSON.parse(raw) as Partial<RibbonTuningConfig>,
+    );
+  } catch {
+    return cloneRibbonTuningConfig(DEFAULT_RIBBON_TUNING_CONFIG);
+  }
+}
+
+let activeTuningConfig: RibbonTuningConfig = loadInitialTuningConfig();
+
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (e) => {
+    if (e.key === DEV_TUNING_STORAGE_KEY) {
+      activeTuningConfig = loadInitialTuningConfig();
+      window.dispatchEvent(new CustomEvent(DEV_TUNING_EVENT_NAME));
+    }
+  });
+}
+
+export function getRibbonTuningConfig(): RibbonTuningConfig {
+  return activeTuningConfig;
+}
+
+export function setRibbonTuningConfig(next: RibbonTuningConfig): void {
+  activeTuningConfig = mergeWithDefaultConfig(next);
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(
+        DEV_TUNING_STORAGE_KEY,
+        JSON.stringify(activeTuningConfig),
+      );
+    } catch {
+      // Ignore storage quota errors
+    }
+    window.dispatchEvent(new CustomEvent(DEV_TUNING_EVENT_NAME));
+  }
+}
+
+export function resetRibbonTuningConfig(): RibbonTuningConfig {
+  const fresh = cloneRibbonTuningConfig(DEFAULT_RIBBON_TUNING_CONFIG);
+  activeTuningConfig = fresh;
+  if (typeof window !== "undefined") {
+    try {
+      window.localStorage.removeItem(DEV_TUNING_STORAGE_KEY);
+    } catch {
+      // Ignore storage errors
+    }
+    window.dispatchEvent(new CustomEvent(DEV_TUNING_EVENT_NAME));
+  }
+  return fresh;
+}
+
+export function subscribeRibbonTuningConfig(listener: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const handler = () => listener();
+  window.addEventListener(DEV_TUNING_EVENT_NAME, handler);
+  return () => window.removeEventListener(DEV_TUNING_EVENT_NAME, handler);
+}
+
+function buildStateMotionProfile(preset: StatePresetTuning): StateMotionProfile {
+  return {
+    ...preset,
+    k1: TAU * preset.k1Cycles,
+    k2: TAU * preset.k2Cycles,
+    k3: TAU * preset.k3Cycles,
+    omega1: preset.cycleSeconds1 > 0 ? TAU / preset.cycleSeconds1 : 0,
+    omega2: preset.cycleSeconds2 > 0 ? TAU / preset.cycleSeconds2 : 0,
+    omega3: preset.cycleSeconds3 > 0 ? -TAU / preset.cycleSeconds3 : 0,
+  };
+}
 
 export interface DeformedSlice {
   readonly u: number;
@@ -331,17 +510,23 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
 }
 
 /**
- * Bell-shaped horizontal spatial envelope E(x) = sin(pi * x)^1.45 (Section 3 & 4).
+ * Bell-shaped horizontal spatial envelope E(x) = sin(pi * x)^p (Section 3 & 4).
  * Concentrates wave motion in the central signal region while smoothly
  * anchoring the left needle tip (x = 0) and right tail exit (x = 1).
  */
-export function ribbonEnvelope(xNorm: number): number {
+export function ribbonEnvelope(
+  xNorm: number,
+  power = activeTuningConfig.shaping.envelopePower,
+): number {
   const s = Math.sin(Math.PI * clamp01(xNorm));
-  return Math.pow(Math.max(0, s), 1.45);
+  return Math.pow(Math.max(0, s), power);
 }
 
-export function getStateProfile(state: BrandWaveState): StateMotionProfile {
-  return STATE_PROFILES[state];
+export function getStateProfile(
+  state: BrandWaveState,
+  config: RibbonTuningConfig = activeTuningConfig,
+): StateMotionProfile {
+  return buildStateMotionProfile(config.states[state]);
 }
 
 export function isMutedState(state: BrandWaveState): boolean {
@@ -380,6 +565,7 @@ export interface EvaluatedWaveParams {
  */
 export function evaluateWaveParameters(
   motion: RibbonMotion,
+  config: RibbonTuningConfig = activeTuningConfig,
 ): EvaluatedWaveParams {
   if (motion.still || motion.state === "muted") {
     return {
@@ -395,7 +581,7 @@ export function evaluateWaveParameters(
     };
   }
 
-  const profile = STATE_PROFILES[motion.state];
+  const profile = getStateProfile(motion.state, config);
   let settle = motion.amplitudeScale ?? 1;
 
   if (motion.state === "done") {
@@ -452,19 +638,20 @@ export function evaluateWaveParameters(
 function evaluateSeamCoupling(
   ribbonId: RibbonId,
   uLocal: number,
+  shaping: RibbonShapingTuning,
 ): { readonly phaseBlendToCenter: number; readonly seamAmpFactor: number } {
   if (ribbonId === "ribbon-left") {
     const seam = smoothstep(0.82, 0.98, uLocal);
     return {
-      phaseBlendToCenter: seam * 0.75,
-      seamAmpFactor: 1 - seam * 0.32,
+      phaseBlendToCenter: seam * shaping.seamBlendStrength,
+      seamAmpFactor: 1 - seam * shaping.seamAmpDamping,
     };
   }
   if (ribbonId === "ribbon-right") {
     const seam = 1 - smoothstep(0.02, 0.22, uLocal);
     return {
-      phaseBlendToCenter: seam * 0.75,
-      seamAmpFactor: 1 - seam * 0.32,
+      phaseBlendToCenter: seam * shaping.seamBlendStrength,
+      seamAmpFactor: 1 - seam * shaping.seamAmpDamping,
     };
   }
   return { phaseBlendToCenter: 0, seamAmpFactor: 1 };
@@ -483,9 +670,10 @@ export function deformSlice(
   slice: RibbonSlice,
   profile: StateMotionProfile,
   params: EvaluatedWaveParams,
+  config: RibbonTuningConfig = activeTuningConfig,
 ): DeformedSlice {
   const { A1, A2, A3, B1, B2, B3, psi1, psi2, psi3 } = params;
-  if (A1 === 0 && A2 === 0 && A3 === 0 && B1 === 0) {
+  if (A1 === 0 && A2 === 0 && A3 === 0 && B1 === 0 && B2 === 0 && B3 === 0) {
     return {
       u: slice.u,
       uGlobal: slice.uGlobal,
@@ -501,16 +689,19 @@ export function deformSlice(
     };
   }
 
-  const coupling = RIBBON_WAVE_COUPLING[ribbonId];
-  const centerCoupling = RIBBON_WAVE_COUPLING["ribbon-center"];
+  const { shaping, ribbons } = config;
+  const coupling = ribbons[ribbonId];
+  const centerCoupling = ribbons["ribbon-center"];
   const { phaseBlendToCenter, seamAmpFactor } = evaluateSeamCoupling(
     ribbonId,
     slice.u,
+    shaping,
   );
 
   // Normalized horizontal coordinate x in [0, 1] across the composition
   const x = slice.uGlobal;
-  const env = ribbonEnvelope(x) * seamAmpFactor;
+  const baseEnv = ribbonEnvelope(x, shaping.envelopePower);
+  const env = baseEnv * seamAmpFactor;
 
   // Blend phase slightly toward center ribbon right at cut seams to preserve overlap
   const phi1 =
@@ -541,22 +732,25 @@ export function deformSlice(
     coupling.ampScale *
     (A1 * w1Center + A2 * w2Center + A3 * w3Center);
 
+  const lead = shaping.upperPhaseLead;
+  const lag = shaping.lowerPhaseLag;
+
   // Differential upper & lower contour wave components (inspired by LiquidWaveform's
   // opening vs closing contour phase offset) so the top and bottom edges ripple
   // independently as the wave travels horizontally.
   const dUpperWave =
     env *
     coupling.ampScale *
-    (A1 * Math.sin(theta1 + 0.28) +
-      A2 * Math.sin(theta2 + 0.62) +
-      A3 * Math.cos(theta3 - 0.35));
+    (A1 * Math.sin(theta1 + lead) +
+      A2 * Math.sin(theta2 + lead * 2.2) +
+      A3 * Math.cos(theta3 - lead * 1.25));
 
   const dLowerWave =
     env *
     coupling.ampScale *
-    (A1 * Math.sin(theta1 - 0.28) +
-      A2 * Math.sin(theta2 - 0.52) +
-      A3 * Math.sin(theta3 + 0.45));
+    (A1 * Math.sin(theta1 - lag) +
+      A2 * Math.sin(theta2 - lag * 1.85) +
+      A3 * Math.sin(theta3 + lag * 1.6));
 
   // Explicit transverse thickness pinch/swell modulation
   const breathWave =
@@ -568,7 +762,8 @@ export function deformSlice(
 
   // Subtle horizontal shear along the smoothed liquid normal (kept small so
   // motion is organized primarily as horizontal wave propagation, never whole-body sway)
-  const cx = slice.center0[0] + dCenter * slice.liquidNormal[0] * 0.35;
+  const cx =
+    slice.center0[0] + dCenter * slice.liquidNormal[0] * shaping.horizontalShear;
 
   let upperY: number;
   let lowerY: number;
@@ -587,10 +782,12 @@ export function deformSlice(
     const midY = (rawUpperY + rawLowerY) * 0.5;
     const rawHalfW = (rawLowerY - rawUpperY) * 0.5;
 
-    // Clamp half-width to [0.72, 1.32] * h0(x) so the ribbon visibly expands
-    // and contracts without ever pinching shut or self-intersecting.
-    const minHalfW = slice.halfWidth0 * 0.72;
-    const maxHalfW = slice.halfWidth0 * 1.32;
+    // Clamp half-width to [minWidthRatio, maxWidthRatio] * h0(x) so the ribbon
+    // visibly expands and contracts without ever pinching shut or self-intersecting.
+    const minRatio = Math.min(shaping.minWidthRatio, shaping.maxWidthRatio);
+    const maxRatio = Math.max(shaping.minWidthRatio, shaping.maxWidthRatio);
+    const minHalfW = slice.halfWidth0 * minRatio;
+    const maxHalfW = slice.halfWidth0 * maxRatio;
     const clampedHalfW = Math.min(maxHalfW, Math.max(minHalfW, rawHalfW));
 
     upperY = midY - clampedHalfW;
@@ -604,8 +801,7 @@ export function deformSlice(
   // Instantaneous local wave energy [0, 1] used by the renderer to brighten
   // overlapping central regions as wave peaks pass through.
   const normWave =
-    Math.abs(w1Center * 0.6 + w2Center * 0.28 + w3Center * 0.12) *
-    ribbonEnvelope(x);
+    Math.abs(w1Center * 0.6 + w2Center * 0.28 + w3Center * 0.12) * baseEnv;
   const waveEnergy = clamp01(normWave * 1.25);
 
   return {
@@ -639,11 +835,12 @@ export function pointOnDeformedSlice(slice: DeformedSlice, v: number): Vec2 {
 export function deformRibbonSurface(
   surface: BrandRibbonSurface,
   motion: RibbonMotion,
+  config: RibbonTuningConfig = activeTuningConfig,
 ): DeformedRibbonSurface {
-  const profile = STATE_PROFILES[motion.state];
-  const params = evaluateWaveParameters(motion);
+  const profile = getStateProfile(motion.state, config);
+  const params = evaluateWaveParameters(motion, config);
   const slices = surface.slices.map((s) =>
-    deformSlice(surface.id, s, profile, params),
+    deformSlice(surface.id, s, profile, params, config),
   );
   return {
     id: surface.id,
@@ -665,9 +862,11 @@ export function buildInternalWaveStrip(
   deformed: DeformedRibbonSurface,
   layerIndex: 0 | 1 | 2,
   motion: RibbonMotion,
+  config: RibbonTuningConfig = activeTuningConfig,
 ): { readonly upperPts: Vec2[]; readonly lowerPts: Vec2[] } {
-  const profile = STATE_PROFILES[motion.state];
-  const coupling = RIBBON_WAVE_COUPLING[deformed.id];
+  const profile = getStateProfile(motion.state, config);
+  const coupling = config.ribbons[deformed.id];
+  const baseSwing = config.material.filmSwing;
   const baseT = motion.still
     ? 0
     : (motion.filmPhase ?? motion.time * profile.filmSpeed);
@@ -701,7 +900,7 @@ export function buildInternalWaveStrip(
     const biasV =
       layerIndex === 0 ? 0.14 : layerIndex === 1 ? -0.14 : 0.0;
     const swing =
-      (layerIndex === 2 ? 0.56 : 0.72) * (0.35 + 0.65 * bell);
+      (layerIndex === 2 ? baseSwing * 0.78 : baseSwing) * (0.35 + 0.65 * bell);
 
     const vA = biasV + waveOpen * swing;
     const vB = biasV - waveClose * swing * 0.85;
@@ -724,9 +923,10 @@ export function buildInternalWaveStrip(
 export function buildSpecularCoreStrip(
   deformed: DeformedRibbonSurface,
   motion: RibbonMotion,
+  config: RibbonTuningConfig = activeTuningConfig,
 ): { readonly upperPts: Vec2[]; readonly lowerPts: Vec2[] } {
-  const profile = STATE_PROFILES[motion.state];
-  const coupling = RIBBON_WAVE_COUPLING[deformed.id];
+  const profile = getStateProfile(motion.state, config);
+  const coupling = config.ribbons[deformed.id];
   const t = motion.still
     ? 0
     : (motion.filmPhase ?? motion.time * profile.filmSpeed);
@@ -755,7 +955,10 @@ export function buildSpecularCoreStrip(
  * Normalized longitudinal position [0, 1] of the traveling specular sheen band,
  * or null when settled / muted.
  */
-export function evaluateSheenProgress(motion: RibbonMotion): number | null {
+export function evaluateSheenProgress(
+  motion: RibbonMotion,
+  config: RibbonTuningConfig = activeTuningConfig,
+): number | null {
   if (motion.state === "muted") return null;
   if (motion.still) return 0.48;
 
@@ -765,7 +968,7 @@ export function evaluateSheenProgress(motion: RibbonMotion): number | null {
     return 1 - Math.pow(1 - raw, 1.8);
   }
 
-  const period = STATE_PROFILES[motion.state].sheenPeriod;
+  const period = getStateProfile(motion.state, config).sheenPeriod;
   if (period <= 0) return null;
   return (motion.time % period) / period;
 }

@@ -6,6 +6,7 @@ import { check, type Update } from "@tauri-apps/plugin-updater";
 import { FirstRun } from "./FirstRun";
 import { Picker, Switch } from "./controls";
 import { SignalBackdrop } from "./SignalBackdrop";
+import { DevRibbonLab } from "./DevRibbonLab";
 import { deliveryNote, transcriptMatters } from "./delivery";
 import lockupDark from "./assets/whisperlane-lockup-horizontal-on-dark.png";
 import lockupLight from "./assets/whisperlane-lockup-horizontal-on-light.png";
@@ -33,7 +34,19 @@ interface SttStatus {
   detail: string | null;
 }
 
-type NavTab = "general" | "speech" | "appearance" | "shortcuts" | "integrations" | "about";
+type NavTab =
+  | "general"
+  | "speech"
+  | "appearance"
+  | "shortcuts"
+  | "integrations"
+  | "about"
+  | "dev";
+
+const IS_DEV_MODE =
+  import.meta.env.DEV ||
+  (typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("dev") === "1");
 
 /**
  * What the updates surface can be doing. The update itself is kept out of
@@ -207,6 +220,22 @@ function InfoIcon({ size = 20 }: { size?: number }) {
         strokeWidth="1.85"
         strokeLinecap="round"
       />
+    </svg>
+  );
+}
+
+function DevSlidersIcon({ size = 20 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+      />
+      <circle cx="16" cy="6" r="2.1" stroke="currentColor" strokeWidth="1.75" />
+      <circle cx="10" cy="12" r="2.1" stroke="currentColor" strokeWidth="1.75" />
+      <circle cx="18" cy="18" r="2.1" stroke="currentColor" strokeWidth="1.75" />
     </svg>
   );
 }
@@ -1108,15 +1137,35 @@ function App() {
                     <span className="sidebar-nav-subtitle">Version &amp; links</span>
                   </span>
                 </button>
+
+                {IS_DEV_MODE && (
+                  <button
+                    type="button"
+                    className={`sidebar-nav-item sidebar-nav-item-dev${activeTab === "dev" ? " is-active" : ""}`}
+                    onClick={() => setActiveTab("dev")}
+                  >
+                    <span className="sidebar-nav-icon">
+                      <DevSlidersIcon />
+                    </span>
+                    <span className="sidebar-nav-text">
+                      <span className="sidebar-nav-title">DEV</span>
+                      <span className="sidebar-nav-subtitle">Ribbon tuning lab</span>
+                    </span>
+                  </button>
+                )}
               </nav>
             </aside>
 
             <main className="settings-main">
               <header className="settings-header" data-tauri-drag-region="deep">
                 <div className="settings-header-titles">
-                  <h1 className="settings-title">Settings</h1>
+                  <h1 className="settings-title">
+                    {activeTab === "dev" ? "DEV · Ribbon Tuning Lab" : "Settings"}
+                  </h1>
                   <p className="settings-subtitle">
-                    Customize how whisperlane listens and works for you.
+                    {activeTab === "dev"
+                      ? "Volumetrik Brand Ribbon parametrelerini canlı test edin ve JSON olarak kopyalayın."
+                      : "Customize how whisperlane listens and works for you."}
                   </p>
                 </div>
                 <button
@@ -1525,6 +1574,8 @@ function App() {
                     </section>
                   </>
                 )}
+
+                {activeTab === "dev" && IS_DEV_MODE && <DevRibbonLab />}
 
                 {activeTab === "general" &&
                   status !== null &&

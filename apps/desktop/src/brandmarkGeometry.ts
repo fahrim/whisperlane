@@ -53,6 +53,12 @@ export interface RibbonSlice {
   /** Unit normal N(u) perpendicular to T(u), oriented toward the upper rim (v = +1). */
   readonly normal: Vec2;
   /**
+   * Unit-length liquid displacement normal: blends the local curve normal N(u)
+   * with curvature/seam safety damping and normalizes to length 1.0 so steep
+   * arms of the W retain full wave amplitude without horizontal self-intersection.
+   */
+  readonly liquidNormal: Vec2;
+  /**
    * Topology & curvature damping factor in [0, 1].
    * Attenuates normal-horizontal folding at tight peaks (such as the x=367
    * acoustic spike) and overlap cut seams so the surface never self-intersects.
@@ -404,12 +410,41 @@ function buildRibbonSlices(
     }
 
     const cY = (yUp + yLow) * 0.5;
-    const h0 = Math.max(0.5, (yLow - yUp) * 0.5);
+    const h0 = Math.max(0, (yLow - yUp) * 0.5);
 
     uppers.push([x, yUp]);
     lowers.push([x, yLow]);
     centers.push([x, cY]);
     halfWidths.push(h0);
+  }
+
+  const rawNormals: Vec2[] = [];
+  const rawTangents: Vec2[] = [];
+  const dampings: number[] = [];
+
+  for (let i = 0; i < xs.length; i++) {
+    const x = xs[i];
+    const u = (x - xMin) / xSpan;
+
+    const iPrev = Math.max(0, i - 3);
+    const iNext = Math.min(xs.length - 1, i + 3);
+    const dx = centers[iNext][0] - centers[iPrev][0];
+    const dy = centers[iNext][1] - centers[iPrev][1];
+    const len = Math.hypot(dx, dy) || 1;
+    const tx = dx / len;
+    const ty = dy / len;
+
+    const nx = ty;
+    const ny = -tx;
+
+    const endTaper =
+      smoothstep(0, 0.14, u) * smoothstep(0, 0.14, 1 - u);
+    const slopeDamping = 1 - 0.65 * Math.abs(ty);
+    const curvatureDamping = endTaper * slopeDamping;
+
+    rawTangents.push([tx, ty]);
+    rawNormals.push([nx, ny]);
+    dampings.push(curvatureDamping);
   }
 
   const slices: RibbonSlice[] = [];
@@ -418,27 +453,26 @@ function buildRibbonSlices(
     const u = (x - xMin) / xSpan;
     const uGlobal = x / BRAND_VIEWBOX.width;
 
-    // Smoothed central difference for the centerline tangent T(u) so discrete
-    // polygon vertices do not cause discontinuous jumps in the normal N(u).
-    const iPrev = Math.max(0, i - 2);
-    const iNext = Math.min(xs.length - 1, i + 2);
-    const dx = centers[iNext][0] - centers[iPrev][0];
-    const dy = centers[iNext][1] - centers[iPrev][1];
-    const len = Math.hypot(dx, dy) || 1;
-    const tx = dx / len;
-    const ty = dy / len;
+    // 5-point Gaussian-weighted smoothing of the horizontal normal component
+    // so sharp vertex inflection points never cause adjacent slices to cross in x.
+    let smoothNx = 0;
+    let weightSum = 0;
+    for (let k = -2; k <= 2; k++) {
+      const idx = Math.min(xs.length - 1, Math.max(0, i + k));
+      const w = k === 0 ? 0.4 : Math.abs(k) === 1 ? 0.24 : 0.06;
+      smoothNx += rawNormals[idx][0] * dampings[idx] * w;
+      weightSum += w;
+    }
+    smoothNx /= weightSum;
 
-    // Upward unit normal in SVG coordinates (where y grows downward):
-    // N(u) = (ty, -tx) so N_y = -tx < 0 points toward the upper boundary (v = +1).
-    const nx = ty;
-    const ny = -tx;
+    const [tx, ty] = rawTangents[i];
+    const [nx, ny] = rawNormals[i];
+    const curvatureDamping = dampings[i];
 
-    // Pin ends of each ribbon seam slightly and damp horizontal normal swing
-    // on steep slopes (large |ty|) so sharp peaks never fold over themselves.
-    const endTaper =
-      smoothstep(0, 0.08, u) * smoothstep(0, 0.08, 1 - u);
-    const slopeDamping = 1 - 0.65 * Math.abs(ty);
-    const curvatureDamping = endTaper * slopeDamping;
+    const lnxRaw = smoothNx * 0.28;
+    const lnyRaw = -Math.max(0.86, tx);
+    const lLen = Math.hypot(lnxRaw, lnyRaw) || 1;
+    const liquidNormal: Vec2 = [lnxRaw / lLen, lnyRaw / lLen];
 
     slices.push({
       u,
@@ -450,6 +484,7 @@ function buildRibbonSlices(
       halfWidth0: halfWidths[i],
       tangent: [tx, ty],
       normal: [nx, ny],
+      liquidNormal,
       curvatureDamping,
     });
   }
@@ -483,7 +518,7 @@ export const BRAND_RIBBON_SURFACES: readonly BrandRibbonSurface[] = [
     zOrder: 1,
     xMin: 606,
     xMax: 1161,
-    phaseOffset: 0.42,
+    phaseOffset: 0.12,
     upperContour: RIGHT_UPPER_CONTOUR,
     lowerContour: RIGHT_LOWER_CONTOUR,
     // Start upper rim highlight after the under-arch entry seam (606..715)
@@ -498,7 +533,7 @@ export const BRAND_RIBBON_SURFACES: readonly BrandRibbonSurface[] = [
     zOrder: 2,
     xMin: 270,
     xMax: 710,
-    phaseOffset: 0.18,
+    phaseOffset: 0.06,
     upperContour: CENTER_UPPER_CONTOUR,
     lowerContour: CENTER_LOWER_CONTOUR,
     upperRimRange: [0.04, 0.96],

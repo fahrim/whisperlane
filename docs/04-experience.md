@@ -83,10 +83,11 @@
 - Tray affordance and popover. The quiet home when the pill is hidden:
   status at a glance, quick access to start dictation, and a path to
   settings. Its status line follows the pill's rule: it says ready only
-  with a model on disk, names what is missing when there is none, and
-  shows a model on its way as the working state. Its mark follows that
-  line, because the mark is the glance: a model that is not on disk is
-  not the resting mark, and one arriving is the working mark.
+  with a model on disk, names what is missing when there is none, tells a
+  missing model from one that is incomplete, and shows a model on its way
+  as the working state. Its mark follows that line, because the mark is
+  the glance: a model that is not usable is not the resting mark, and one
+  arriving is the working mark.
 - Onboarding window. A single screen with one instruction, the answers it
   cannot assume, and one action that carries the next step. The speech
   model is among those answers, offered with the same chooser settings
@@ -94,7 +95,9 @@
   progress in the action's own place while the fetch runs, and starting
   to talk once the model is on disk. Nothing is downloaded until the user
   asks for it there, and a failed fetch is named beside the model it
-  belongs to and retried from the same action. Starting with Windows is
+  belongs to and retried from the same action. A file that arrived
+  incomplete is not passed off as ready: it is named as incomplete and
+  the same action fetches it again. Starting with Windows is
   required on it and is asked as two answers rather than as a toggle left
   at a default; everything else offered there is already correct and one
   click from being otherwise. No account step, no multi-page wizard.
@@ -110,7 +113,10 @@
   of equal-weight download buttons — on the onboarding screen that one
   control is the screen's own action, not a second one in the row. Engine
   diagnostics are not shown: which backend is in use and whether it has
-  been verified are true and not the user's business.
+  been verified are true and not the user's business. A start that fails
+  is not diagnostics: the pill states the mapped cause in plain language,
+  while the engine's own output stays in a log on disk for diagnosis
+  rather than on screen.
 - Window surface. A calm flat plane, not glass. Glass stays with the pill,
   which is the small floating surface it was chosen for; the window has to
   stay readable in a light room, and its palette is chosen for that. It
@@ -176,11 +182,17 @@
 - Done: text has landed or is ready; the pill confirms briefly and settles.
 - Failed or cancelled: the cause is stated plainly in place, nothing
   half-inserted remains, and the pill keeps the reason readable until the
-  next take replaces it.
+  next take replaces it. An engine that cannot start says what the
+  evidence means — a missing runtime component, damaged engine files, no
+  usable graphics device, too little graphics memory, an unloadable
+  model, or a timeout — rather than repeating one sentence for every
+  cause. A failed accelerated start is retried once on the processor
+  build before the take is called failed.
 - No model yet: the pill and the tray name what is missing rather than
   resting ready, and while the model is fetched both show the fetch as
-  their working state. A take keeps its own state above either, because
-  that is the moment.
+  their working state. An incomplete model is named as incomplete, not
+  as missing, because only one of those means a transfer went wrong. A
+  take keeps its own state above either, because that is the moment.
 
 Every state is legible from the pill alone without opening settings.
 Errors never leave the user guessing whether text was inserted.

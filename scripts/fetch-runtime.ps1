@@ -27,16 +27,28 @@ $ErrorActionPreference = 'Stop'
 # is named for the whisper.cpp release that build ships as. Both have to
 # be right: the tag is the URL, the asset is the file.
 #
-# b5454 is the build that ships as v1.9.5. Changing either name is a
+# b5454 is the build that ships as v1.9.5. The -static suffix marks the
+# package that dropped the CRT redistributable and split the Vulkan and
+# processor backends into two executables. Changing either name is a
 # deliberate act, not a version bump.
-$RUNTIME_TAG = 'engine-vulkan-b5454'
+$RUNTIME_TAG = 'engine-vulkan-b5454-static'
 $RUNTIME_ASSET = 'whisper-vulkan-win-x64-v1.9.5.zip'
 $SHA_URL = 'https://github.com/fahrim/whisper-vulkan-win/releases/download'
 $RUNTIME_URL = "$SHA_URL/$RUNTIME_TAG/$RUNTIME_ASSET"
 # Digest of the pinned archive, reviewed here rather than trusted from
 # the release page: a published checksum can be edited after the fact,
 # this line is read. Change it only when the pin above changes.
-$EXPECTED_SHA256 = '30cb637213e89f39c6e845a0659773c3768d8e47c404737f616a356d60ca6106'
+$EXPECTED_SHA256 = '105b03c51d38583b333c7f116c5c12e8ce72c443f3a614204425f617e9ecbdde'
+
+# Every file the application needs. The fast path checks all of them,
+# not just the marker: a checkout can carry a pin after someone deleted
+# a file, and an installer without the processor fallback is an
+# installer that cannot honour its own failure path.
+$wanted = @(
+  'whisper-server.exe',
+  'whisper-server-cpu.exe',
+  'vcomp140.dll'
+)
 
 $cache = Join-Path $env:TEMP 'whisperlane-runtime'
 $stage = Join-Path $PSScriptRoot '..\apps\desktop\src-tauri\runtime'
@@ -49,11 +61,19 @@ function Say([string]$m) { Write-Host "[runtime] $m" }
 # --- already staged? -------------------------------------------------------
 if (-not $Force -and (Test-Path $marker)) {
     $staged = (Get-Content $marker -Raw).Trim()
-    if ($staged -eq $RUNTIME_TAG) {
+    $complete = $true
+    foreach ($name in $wanted) {
+        if (-not (Test-Path (Join-Path $stage $name))) { $complete = $false }
+    }
+    if ($staged -eq $RUNTIME_TAG -and $complete) {
         Say "already staged: $RUNTIME_TAG"
         exit 0
     }
-    Say "staged runtime is $staged, pin is $RUNTIME_TAG — refetching"
+    if ($staged -ne $RUNTIME_TAG) {
+        Say "staged runtime is $staged, pin is $RUNTIME_TAG — refetching"
+    } else {
+        Say "staged runtime is incomplete — refetching"
+    }
 }
 
 New-Item -ItemType Directory -Force -Path $cache | Out-Null
@@ -116,8 +136,6 @@ if ($loose.Count -eq 0) {
     }
 }
 
-$wanted = @('whisper-server.exe', 'whisper-cli.exe', 'whisper.dll',
-            'ggml.dll', 'ggml-base.dll', 'ggml-cpu.dll', 'ggml-vulkan.dll')
 $missing = $wanted | Where-Object { -not (Test-Path (Join-Path $stage $_)) }
 if ($missing) {
     Say "archive is missing: $($missing -join ', ')"
@@ -126,5 +144,5 @@ if ($missing) {
 
 $bytes = (Get-ChildItem $stage -File | Measure-Object Length -Sum).Sum
 Set-Content -Path $marker -Value $RUNTIME_TAG -NoNewline
-Say "staged $($wanted.Count) files, {0:N1} MB, pin $RUNTIME_TAG" -f ($bytes / 1MB)
+Say ("staged {0} files, {1:N1} MB, pin {2}" -f $wanted.Count, ($bytes / 1MB), $RUNTIME_TAG)
 Say "sha256 $actual"

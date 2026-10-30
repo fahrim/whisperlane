@@ -87,6 +87,8 @@ function modelCardLine(
 ): string {
   if (download?.running || !model) return "";
   if (model.present) return `The speech model is ready · ${model.size_mb} MB`;
+  if (model.damaged)
+    return `The speech model file is incomplete · download it again`;
   return fetchError ?? `The speech model is not here yet · ${model.size_mb} MB`;
 }
 

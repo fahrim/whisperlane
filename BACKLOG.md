@@ -8,8 +8,16 @@ scope or decision change. Read this first when resuming work.
 M0 and M1 are complete. The application takes a real take on Windows and
 inserts the transcript into the focused application: press the chord,
 speak, release, and the words appear where the caret was. M2 is under
-way: first run is now one screen, and the milestone continues through
-polish and packaging.
+way: first run is one screen, the pill carries every state, and the
+packaging slice has replaced the engine package that failed on a clean
+machine. The remaining packaging work is verification against the
+published runtime and the installer, not more code.
+
+Blocked on the engine release: CI builds tag `engine-vulkan-b5454-static`
+from `f984095`; `scripts/fetch-runtime.ps1` still has an empty
+`$EXPECTED_SHA256` until that run publishes `SHA256SUMS.txt`. Clean-VM
+acceptance and installer verification wait on the same artifact. The app
+changes are otherwise complete and uncommitted.
 
 ## Done
 
@@ -74,7 +82,7 @@ Closed decisions this milestone:
 | 2 | The pill carries every state | done |
 | 3 | Advanced concerns folded away | done |
 | 4 | Premium pass: tokens, motion, spacing, wording | done |
-| 5 | Windows packaging: install, offline, clean uninstall | blocked on decision item 6 |
+| 5 | Windows packaging: install, offline, clean uninstall | in progress — runtime fixed; release and installer verification pending |
 | 6 | Delivery routed through the target abstraction | next |
 
 ## Queued — outside review of insertion and setup (2026-10-29)
@@ -113,14 +121,15 @@ ADR-001 and ADR-005.
 - **Say when the machine is on the processor.** Download size is already
   on the model row and on the first-run action — the default is 547 MB —
   and fetch progress is bytes over bytes. The backend is established by
-  launching the engine and reading its banner, then cached, and
+  launching the engine on the first real take and reading its banner, and
   `docs/04-experience.md` deliberately keeps it off the settings surface.
   That rule needs a narrow exception, which is proposed as item 17 of
   `docs/08-decisions.md` and must be approved before any surface shows it.
-  One defect belongs to the same slice whichever way item 17 goes: the
-  probe records a CPU answer as verified even when a missing model made it
-  skip the launch, so `backend_verified` can be true about a machine
-  nothing was measured on.
+  The probe defect that belonged to this slice is fixed: there is no
+  eager probe any more, so `backend_verified` cannot be true about a
+  machine nothing was measured on. The first launch that serves a take is
+  the verification, and a failed Vulkan launch falls back to the processor
+  build once.
 - **Not queued: clipboard restoration.** The product types; it never
   pastes, so there is no clipboard to put back. The fallback leaves the
   transcript on the clipboard on purpose, because that copy is what the
@@ -134,10 +143,6 @@ ADR-001 and ADR-005.
   17. Recommended: one line, only after a real launch verified it.
 - Optional cleanup scope — item 5. Recommended rules-only or none,
   default off.
-- Name, packaging identity, and collision check — item 6. Recommended
-  before M2 packaging.
-- Visual tokens (accent, surfaces, glow budget) — item 8. Recommended:
-  lock the values at M2 kickoff. Blocks slice 4.
 - Phase-two agent target details — 06-agent-integration.md.
 
 Closed during M2:
@@ -208,6 +213,15 @@ Closed during M2:
   collides with the macOS bundle extension. Resolved ahead of item 6.
   The app data folder moved with it: `%APPDATA%\com.whisperlane.desktop`
   now holds the model, the runtime and the stored takes.
+- ADR-010 runtime packaging and diagnostics (item 18): the engine ships as
+  two static single executables — Vulkan and processor — plus the
+  `vcomp140.dll` OpenMP imports, installs by version under the app data
+  directory with an atomic `current` pointer, logs engine stderr, maps a
+  failed start to a plain sentence, falls back to the processor build once,
+  and verifies the backend on the first real take. The eager probe and the
+  single `did not become ready` sentence are gone. Model presence is
+  exact-length with a `.size` sidecar, so an incomplete file is named
+  instead of handed to the engine.
 
 ## Next (in order)
 

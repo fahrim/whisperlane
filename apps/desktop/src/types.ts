@@ -64,6 +64,8 @@ export interface ModelOption {
   label: string;
   size_mb: number;
   present: boolean;
+  /** A file is there, but it cannot be handed to the engine. */
+  damaged: boolean;
   is_default: boolean;
 }
 
@@ -83,6 +85,7 @@ export interface Download {
  */
 export interface ModelReadiness {
   present: boolean;
+  damaged: boolean;
   downloading: boolean;
   /**
    * The core's own sentence for a missing model, or null when there is

@@ -508,7 +508,9 @@ engine is the one component where a surprise is a wrong answer rather
 than a crash.
 
 Status: approved — recorded here rather than in an ADR because it
-constrains the build, not the product's behaviour.
+constrains the build, not the product's behaviour. Extended by ADR-010:
+the runtime's internal layout, static packaging, and startup diagnostics
+are product behaviour and live in that record.
 
 ## 12. How the name is written, and where
 
@@ -809,6 +811,83 @@ it was written for.
 Status: open. Approval changes `04-experience.md`'s diagnostic rule into a
 narrow exception rather than removing it.
 
+## 18. How the runtime is packaged and how a failed start is explained
+
+Context: a clean Windows machine installed the application, recorded a take,
+and was told only `transcription service did not become ready`. The engine
+was present and could not start: the package linked against the Visual C++
+runtime, the machine had no redistributable, and Windows refused to load the
+process before it could print a line. The supervisor discarded the engine's
+stderr and collapsed every cause into one sentence, so the missing DLL was
+never named anywhere. The same package was a flat directory with no version,
+which meant an upgrade could overwrite a live engine and a partial copy was
+indistinguishable from a complete one. A separate eager probe also launched
+the engine at startup just to read its banner, paying a model load for an
+answer the first real take would produce anyway.
+
+Options: make the redistributable an installer prerequisite; ship the
+redistributable beside the engine DLLs; or link the C runtime statically and
+build one executable per backend. For the installed copy: run from the
+resource directory, copy flat into the data directory, or copy into a
+versioned directory named by a pointer. For the pointer: a directory symlink
+or a plain text file written through a rename. For startup: an eager probe, or
+the first real launch as the verification. For a failure: raw stderr in the
+interface, or one mapped sentence with the log kept on disk.
+
+Trade-offs: a redistributable prerequisite moves the failure to a second
+installer that can also fail, which is the reported failure itself. An
+app-local redistributable removes that prerequisite but keeps a pile of
+engine DLLs whose loading order is part of the product. A static runtime with
+one executable per backend removes the redistributable and the DLL boundary
+together, at the cost of a larger engine. A flat installed copy is simple and
+has no version identity; a versioned copy costs one directory and makes an
+upgrade a rename. A symlink needs Developer Mode or elevation on Windows; a
+renamed text pointer needs neither and never exposes a half-written name. An
+eager probe costs a model load and can still answer about a launch that did
+not happen; the first real launch costs nothing extra and reports the engine
+that actually served. Raw stderr is honest and useless in a five-control
+surface; a mapped sentence keeps the evidence in a log and gives the user a
+cause they can act on.
+
+Direction: the maintainer asked for the clean-install failure to be fixed at
+its cause rather than described better, and for the engine to stay
+Windows-only with no CUDA backend added.
+
+Decision: the runtime ships as two single executables, `whisper-server.exe`
+for Vulkan and `whisper-server-cpu.exe` for the processor, both with
+`BUILD_SHARED_LIBS=OFF` and the static MSVC runtime. `vcomp140.dll` travels
+beside them because OpenMP remains the faster processor path and imports only
+`KERNEL32.dll`. The build refuses to release a package whose import tables
+reintroduce the CRT or a `whisper`/`ggml` DLL, and smoke-launches both
+executables.
+
+The application installs the runtime under
+`%APPDATA%\com.whisperlane.desktop\runtime\<pin>\`, staging the directory
+before renaming it into place. `runtime\current` is a plain text file naming
+the active pin, written through `current.tmp` and renamed; no symlink and no
+elevation. The current and previous versions are kept, and older ones are
+pruned after the pointer moves.
+
+Startup is lazy: there is no eager probe, and the first take's launch is the
+backend verification. A child that exits early fails immediately rather than
+waiting out the timeout, which is 90 seconds. If the accelerated launch exits
+or times out, the processor build gets one attempt in the same run. Engine
+stderr goes to `%APPDATA%\com.whisperlane.desktop\logs\engine.log` with a
+header per attempt; the interface shows one sentence mapped from the evidence
+— missing DLL, damaged engine files, no compatible graphics device, not
+enough graphics memory, unloadable model, or a timeout — and never the raw
+log.
+
+Model presence is checked by exact length rather than by the path existing.
+A successful download records the verified length in a `.size` sidecar; a
+file that no longer matches is reported as incomplete rather than handed to
+the engine, and a redownload repairs it.
+
+Status: approved — see `adr/010-runtime-packaging-and-diagnostics.md`. This
+extends item 11, which settled where the runtime comes from; this item
+settles what the package contains, how it is installed, and what a failed
+start says.
+
 ## ADR process
 - A decision becomes an ADR only after explicit approval of the
   recommendation or an alternative.
@@ -822,7 +901,8 @@ ADR index: `adr/001-default-hotkey.md` (item 7), `adr/002-engine-hosting.md` (it
 `adr/003-device-event-filter.md` (item 7), `adr/004-cancel-gesture.md` (item 8),
 `adr/005-text-insertion-windows.md` (item 3), `adr/006-model-default-and-download.md` (item 4),
 `adr/007-chord-from-terminal-state.md` (item 9), `adr/008-pill-control.md` (item 10),
-`adr/009-liquid-glass-tokens.md` (item 8).
+`adr/009-liquid-glass-tokens.md` (item 8), `adr/010-runtime-packaging-and-diagnostics.md`
+(item 18, extending item 11).
 
 ## Related
 

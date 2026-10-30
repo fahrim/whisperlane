@@ -884,7 +884,9 @@ function App() {
     }
     if (!chosenModel) return null;
     if (!chosenModel.present)
-      return `${chosenModel.size_mb} MB · Not downloaded`;
+      return chosenModel.damaged
+        ? `${chosenModel.size_mb} MB · Incomplete — download it again`
+        : `${chosenModel.size_mb} MB · Not downloaded`;
     if (!stt) return `${chosenModel.size_mb} MB · Ready`;
     if (stt.service === "failed")
       return stt.detail ?? "The engine could not start";

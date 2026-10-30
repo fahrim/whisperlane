@@ -53,6 +53,51 @@ The abstract shape exists with a single destination behind it, which is
 the point: the second destination becomes an addition at the seam, not a
 change to the pipeline, the indicator, or the cancellation rules.
 
+## Transcription runtime
+
+The speech engine runs as a supervised companion service, not inside the
+application process (ADR-002). It ships as two single executables built from
+unmodified upstream sources:
+
+- `whisper-server.exe` carries the Vulkan backend for AMD and Intel graphics.
+- `whisper-server-cpu.exe` carries the processor backend as the floor.
+
+Both are linked with the static MSVC runtime and `BUILD_SHARED_LIBS=OFF`, so a
+machine that has never had the Visual C++ redistributable can still start the
+engine. `vcomp140.dll` travels beside them because OpenMP remains the faster
+processor path; it imports only `KERNEL32.dll`, so it brings no CRT of its own.
+The engine build verifies the import tables and smoke-launches both
+executables before publishing, so a package that reintroduces a CRT, a
+`whisper` DLL, or a `ggml` DLL fails the build rather than the user's first
+take.
+
+The installer bundles that runtime; the application does not run it from the
+resource directory. On first use it stages the files under
+`%APPDATA%\com.whisperlane.desktop\runtime\<pin>\` and only then renames a
+plain text `current` file into place. A per-machine install under `Program
+Files` is not writable, and the engine loads libraries relative to its own
+directory, so a writable, versioned copy is the shape that works. The pointer
+is a file rather than a symlink because creating symlinks on Windows needs
+Developer Mode or elevation, and installing an engine must need neither. The
+current and previous versions stay side by side, so an upgrade that fails
+leaves the working engine untouched; older versions are pruned after the
+pointer moves.
+
+Startup is lazy. There is no eager probe: the first take launches the engine,
+and the banner from that launch is the backend verification. A child that
+exits before answering fails immediately rather than waiting out the timeout,
+which is 90 seconds. If the accelerated launch exits or times out, the
+processor build gets one attempt in the same run. The engine's stderr is
+written to `%APPDATA%\com.whisperlane.desktop\logs\engine.log`, one launch
+header per attempt; the interface shows a sentence mapped from the evidence
+and never the raw log.
+
+Model presence is checked by exact byte length. A verified download records
+its length in a `.size` sidecar beside the model, and a file that no longer
+matches is reported as incomplete rather than handed to the engine. A model
+placed by hand has no sidecar and falls back to the catalog's published
+length.
+
 ## Technology choices and why
 
 - A native desktop shell with a system web view keeps binaries small and
@@ -100,13 +145,12 @@ milestone scaffold and recorded in the repository document.
 
 ## What is deliberately undecided here
 
-Whether the speech engine runs in-process or as a companion local service
-is open. The companion-service path is proven by prior work — on-demand
-start, warm retention while in use, idle unload, verified accelerated
-backend walk — and lets the existing Vulkan build ship as-is; the
-in-process path may simplify packaging. The trade-off is recorded with
-options and a recommendation in the decisions document, to be resolved by a
-small spike — not assumed here.
+Whether transcription streams while the user speaks, rather than running
+once capture ends, is open. Record-then-transcribe is the shape the pipeline
+is built around: it is simpler, more accurate per take, and easier to reason
+about for cancellation and insertion. Streaming is revisited only with
+measured latency pain and a prototype. The hosting question is settled:
+the engine is a supervised companion service (ADR-002).
 
 ## Reuse from prior work
 
@@ -167,5 +211,6 @@ not breadth.
 - Before: `03-product.md`, `04-experience.md`
 - Agent target (phase two): `06-agent-integration.md` — the destination abstraction
 - Delivery: `07-roadmap.md` — how the structure is built up across milestones
-- Open hosting and streaming choices: `08-decisions.md`
+- Open streaming choice and the runtime decision: `08-decisions.md`
+- Runtime packaging and startup diagnostics: `adr/010-runtime-packaging-and-diagnostics.md`
 - Layout and licensing: `09-repository.md`

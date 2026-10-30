@@ -16,6 +16,13 @@
 //! after those were written. Hardcoding them would make every download
 //! fail. A live length check cannot rot, and it still catches the case
 //! that matters here, which is a truncated transfer.
+//!
+//! Presence is a size question, not a hash question: a status poll runs
+//! every few seconds and hashing half a gigabyte there would make the
+//! interface stutter. The length a successful download verified is
+//! recorded beside the file, so a regenerated upstream file remains
+//! usable, while a truncated one is reported as damaged rather than
+//! handed to the engine.
 
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -74,9 +81,12 @@ pub struct ModelChoice {
     pub id: &'static str,
     pub label: &'static str,
     pub file: &'static str,
-    /// Rounded size, for the settings surface only. The real check is
-    /// the source's content-length at download time.
+    /// Rounded size, for the settings surface only.
     pub size_mb: u32,
+    /// Exact length of the model as published when this catalog was
+    /// written. Used only when a file has no recorded length beside it,
+    /// which is the case for a model placed by hand.
+    pub size_bytes: u64,
     pub is_default: bool,
 }
 
@@ -87,6 +97,7 @@ impl ModelChoice {
             label: "Large v3 Turbo (default)",
             file: "ggml-large-v3-turbo-q5_0.bin",
             size_mb: 547,
+            size_bytes: 574_041_195,
             is_default: true,
         },
         ModelChoice {
@@ -94,6 +105,7 @@ impl ModelChoice {
             label: "Large v3 Turbo, higher precision",
             file: "ggml-large-v3-turbo-q8_0.bin",
             size_mb: 834,
+            size_bytes: 874_188_075,
             is_default: false,
         },
         ModelChoice {
@@ -101,6 +113,7 @@ impl ModelChoice {
             label: "Large v3 (slowest, most accurate)",
             file: "ggml-large-v3-q5_0.bin",
             size_mb: 1031,
+            size_bytes: 1_081_140_203,
             is_default: false,
         },
         ModelChoice {
@@ -108,6 +121,7 @@ impl ModelChoice {
             label: "Base (fastest, for slow hardware)",
             file: "ggml-base-q5_1.bin",
             size_mb: 57,
+            size_bytes: 59_707_625,
             is_default: false,
         },
     ];
@@ -133,6 +147,9 @@ pub struct ModelOption {
     pub label: String,
     pub size_mb: u32,
     pub present: bool,
+    /// A file is there but its length does not match what was verified
+    /// when it was installed. It cannot be handed to the engine.
+    pub damaged: bool,
     pub is_default: bool,
 }
 
@@ -178,39 +195,68 @@ impl Download {
 /// can never drift apart.
 pub const MODEL_MISSING_HINT: &str = "model not downloaded — fetch it in Settings";
 
+/// What the chosen model's file says about itself.
+///
+/// Missing and damaged are different answers: one is a file that was
+/// never fetched, the other is a file that is present and unusable.
+/// Both leave dictation without a model, but only the second one means
+/// a previous transfer or a copied file went wrong.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ModelPresence {
+    Missing,
+    Damaged,
+    Ready,
+}
+
 /// Whether the chosen model can take a word yet, and whether it is on
 /// its way. The one answer every resting surface shows, so the pill and
 /// the tray cannot say ready over an install that has no model.
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct ModelReadiness {
-    /// The chosen model's file is on disk.
+    /// The chosen model's file is on disk and its length checks out.
     pub present: bool,
+    /// A file is on disk but cannot be used.
+    pub damaged: bool,
     /// The chosen model is being fetched right now.
     pub downloading: bool,
-    /// The sentence to show while the model is missing, or none when
-    /// there is nothing to say. Carried rather than restated. It speaks
-    /// for a model that is not there and nothing is doing about it; a
-    /// surface that is showing the fetch in progress says its own words.
+    /// The sentence to show while the model is missing or damaged, or
+    /// none when there is nothing to say. Carried rather than restated.
+    /// It speaks for a model that is not usable and nothing is doing
+    /// about it; a surface that is showing the fetch in progress says
+    /// its own words.
     pub hint: Option<&'static str>,
 }
+
+/// What the core says when the chosen model is present but incomplete.
+pub const MODEL_DAMAGED_HINT: &str = "model file is incomplete — download it again";
 
 /// Readiness decided from facts, not guessed from a phase.
 ///
 /// A transfer for another model does not make this one unready: the
 /// model on disk is the one dictation uses, and it still takes a word
 /// while a second file arrives.
-pub fn readiness_of(chosen: ModelChoice, present: bool, download: &Download) -> ModelReadiness {
+pub fn readiness_of(
+    chosen: ModelChoice,
+    presence: ModelPresence,
+    download: &Download,
+) -> ModelReadiness {
     ModelReadiness {
-        present,
+        present: presence == ModelPresence::Ready,
+        damaged: presence == ModelPresence::Damaged,
         downloading: download.running && download.model.as_deref() == Some(chosen.id),
-        hint: (!present).then_some(MODEL_MISSING_HINT),
+        hint: match presence {
+            ModelPresence::Missing => Some(MODEL_MISSING_HINT),
+            ModelPresence::Damaged => Some(MODEL_DAMAGED_HINT),
+            ModelPresence::Ready => None,
+        },
     }
 }
 
 /// The answer as it stands, read by the tray and by the pill's poll.
 pub fn readiness(app: &AppHandle) -> ModelReadiness {
     let chosen = crate::settings::model_of(app);
-    readiness_of(chosen, is_present(app, chosen), &get_download(app.clone()))
+    readiness_of(chosen, presence_of(app, chosen), &get_download(app.clone()))
 }
 
 #[tauri::command]
@@ -242,22 +288,83 @@ pub fn model_path(app: &AppHandle, model: ModelChoice) -> Result<PathBuf, String
     Ok(models_dir(app)?.join(model.file))
 }
 
-pub fn is_present(app: &AppHandle, model: ModelChoice) -> bool {
+/// The chosen model's file, as it stands. A file whose length cannot be
+/// trusted is not a model the engine may load.
+pub fn presence_of(app: &AppHandle, model: ModelChoice) -> ModelPresence {
     models_dir_path(app)
-        .map(|dir| dir.join(model.file).is_file())
-        .unwrap_or(false)
+        .map(|dir| presence_at(&dir.join(model.file), model.size_bytes))
+        .unwrap_or(ModelPresence::Missing)
+}
+
+/// Presence from the file's own length and the length recorded when it
+/// was installed. Pure, so the rule is tested without an application.
+fn presence_at(path: &Path, catalog_bytes: u64) -> ModelPresence {
+    let Ok(metadata) = std::fs::metadata(path) else {
+        return ModelPresence::Missing;
+    };
+    if !metadata.is_file() {
+        return ModelPresence::Missing;
+    }
+    let actual = metadata.len();
+    if actual == 0 {
+        return ModelPresence::Damaged;
+    }
+    let expected = recorded_size(path).unwrap_or(catalog_bytes);
+    if actual == expected {
+        ModelPresence::Ready
+    } else {
+        ModelPresence::Damaged
+    }
+}
+
+/// The file that carries the length verified at install time. It sits
+/// beside the model rather than inside it, so the model stays a plain
+/// file the engine can load and a person can copy.
+fn size_sidecar(path: &Path) -> PathBuf {
+    with_suffix(path, ".size")
+}
+
+fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(suffix);
+    path.with_file_name(name)
+}
+
+fn recorded_size(path: &Path) -> Option<u64> {
+    std::fs::read_to_string(size_sidecar(path))
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
+fn record_size(path: &Path, bytes: u64) -> Result<(), String> {
+    let sidecar = size_sidecar(path);
+    let temp = with_suffix(&sidecar, ".tmp");
+    std::fs::write(&temp, bytes.to_string())
+        .map_err(|e| format!("could not record the model size: {e}"))?;
+    std::fs::rename(&temp, &sidecar)
+        .map_err(|e| format!("could not record the model size: {e}"))
+}
+
+pub fn is_present(app: &AppHandle, model: ModelChoice) -> bool {
+    presence_of(app, model) == ModelPresence::Ready
 }
 
 #[tauri::command]
 pub fn list_models(app: AppHandle) -> Vec<ModelOption> {
     ModelChoice::ALL
         .iter()
-        .map(|model| ModelOption {
-            id: model.id.to_string(),
-            label: model.label.to_string(),
-            size_mb: model.size_mb,
-            present: is_present(&app, *model),
-            is_default: model.is_default,
+        .map(|model| {
+            let presence = presence_of(&app, *model);
+            ModelOption {
+                id: model.id.to_string(),
+                label: model.label.to_string(),
+                size_mb: model.size_mb,
+                present: presence == ModelPresence::Ready,
+                damaged: presence == ModelPresence::Damaged,
+                is_default: model.is_default,
+            }
         })
         .collect()
 }
@@ -334,7 +441,10 @@ pub fn download_model(app: AppHandle, id: String) -> Download {
 fn run_download(app: &AppHandle, model: ModelChoice) {
     let result = (|| -> Result<(), String> {
         let target = model_path(app, model)?;
-        if target.is_file() {
+        // A damaged file is not a finished download. The old rule was
+        // "the path exists", which made a truncated transfer impossible
+        // to repair from the interface.
+        if presence_at(&target, model.size_bytes) == ModelPresence::Ready {
             return Ok(());
         }
         let partial = target.with_extension("part");
@@ -343,6 +453,16 @@ fn run_download(app: &AppHandle, model: ModelChoice) {
         verify_size(&partial, expected)?;
         std::fs::rename(&partial, &target)
             .map_err(|e| format!("could not store the model: {e}"))?;
+        if let Err(detail) = record_size(&target, expected) {
+            // The catalog can stand in for a missing record when the
+            // source still publishes the length this build knows. When
+            // it does not, the file cannot be recognised later, so it is
+            // not left behind looking installed.
+            if expected != model.size_bytes {
+                let _ = std::fs::remove_file(&target);
+                return Err(detail);
+            }
+        }
         Ok(())
     })();
 
@@ -417,6 +537,9 @@ fn verify_size(path: &Path, expected: u64) -> Result<(), String> {
     let actual = std::fs::metadata(path)
         .map_err(|e| format!("could not read the downloaded model: {e}"))?
         .len();
+    if expected == 0 {
+        return Err("the model source declared no size — not installed".to_string());
+    }
     if actual == expected {
         Ok(())
     } else {
@@ -454,6 +577,7 @@ mod tests {
 
         for model in ModelChoice::ALL {
             assert!(model.size_mb > 0, "{} has no size", model.id);
+            assert!(model.size_bytes > 0, "{} has no exact size", model.id);
             assert!(!model.label.is_empty(), "{} has no label", model.id);
             assert!(model.file.ends_with(".bin"), "{} is not a model file", model.id);
         }
@@ -520,10 +644,15 @@ mod tests {
 
         // The chosen model's own transfer is the one that makes it "on
         // its way".
-        assert!(readiness_of(chosen, false, &fetching("base-q5_1")).downloading);
+        assert!(
+            readiness_of(chosen, ModelPresence::Missing, &fetching("base-q5_1")).downloading
+        );
         // Another model arriving does not make this one unready: the
         // model on disk is the one dictation uses.
-        assert!(!readiness_of(chosen, true, &fetching("large-v3-q5_0")).downloading);
+        assert!(
+            !readiness_of(chosen, ModelPresence::Ready, &fetching("large-v3-q5_0"))
+                .downloading
+        );
         // A finished transfer is not a running one, and an idle state
         // reports nothing in flight.
         let done = Download {
@@ -531,21 +660,81 @@ mod tests {
             model: Some("base-q5_1".to_string()),
             ..Download::default()
         };
-        assert!(!readiness_of(chosen, true, &done).downloading);
-        assert!(!readiness_of(chosen, false, &Download::default()).downloading);
+        assert!(!readiness_of(chosen, ModelPresence::Ready, &done).downloading);
+        assert!(
+            !readiness_of(chosen, ModelPresence::Missing, &Download::default()).downloading
+        );
     }
 
     #[test]
     fn readiness_carries_the_file_answer_and_the_one_sentence() {
         let chosen = ModelChoice::DEFAULT;
 
-        let missing = readiness_of(chosen, false, &Download::default());
+        let missing = readiness_of(chosen, ModelPresence::Missing, &Download::default());
         assert!(!missing.present);
+        assert!(!missing.damaged);
         assert_eq!(missing.hint, Some(MODEL_MISSING_HINT));
 
-        let present = readiness_of(chosen, true, &Download::default());
+        let damaged = readiness_of(chosen, ModelPresence::Damaged, &Download::default());
+        assert!(!damaged.present);
+        assert!(damaged.damaged);
+        assert_eq!(damaged.hint, Some(MODEL_DAMAGED_HINT));
+
+        let present = readiness_of(chosen, ModelPresence::Ready, &Download::default());
         assert!(present.present);
+        assert!(!present.damaged);
         assert_eq!(present.hint, None);
+    }
+
+    #[test]
+    fn presence_separates_missing_damaged_and_ready() {
+        let root = std::env::temp_dir().join("whisperlane-presence");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("model.bin");
+
+        assert_eq!(presence_at(&path, 3), ModelPresence::Missing);
+
+        std::fs::write(&path, b"abc").unwrap();
+        assert_eq!(presence_at(&path, 3), ModelPresence::Ready);
+
+        std::fs::write(&path, b"ab").unwrap();
+        assert_eq!(presence_at(&path, 3), ModelPresence::Damaged);
+
+        std::fs::write(&path, b"abcd").unwrap();
+        assert_eq!(presence_at(&path, 3), ModelPresence::Damaged);
+
+        std::fs::write(&path, b"").unwrap();
+        assert_eq!(presence_at(&path, 3), ModelPresence::Damaged);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_recorded_length_wins_over_a_regenerated_catalog_size() {
+        // The source can replace a model file without this build knowing.
+        // The length verified at download time is the honest answer.
+        let root = std::env::temp_dir().join("whisperlane-presence-recorded");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("model.bin");
+        std::fs::write(&path, b"abcde").unwrap();
+        record_size(&path, 5).unwrap();
+
+        assert_eq!(
+            presence_at(&path, 3),
+            ModelPresence::Ready,
+            "the catalog's old size must not condemn a verified file"
+        );
+
+        std::fs::write(&path, b"abc").unwrap();
+        assert_eq!(
+            presence_at(&path, 3),
+            ModelPresence::Damaged,
+            "a file that no longer matches its record is damaged"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -568,11 +757,11 @@ mod tests {
 
     #[test]
     fn a_zero_length_source_is_not_treated_as_a_pass() {
-        // Without a declared size the check must still refuse an empty
-        // file rather than accept it as "matching".
+        // A source that declares no size has not told us what a complete
+        // file is. Accepting zero would install an empty model.
         let path = std::env::temp_dir().join("whisperlane-size-empty.bin");
         std::fs::write(&path, b"").unwrap();
-        assert!(verify_size(&path, 0).is_ok());
+        assert!(verify_size(&path, 0).is_err());
         let _ = std::fs::remove_file(&path);
     }
 

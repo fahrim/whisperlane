@@ -1,8 +1,9 @@
 //! Shared transcription helpers: the engine input shape, quiet-input
-//! gain, backend detection, and the `whisper-server` multipart protocol.
-//! Proven shapes ported from the `opencode-listen-stt` plugin:
-//! 16 kHz mono takes, peak-target gain, DLL-presence backend walk,
-//! multipart `/inference` with an OpenAI-compatible fallback.
+//! gain, the backend vocabulary, and the `whisper-server` multipart
+//! protocol. Proven shapes ported from the `opencode-listen-stt` plugin:
+//! 16 kHz mono takes, peak-target gain, multipart `/inference` with an
+//! OpenAI-compatible fallback. Backend selection itself lives in the
+//! supervisor, because only a real launch can answer it.
 
 use std::path::Path;
 
@@ -34,18 +35,6 @@ impl Backend {
             Backend::Vulkan => "vulkan",
             Backend::Cpu => "cpu",
         }
-    }
-}
-
-/// Pure detection from runtime-dir file names.
-pub fn detect_backend(files: &[&str]) -> Backend {
-    let has = |suffix: &str| files.iter().any(|f| f.eq_ignore_ascii_case(suffix));
-    if has("ggml-cuda.dll") || has("cudart64_12.dll") || has("cudart.dll") {
-        Backend::Cuda
-    } else if has("ggml-vulkan.dll") {
-        Backend::Vulkan
-    } else {
-        Backend::Cpu
     }
 }
 
@@ -153,14 +142,6 @@ pub fn parse_transcript(json: &str) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn detects_cuda_then_vulkan_then_cpu() {
-        assert_eq!(detect_backend(&["ggml-cuda.dll", "ggml-vulkan.dll"]), Backend::Cuda);
-        assert_eq!(detect_backend(&["ggml-vulkan.dll", "ggml-cpu.dll"]), Backend::Vulkan);
-        assert_eq!(detect_backend(&["ggml-cpu.dll"]), Backend::Cpu);
-        assert_eq!(detect_backend(&[]), Backend::Cpu);
-    }
 
     #[test]
     fn same_rate_returns_identical_samples() {

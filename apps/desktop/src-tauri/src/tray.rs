@@ -111,6 +111,8 @@ pub fn can_start_in(phase: Option<Phase>) -> bool {
 fn resting_line(readiness: ModelReadiness) -> &'static str {
     if readiness.downloading {
         "Downloading the model…"
+    } else if readiness.damaged {
+        "Model file incomplete"
     } else if !readiness.present {
         "Model not downloaded"
     } else {
@@ -262,6 +264,7 @@ mod tests {
     fn ready() -> ModelReadiness {
         ModelReadiness {
             present: true,
+            damaged: false,
             downloading: false,
             hint: None,
         }
@@ -271,8 +274,19 @@ mod tests {
     fn missing() -> ModelReadiness {
         ModelReadiness {
             present: false,
+            damaged: false,
             downloading: false,
             hint: Some(crate::models::MODEL_MISSING_HINT),
+        }
+    }
+
+    /// A file is on disk, but it cannot be used.
+    fn damaged() -> ModelReadiness {
+        ModelReadiness {
+            present: false,
+            damaged: true,
+            downloading: false,
+            hint: Some(crate::models::MODEL_DAMAGED_HINT),
         }
     }
 
@@ -280,6 +294,7 @@ mod tests {
     fn fetching() -> ModelReadiness {
         ModelReadiness {
             present: false,
+            damaged: false,
             downloading: true,
             hint: Some(crate::models::MODEL_MISSING_HINT),
         }
@@ -333,6 +348,12 @@ mod tests {
             status_line(Some(Phase::Idle), missing()),
             "Model not downloaded"
         );
+
+        // A file that is present but incomplete is its own answer; the
+        // tray must not call it missing and send the user looking for a
+        // download that already happened.
+        assert_eq!(status_art_for(None, damaged()), status_art::ERROR);
+        assert_eq!(status_line(None, damaged()), "Model file incomplete");
 
         // A model arriving is the working state, the same one a take
         // being written down uses.

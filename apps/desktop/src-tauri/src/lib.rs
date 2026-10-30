@@ -147,10 +147,10 @@ pub fn run() {
             windows::spawn_click_through(app.handle());
 
             // The engine is installed with the app and run from the data
-            // directory, so it has to be put there before anything asks
-            // what backend it has. Failure is not fatal here: the status
-            // surface reports it, and a machine mid-update should still
-            // open its window.
+            // directory, so it has to be put there before the first take
+            // asks for it. Failure is not fatal here: the status surface
+            // reports it, and a machine mid-update should still open its
+            // window.
             if let Err(e) = stt::seed_runtime(app.handle()) {
                 eprintln!("transcription runtime not installed: {e}");
             }
@@ -161,9 +161,11 @@ pub fn run() {
             audio::spawn_worker(app.handle().clone());
             let handle = app.handle().clone();
             std::thread::spawn(move || hotkey::run_listener(handle));
-            // The backend is verified by launching once, never by
-            // trusting the runtime directory's contents.
-            stt::verify_backend(&app.handle().clone());
+            // No startup probe: the first real launch is the
+            // verification, and it is the launch that serves a take.
+            // Launching a second engine just to read its banner cost a
+            // full model load at every start and could still lie when a
+            // missing model made it skip the launch.
             let sweeper = app.handle().clone();
             std::thread::spawn(move || loop {
                 std::thread::sleep(std::time::Duration::from_secs(30));

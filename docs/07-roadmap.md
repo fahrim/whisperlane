@@ -61,8 +61,12 @@ Acceptance criteria:
   focused application.
 - The application reads as calm and finished: every state is legible from
   the pill, and advanced concerns are folded away.
-- A packaged Windows build installs, runs offline after setup, and
-  uninstalls cleanly.
+- A packaged Windows build installs on a machine that has never had the
+  Visual C++ redistributable, starts its engine on the first take, runs
+  offline after setup, and uninstalls cleanly.
+- A failed accelerated start falls back to the processor build once and
+  ends in a sentence that names the cause, not in one sentence shared by
+  every cause.
 - Nothing in the shipped product closes the phase-two agent door: the
   target abstraction is in place even though only one destination exists.
 
@@ -116,8 +120,18 @@ comparison meaningful: the flows are unchanged, only the time differs.
 The backend is established by launching the service and reading what it
 loaded, not by looking for an accelerated library in the runtime
 directory. A machine can carry the library and have no usable device, and
-the honest answer there is the CPU path. The status surface says which
-of the two answers it is showing.
+the honest answer there is the CPU path. The settings surface does not
+show the backend (item 17 remains open); the engine log records which
+path actually served.
+
+The packaged runtime is two single executables rather than a DLL set:
+a Vulkan `whisper-server.exe` and a processor `whisper-server-cpu.exe`,
+both with the static MSVC runtime, plus the `vcomp140.dll` that OpenMP
+imports. The package is staged under the application's data directory by
+version, and `runtime\current` names the active one through an atomic
+rename. The release gate checks the import tables and smoke-launches both
+executables, so the packaging criterion is verified against the bytes
+that ship rather than against the build tree.
 
 ## Phase 2 — Agent integration (not v1)
 

@@ -29,9 +29,10 @@ src-tauri/resources/models/
 
 # Transcription runtime. Fetched by tag and checksum at build time from
 # whisper-vulkan-win, so the bytes live in one pinned place rather than
-# twice in git.
-src-tauri/runtime/
-src-tauri/runtime.pin
+# twice in git. The paths are explicit: a bare `src-tauri/` pattern is
+# relative to this file and would never match the app's nested directory.
+apps/desktop/src-tauri/runtime/
+apps/desktop/src-tauri/runtime.pin
 
 # Logs
 *.log

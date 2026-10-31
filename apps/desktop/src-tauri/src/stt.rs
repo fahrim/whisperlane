@@ -278,10 +278,10 @@ fn seed_from(source: &Path, root: &Path, pin: &str) -> Result<Vec<String>, Strin
 /// the flat files an older install used.
 fn finish_install(root: &Path, pin: &str, previous: Option<&str>) -> Vec<String> {
     let mut keep = vec![pin];
-    if let Some(previous) = previous {
-        if previous != pin {
-            keep.push(previous);
-        }
+    if let Some(previous) = previous
+        && previous != pin
+    {
+        keep.push(previous);
     }
     let mut leftovers = prune_runtimes(root, &keep);
     leftovers.extend(remove_legacy_files(root));
@@ -338,10 +338,10 @@ fn remove_legacy_files(root: &Path) -> Vec<String> {
                 .extension()
                 .and_then(|extension| extension.to_str())
                 .is_some_and(|extension| matches!(extension, "exe" | "dll" | "pin"));
-        if removable {
-            if let Err(e) = fs::remove_file(&path) {
-                leftovers.push(format!("file {name}: {e}"));
-            }
+        if removable
+            && let Err(e) = fs::remove_file(&path)
+        {
+            leftovers.push(format!("file {name}: {e}"));
         }
     }
     leftovers
@@ -572,7 +572,7 @@ fn failure_sentence(exit: Option<u32>, log: &str, timed_out: bool) -> String {
     {
         return "the speech model could not be loaded — download it again".to_string();
     }
-    match exit.map(|code| code & 0xFFFF_FFFF) {
+    match exit {
         Some(0xC000_0135) => "the speech engine is missing a required DLL".to_string(),
         Some(0xC000_007B) | Some(0xC000_012F) => {
             "the speech engine files are damaged — reinstall".to_string()

@@ -21,6 +21,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Get-FileHash is a module cmdlet, and the CI runner disables module
+# auto-loading. The helper below is plain .NET and works under both
+# Windows PowerShell 5.1 and pwsh without that preference.
+. (Join-Path $PSScriptRoot 'sha256.ps1')
+
 # --- the pin --------------------------------------------------------------
 # Two names, because the publishing workflow uses two. The release is
 # tagged for the whisper.cpp build it compiles, while the archive inside
@@ -113,7 +118,7 @@ if (-not $published) {
     exit 1
 }
 
-$actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+$actual = Get-Sha256 $zip
 if ($actual -ne $published) {
     Say "checksum mismatch: got $actual, release says $published"
     exit 1

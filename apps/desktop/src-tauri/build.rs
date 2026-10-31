@@ -50,31 +50,40 @@ fn ensure_runtime() {
             script.display()
         );
     }
-    // Windows PowerShell 5.1 reads a BOM-less file as the system code
-    // page, so a UTF-8 dash inside a string can be read as a quote and
-    // break the parse. Keep the script ASCII and fail here with a clear
-    // reason instead of letting the parser point at the wrong brace.
-    let script_bytes = std::fs::read(&script)
-        .unwrap_or_else(|e| panic!("could not read {}: {e}", script.display()));
-    if let Some(offset) = script_bytes.iter().position(|byte| !byte.is_ascii()) {
-        let line = script_bytes[..offset]
-            .iter()
-            .filter(|&&byte| byte == b'\n')
-            .count()
-            + 1;
+    let helper = script.with_file_name("sha256.ps1");
+    if !helper.is_file() {
         panic!(
-            "{} has a non-ASCII byte on line {line}; the fetch script must \
-             stay ASCII because Windows PowerShell 5.1 misreads UTF-8 \
-             without a BOM",
-            script.display()
+            "could not find the SHA-256 helper at {}",
+            helper.display()
         );
     }
-    // The pin and the digest live in this script. Cargo has to rerun the
-    // build script when either moves, or an existing target directory
-    // keeps the runtime and the compiled-in pin from the old tag. The
-    // staged directory is tracked too, so a deleted engine is restored
-    // rather than silently shipped.
-    println!("cargo:rerun-if-changed={}", script.display());
+    // Windows PowerShell 5.1 reads a BOM-less file as the system code
+    // page, so a UTF-8 dash inside a string can be read as a quote and
+    // break the parse. Keep both scripts ASCII and fail here with a clear
+    // reason instead of letting the parser point at the wrong brace.
+    for path in [&script, &helper] {
+        let bytes = std::fs::read(path)
+            .unwrap_or_else(|e| panic!("could not read {}: {e}", path.display()));
+        if let Some(offset) = bytes.iter().position(|byte| !byte.is_ascii()) {
+            let line = bytes[..offset]
+                .iter()
+                .filter(|&&byte| byte == b'\n')
+                .count()
+                + 1;
+            panic!(
+                "{} has a non-ASCII byte on line {line}; the runtime scripts must \
+                 stay ASCII because Windows PowerShell 5.1 misreads UTF-8 \
+                 without a BOM",
+                path.display()
+            );
+        }
+        println!("cargo:rerun-if-changed={}", path.display());
+    }
+    // The pin and the digest live in the fetch script. Cargo has to
+    // rerun the build script when either moves, or an existing target
+    // directory keeps the runtime and the compiled-in pin from the old
+    // tag. The staged directory is tracked too, so a deleted engine is
+    // restored rather than silently shipped.
     println!(
         "cargo:rerun-if-changed={}",
         manifest.join("runtime").display()

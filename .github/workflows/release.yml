@@ -131,13 +131,17 @@ jobs:
           # One file for everyone who packages this release: winget and
           # scoop both refuse a download they cannot verify, and a user
           # checking a manual download deserves the same answer.
+          #
+          # Get-FileHash is a module cmdlet and the runner disables module
+          # auto-loading by default; use the same .NET helper as the build.
+          . ./scripts/sha256.ps1
           $bundles = 'apps/desktop/src-tauri/target/release/bundle'
           $files = @()
           $files += Get-ChildItem "$bundles/nsis/*.exe"
           $files += Get-ChildItem "$bundles/msi/*.msi"
           if ($files.Count -eq 0) { throw 'nothing to hash' }
           $lines = foreach ($f in $files) {
-            $hash = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower()
+            $hash = Get-Sha256 $f.FullName
             "$hash  $($f.Name)"
           }
           $path = Join-Path (Get-Location).Path "$bundles/SHA256SUMS.txt"

@@ -62,6 +62,11 @@ const TRANSCRIBE_TIMEOUT: u64 = 300;
 /// whose CRT heap could disagree with the executable's own.
 const VULKAN_SERVER: &str = "whisper-server.exe";
 const CPU_SERVER: &str = "whisper-server-cpu.exe";
+const VCOMP: &str = "vcomp140.dll";
+/// The only files a runtime package ships. An older install carries a
+/// DLL set beside the engine; copying that set into a version directory
+/// leaves a second `ggml` next to a static executable.
+const RUNTIME_FILES: [&str; 3] = [VULKAN_SERVER, CPU_SERVER, VCOMP];
 /// The runtime directory keeps versions side by side; this plain file
 /// names the one the app runs. It is replaced by rename, never by a
 /// symlink, so Windows permissions and developer mode are irrelevant.
@@ -284,6 +289,7 @@ fn finish_install(root: &Path, pin: &str, previous: Option<&str>) -> Vec<String>
         keep.push(previous);
     }
     let mut leftovers = prune_runtimes(root, &keep);
+    leftovers.extend(remove_stale_runtime_files(&root.join(pin)));
     leftovers.extend(remove_legacy_files(root));
     leftovers
 }
@@ -347,35 +353,58 @@ fn remove_legacy_files(root: &Path) -> Vec<String> {
     leftovers
 }
 
-/// Copies an installed engine into the directory the app runs it from.
+/// Copies the runtime package into the directory the app runs it from.
 ///
-/// Flat files only, because the engine resolves its libraries by
-/// relative path from its own directory. The current runtime is a pair
-/// of single executables, so there are no nested folders to carry.
+/// Only the files this package ships travel: the two single executables
+/// and the OpenMP runtime. An older install leaves `ggml*.dll`,
+/// `whisper.dll`, and `whisper-cli.exe` in the resource directory; a
+/// blind copy would put a second `ggml` beside the static engine, which
+/// is the crash this function exists to prevent.
 pub fn install_runtime_files(source: &Path, target: &Path) -> Result<(), String> {
-    if !has_server(source) {
-        return Err(format!(
-            "no transcription runtime was installed at {}",
-            source.display()
-        ));
+    for name in RUNTIME_FILES {
+        if !source.join(name).is_file() {
+            return Err(format!(
+                "no transcription runtime was installed at {}: missing {name}",
+                source.display()
+            ));
+        }
     }
     std::fs::create_dir_all(target)
         .map_err(|e| format!("could not create {}: {e}", target.display()))?;
-    let entries = std::fs::read_dir(source)
-        .map_err(|e| format!("could not read {}: {e}", source.display()))?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_file() {
-            let name = path.file_name().unwrap_or_default();
-            std::fs::copy(&path, target.join(name)).map_err(|e| {
-                format!(
-                    "could not install runtime file {}: {e}",
-                    name.to_string_lossy()
-                )
-            })?;
-        }
+    for name in RUNTIME_FILES {
+        std::fs::copy(source.join(name), target.join(name))
+            .map_err(|e| format!("could not install runtime file {name}: {e}"))?;
     }
     Ok(())
+}
+
+/// Removes the DLL set an older runtime left inside a version directory.
+/// The static engine must not find a second `ggml` beside itself, so a
+/// version that was seeded from a dirty resource directory is cleaned in
+/// place on the next start.
+fn remove_stale_runtime_files(dir: &Path) -> Vec<String> {
+    let mut leftovers = Vec::new();
+    let Ok(entries) = fs::read_dir(dir) else {
+        return leftovers;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let lower = name.to_ascii_lowercase();
+        let stale = name == ".pin"
+            || lower == "whisper.dll"
+            || lower == "whisper-cli.exe"
+            || (lower.starts_with("ggml") && lower.ends_with(".dll"));
+        if stale
+            && let Err(e) = fs::remove_file(&path)
+        {
+            leftovers.push(format!("file {name}: {e}"));
+        }
+    }
+    leftovers
 }
 
 /// The model file the chosen model resolves to on disk.
@@ -1058,6 +1087,7 @@ mod tests {
         std::fs::create_dir_all(dir).unwrap();
         std::fs::write(dir.join(VULKAN_SERVER), b"engine").unwrap();
         std::fs::write(dir.join(CPU_SERVER), b"processor").unwrap();
+        std::fs::write(dir.join(VCOMP), b"openmp").unwrap();
         std::fs::write(dir.join("ggml-vulkan.dll"), b"leftover").unwrap();
         std::fs::create_dir_all(dir.join("Release")).unwrap();
         std::fs::write(dir.join("Release").join("leftover.txt"), b"x").unwrap();
@@ -1084,12 +1114,43 @@ mod tests {
         assert_eq!(read_current(&data).as_deref(), Some("pin-a"));
         assert!(data.join("pin-a").join(VULKAN_SERVER).is_file());
         assert!(data.join("pin-a").join(CPU_SERVER).is_file());
+        assert!(data.join("pin-a").join(VCOMP).is_file());
+        // An old install's DLL set must not travel; a second ggml beside
+        // the static engine is the 0xC0000409 crash.
+        assert!(
+            !data.join("pin-a").join("ggml-vulkan.dll").exists(),
+            "stale DLL copied through"
+        );
         // Flat, because the engine resolves its libraries by relative
         // path from its own directory.
         assert!(
             !data.join("pin-a").join("Release").exists(),
             "nested folder copied through"
         );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn an_existing_version_drops_the_old_dll_set() {
+        let root = temp_root("stale-version");
+        let source = root.join("install");
+        let data = root.join("data");
+        fake_install(&source);
+        seed_from(&source, &data, "pin-a").unwrap();
+
+        // The state 0.8.3 could leave behind: a version directory seeded
+        // from a resource directory that still carried the old DLL set.
+        let version = data.join("pin-a");
+        std::fs::write(version.join("ggml-vulkan.dll"), b"old").unwrap();
+        std::fs::write(version.join("whisper.dll"), b"old").unwrap();
+        std::fs::write(version.join(".pin"), b"old").unwrap();
+
+        seed_from(&source, &data, "pin-a").unwrap();
+
+        assert!(!version.join("ggml-vulkan.dll").exists());
+        assert!(!version.join("whisper.dll").exists());
+        assert!(!version.join(".pin").exists());
+        assert!(version.join(VULKAN_SERVER).is_file());
         let _ = std::fs::remove_dir_all(&root);
     }
 

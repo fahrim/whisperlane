@@ -19,7 +19,10 @@
 `idle`, `listening-active`, `processing`, `muted`, `error` — transparent PNGs plus dark-tile previews.
 
 ## Social (`04_Social_Media`)
-Instagram, X, LinkedIn, YouTube, Open Graph, profile-avatar and email-signature assets. Dimensions are encoded in the filenames. `hero-main-generated.webp` is the wide landing hero used at the top of the readme.
+Instagram, X, LinkedIn, YouTube, Open Graph, profile-avatar and email-signature assets. Dimensions are encoded in the filenames. `hero-main-generated.webp` is the earlier landing hero, kept for reference.
+
+## Posters (`06_Posters`)
+Wide launch artwork. `Neon_Whisperlane_Audio_Control_Interface.png` is the landing hero used at the top of the readme; `General_application_view.png` shows the idle and listening pills with the Last Take card; the rest are speech-to-text posters and email signatures.
 
 ## Guidelines (`05_Guidelines`)
 `brand-overview.png`, `color-palette.png`, `whisperline-brand-identity-presets_design-system.png`

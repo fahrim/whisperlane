@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="brand-kit/04_Social_Media/hero-main-generated.webp" alt="The whisperlane settings window, a finished take and the listening pill, floating over a blue wave" width="900">
+  <img src="brand-kit/06_Posters/Neon_Whisperlane_Audio_Control_Interface.png" alt="whisperlane hero: the tagline “Your voice, in your flow”, the settings window, a finished take and the idle and listening pills, floating over a blue wave" width="900">
 </p>
 
 whisperlane is a dictation tool for people who write in a terminal. Press the
@@ -159,6 +159,14 @@ then read the numbered set.
 ## The pill
 
 Every state is legible from one small indicator.
+
+<p align="center">
+  <img src="brand-kit/06_Posters/General_application_view.png" alt="the idle pill, the listening pill with its timer, and the take card holding the transcribed sentence" width="440" loading="lazy">
+</p>
+
+<p align="center">
+  <sub>Idle · Listening · The take it produced</sub>
+</p>
 
 <p align="center">
   <img src="brand-kit/03_Status_States/whisperlane-status-idle-tile.png" alt="Idle" width="96" loading="lazy">

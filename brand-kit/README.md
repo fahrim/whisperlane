@@ -38,11 +38,17 @@ Hazır görsel ölçüleri:
 - LinkedIn kapak: 1128 × 191
 - YouTube kanal kapağı: 2560 × 1440
 - Open Graph / bağlantı paylaşım görseli: 1200 × 630
-- Landing hero (README/websitesi başlığı): `04_Social_Media/hero-main-generated.webp`
+- Landing hero (README/websitesi başlığı): `06_Posters/Neon_Whisperlane_Audio_Control_Interface.png`
 - Profil görselleri: 1080, 800 ve 300 px
 - E-posta imzası: açık/koyu zemin için şeffaf PNG
 
 Sosyal medya JPG dosyalarında marka işareti ve wordmark dışında slogan eklenmemiştir.
+
+### `06_Posters`
+Geniş formatlı posterler:
+- `Neon_Whisperlane_Audio_Control_Interface.png`: README'nin üstündeki hero görseli.
+- `General_application_view.png`: idle ve listening pill'i ile birlikte Last Take kartı.
+- İngilizce ve Türkçe "Convert Speech-to-Text" posterleri, e-posta imzaları.
 
 ## Renk paleti
 

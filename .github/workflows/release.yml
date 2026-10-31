@@ -12,8 +12,8 @@
 #
 # The release is created as a draft. It is verified by hand — the build
 # is run, the installer is installed, a take is spoken — before anyone
-# is told it exists. Signing is not part of this yet; an unsigned build
-# says plainly that it is unsigned.
+# is told it exists. The updater artifact is signed with the repository
+# secret; the installer itself is not Authenticode-signed.
 
 name: Release
 
@@ -74,6 +74,17 @@ jobs:
             throw "tag $tag does not match the manifest version $($versions[0])"
           }
           Write-Host "building $tag"
+
+      - name: Resolve the release notes
+        id: notes
+        shell: pwsh
+        run: |
+          $version = (Get-Content apps/desktop/package.json -Raw | ConvertFrom-Json).version
+          $path = "docs/releases/$version.md"
+          if (-not (Test-Path $path)) {
+            throw "missing release notes for $version at $path"
+          }
+          "path=$path" >> $env:GITHUB_OUTPUT
 
       - name: Lint
         working-directory: apps/desktop/src-tauri
@@ -173,12 +184,11 @@ jobs:
 
           $version = (Get-Content apps/desktop/package.json -Raw | ConvertFrom-Json).version
           $tag = ('{0}' -f (git tag --points-at HEAD | Select-Object -First 1))
+          $notes = Get-Content '${{ steps.notes.outputs.path }}' -Raw
 
-          # Release notes stay empty until a changelog exists that is drawn
-          # from milestone acceptance rather than reconstructed afterwards.
           $manifest = [ordered]@{
             version = $version
-            notes = ''
+            notes = $notes
             pub_date = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
             platforms = [ordered]@{
               'windows-x86_64' = [ordered]@{
@@ -219,7 +229,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          generate_release_notes: true
+          body_path: ${{ steps.notes.outputs.path }}
           fail_on_unmatched_files: true
           files: |
             apps/desktop/src-tauri/target/release/bundle/nsis/*.exe

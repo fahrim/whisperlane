@@ -39,12 +39,20 @@ match silently dropped `ADVAPI32.dll` and `VCOMP140.DLL`. A model download
 that declares no length is checked against the catalog instead of the bytes
 it happened to receive.
 
-v0.8.3 is published:
-https://github.com/fahrim/whisperlane/releases/tag/v0.8.3
-The release note lives in `docs/releases/0.8.3.md` and feeds both the GitHub
-release and the updater manifest. The NSIS installer and MSI match
-`SHA256SUMS.txt`, and the updater artifact is signed. Three hardening items
-are tracked as issues: #3 job object, #4 runtime log, #2 model unload.
+v0.8.4 is published:
+https://github.com/fahrim/whisperlane/releases/tag/v0.8.4
+The hotfix stops the 0.8.3 upgrade from carrying the old DLL set into the
+versioned runtime. The release note lives in `docs/releases/0.8.4.md` and
+feeds both the GitHub release and the updater manifest. The NSIS installer
+and MSI match `SHA256SUMS.txt`, and the updater artifact is signed. Three
+hardening items are tracked as issues: #3 job object, #4 runtime log,
+#2 model unload.
+
+The Scoop bucket manifest was updated to 0.8.4. A `scoop.yml` workflow now
+updates `fahrim/scoop-whisperlane` on every published release once the
+one-time `SCOOP_BUCKET_TOKEN` secret is configured; until then the run
+annotates the missing token and leaves the manifest alone. The 0.8.4 tag
+predates the workflow, so its bucket update was made by hand.
 
 Still open: clean-VM acceptance against the published installer (no Visual C++
 redistributable, first take, offline use, uninstall). The local unsigned
@@ -264,6 +272,9 @@ Closed during M2:
 - v0.8.3 released with the self-contained Vulkan and processor runtimes,
   versioned upgrades, engine shutdown on quit, and the release note in
   `docs/releases/0.8.3.md`.
+- v0.8.4 hotfix released: runtime staging copies only the three files the
+  package ships, existing version directories are cleaned of the old DLL
+  set, and the NSIS post-install hook removes it from the install tree.
 
 ## Next (in order)
 

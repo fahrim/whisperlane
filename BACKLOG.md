@@ -39,10 +39,17 @@ match silently dropped `ADVAPI32.dll` and `VCOMP140.DLL`. A model download
 that declares no length is checked against the catalog instead of the bytes
 it happened to receive.
 
-Still open: clean-VM acceptance against that installer (no Visual C++
-redistributable, first take, offline use, uninstall). The local installer
-was built with updater artifacts disabled because no signing key is
-available; the signed installer comes from the release pipeline.
+v0.8.3 is published:
+https://github.com/fahrim/whisperlane/releases/tag/v0.8.3
+The release note lives in `docs/releases/0.8.3.md` and feeds both the GitHub
+release and the updater manifest. The NSIS installer and MSI match
+`SHA256SUMS.txt`, and the updater artifact is signed. Three hardening items
+are tracked as issues: #3 job object, #4 runtime log, #2 model unload.
+
+Still open: clean-VM acceptance against the published installer (no Visual C++
+redistributable, first take, offline use, uninstall). The local unsigned
+installer remains for offline checks; the published release artifacts are the
+ones to distribute.
 
 ## Done
 
@@ -254,6 +261,9 @@ Closed during M2:
   digest, so the fetch fast path cannot accept bytes from an archive other
   than the pinned one, and the fetch script is held to ASCII because
   Windows PowerShell 5.1 misreads BOM-less UTF-8.
+- v0.8.3 released with the self-contained Vulkan and processor runtimes,
+  versioned upgrades, engine shutdown on quit, and the release note in
+  `docs/releases/0.8.3.md`.
 
 ## Next (in order)
 

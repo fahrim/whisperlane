@@ -23,21 +23,27 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Check the bucket token
+        id: token
         shell: pwsh
         env:
           TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
         run: |
           if (-not $env:TOKEN) {
-            throw 'SCOOP_BUCKET_TOKEN is not configured. Add a fine-grained PAT with Contents: Read and write on fahrim/scoop-whisperlane.'
+            Write-Host '::warning::SCOOP_BUCKET_TOKEN is not configured; the Scoop bucket was not updated. Add a fine-grained PAT with Contents: Read and write on fahrim/scoop-whisperlane.'
+            "configured=false" >> $env:GITHUB_OUTPUT
+          } else {
+            "configured=true" >> $env:GITHUB_OUTPUT
           }
 
       - name: Check out the bucket
+        if: steps.token.outputs.configured == 'true'
         uses: actions/checkout@v4
         with:
           repository: fahrim/scoop-whisperlane
           token: ${{ secrets.SCOOP_BUCKET_TOKEN }}
 
       - name: Update the manifest from the release
+        if: steps.token.outputs.configured == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

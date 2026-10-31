@@ -1,0 +1,81 @@
+name: Scoop bucket
+
+# The release workflow builds and signs a draft. The installer URL and
+# hash only become real when that draft is published, so this runs on the
+# published event rather than at the end of the build. workflow_dispatch
+# exists for backfilling a release after the token is first configured.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish to the bucket'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  update:
+    if: github.event_name == 'workflow_dispatch' || github.event.release.prerelease == false
+    runs-on: windows-latest
+    steps:
+      - name: Check the bucket token
+        shell: pwsh
+        env:
+          TOKEN: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+        run: |
+          if (-not $env:TOKEN) {
+            throw 'SCOOP_BUCKET_TOKEN is not configured. Add a fine-grained PAT with Contents: Read and write on fahrim/scoop-whisperlane.'
+          }
+
+      - name: Check out the bucket
+        uses: actions/checkout@v4
+        with:
+          repository: fahrim/scoop-whisperlane
+          token: ${{ secrets.SCOOP_BUCKET_TOKEN }}
+
+      - name: Update the manifest from the release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          $version = $env:TAG.TrimStart('v')
+          $asset = "Whisperlane_${version}_x64-setup.exe"
+          $dir = Join-Path $env:RUNNER_TEMP 'release'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          gh release download $env:TAG --repo $env:REPO --pattern SHA256SUMS.txt --dir $dir
+
+          $sums = Get-Content (Join-Path $dir 'SHA256SUMS.txt')
+          $line = $sums | Where-Object { $_ -match "\s$([regex]::Escape($asset))$" } | Select-Object -First 1
+          if (-not $line) { throw "no checksum for $asset in $env:TAG" }
+          $hash = ($line -split '\s+')[0].ToLowerInvariant()
+          if ($hash -notmatch '^[0-9a-f]{64}$') { throw "not a SHA-256 line: $line" }
+
+          $manifestPath = 'bucket/whisperlane.json'
+          $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+          $manifest.version = $version
+          $manifest.architecture.'64bit'.url = "https://github.com/$env:REPO/releases/download/$env:TAG/$asset"
+          $manifest.architecture.'64bit'.hash = $hash
+
+          $json = $manifest | ConvertTo-Json -Depth 10
+          [System.IO.File]::WriteAllText(
+            (Join-Path (Get-Location).Path $manifestPath),
+            $json,
+            (New-Object System.Text.UTF8Encoding $false)
+          )
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add $manifestPath
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "manifest already at $version"
+            exit 0
+          }
+          git commit -m "whisperlane: update to $version"
+          git push

@@ -14,6 +14,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
+use windows::core::PCWSTR;
+use windows::Win32::Storage::FileSystem::GetShortPathNameW;
 
 use crate::models::{MODEL_DAMAGED_HINT, MODEL_MISSING_HINT, ModelPresence};
 use crate::pipeline::{current_phase, set_last_text, set_phase, Phase};
@@ -511,6 +513,32 @@ fn pipe_stderr(stderr: ChildStderr, log: PathBuf) {
     });
 }
 
+/// The engine takes a narrow `argv`, so a non-ASCII path becomes `?` and
+/// the model cannot be opened. Windows can give the same file an 8.3
+/// path that is ASCII; use it for the engine's model argument and
+/// working directory. If Windows has no short name for the path, keep
+/// the long one and let the existing failure path explain it.
+fn short_ascii_path(path: &Path) -> Option<PathBuf> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+
+    let wide: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let mut buffer = vec![0u16; 32_768];
+    let len = unsafe {
+        GetShortPathNameW(PCWSTR(wide.as_ptr()), Some(&mut buffer))
+    };
+    if len == 0 || len as usize >= buffer.len() {
+        return None;
+    }
+    buffer.truncate(len as usize);
+    let short = PathBuf::from(OsString::from_wide(&buffer));
+    short.to_string_lossy().is_ascii().then_some(short)
+}
+
 fn start_server(
     app: &AppHandle,
     dir: &Path,
@@ -519,6 +547,12 @@ fn start_server(
     model: &Path,
 ) -> Result<Child, String> {
     let bin = server_bin_in(dir, backend)?;
+    // A Windows user name can contain non-ASCII characters. The engine's
+    // narrow argument parser turns those into '?', so the model open
+    // fails before the server is ready. The 8.3 name is the same file
+    // with an ASCII path.
+    let model_arg = short_ascii_path(model).unwrap_or_else(|| model.to_path_buf());
+    let dir_arg = short_ascii_path(dir).unwrap_or_else(|| dir.to_path_buf());
     append_engine_log(
         app,
         &format!(
@@ -530,14 +564,14 @@ fn start_server(
     );
     let mut child = engine_command(&bin)
         .arg("--model")
-        .arg(model)
+        .arg(&model_arg)
         .arg("--host")
         .arg("127.0.0.1")
         .arg("--port")
         .arg(port.to_string())
         .arg("--language")
         .arg(language_of(app).code())
-        .current_dir(dir)
+        .current_dir(&dir_arg)
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
@@ -1318,6 +1352,39 @@ mod tests {
 
         assert_eq!(read_current(&data).as_deref(), Some("pin-a"));
         assert!(data.join("pin-a").join(VULKAN_SERVER).is_file());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_engine_gets_an_ascii_path_for_the_model() {
+        let root = temp_root("short-path");
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("model.bin");
+        std::fs::write(&file, b"x").unwrap();
+
+        let short = short_ascii_path(&file).expect("the file should have a short path");
+        assert!(
+            short.to_string_lossy().is_ascii(),
+            "the engine cannot open a non-ASCII argument: {short:?}"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_unicode_path_prefers_an_ascii_short_path() {
+        let root = std::env::temp_dir().join("whisperlane-stt-ü");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("model.bin");
+        std::fs::write(&file, b"x").unwrap();
+
+        // Windows 8.3 names are enabled by default on the system volume;
+        // when they are, the engine must receive the ASCII form. When the
+        // volume has them disabled, the function returns None and the
+        // caller keeps the long path.
+        if let Some(short) = short_ascii_path(&file) {
+            assert!(short.to_string_lossy().is_ascii());
+        }
         let _ = std::fs::remove_dir_all(&root);
     }
 

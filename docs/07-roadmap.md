@@ -1,11 +1,11 @@
-# Roadmap — Milestones M0 to M3
+# Roadmap - Milestones M0 to M3 and after
 
 Milestones build the product from an ugly end-to-end skeleton to a polished,
 wider release. Each milestone has acceptance criteria: observable outcomes
 that must hold before moving on. Polish never precedes a working take.
 Milestones M0 through M2 are Windows-only and form the MVP; M3 is
-post-MVP platform expansion, and non-OpenCode agents are phase two beyond
-that.
+post-MVP platform expansion; the speech-model-family track follows the MVP
+as its own post-MVP line; and non-OpenCode agents are phase two beyond that.
 
 ## M0 — Skeleton that talks
 
@@ -155,6 +155,20 @@ Acceptance criteria:
 - Public release artifacts are published with licensing intact and a clear
   statement of what v1 does and does not do.
 
+## Speech model families (post-MVP, its own track)
+
+Goal: offer a multilingual speech-model family beside the Whisper models
+without changing the pipeline.
+
+Scope: the second companion engine and the Qwen3-ASR 0.6B choice, planned in
+`plan/qwen3-asr-option.md` and decided in
+`adr/011-second-engine-and-qwen3-asr.md`. It lands after M2; the MVP boundary
+stands. This track is independent of M3 and may run before, beside, or after
+the platform work.
+
+Acceptance criteria live in the plan's slices; this track is done when the
+plan's release slice passes.
+
 ## Reuse across milestones
 
 Much of M0 ports proven behavior from the existing dictation plugin:
@@ -171,4 +185,5 @@ skip their acceptance criteria.
 - Behavior: `04-experience.md`, `06-agent-integration.md`
 - Structure: `05-architecture.md`
 - Gates: `08-decisions.md` — spikes that must resolve before building on them
+- The second engine family plan: `plan/qwen3-asr-option.md`, `adr/011-second-engine-and-qwen3-asr.md`
 - Shipping: `09-repository.md` — how milestones become releases

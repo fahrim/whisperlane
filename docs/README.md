@@ -14,6 +14,13 @@ Start with the source plan, then read documents 01 through 09 in order.
 - `plan/pre-start-intro-plan.md` — The shared picture of what we are building
   and why. Pre-start, expected to change once real use pushes back.
 
+## Plans
+
+- `plan/qwen3-asr-option.md` - The slices that add a second speech engine and
+  the Qwen3-ASR 0.6B choice (ADR-011) after the MVP, with acceptance criteria
+  and verification.
+- `plan/handoff-first-session.md` - The handoff that seeded the first session.
+
 ## Reading order
 
 1. `01-vision.md` — Why this project exists and what success looks like for v1.
@@ -36,7 +43,7 @@ Start with the source plan, then read documents 01 through 09 in order.
 | 04 Experience | Describes UX principles, flows, screens, states, and the premium feel. | Product, Audience | Architecture, Agent Integration |
 | 05 Architecture | Explains components, data flow, technology choices, and platform strategy. | Product, Experience | Agent Integration, Roadmap, Repository |
 | 06 Agent Integration | Defines the phase-two agent path, the two modes, and the target abstraction. | Experience, Architecture | Roadmap, Decisions |
-| 07 Roadmap | Sequences milestones M0 through M3 with acceptance criteria, holding agents for phase two. | Product, Architecture, Agent Integration | Decisions, Repository |
+| 07 Roadmap | Sequences milestones M0 through M3 with acceptance criteria, adds the post-MVP speech-model-family track, and holds agents for phase two. | Product, Architecture, Agent Integration | Decisions, Repository |
 | 08 Decisions | Lists open questions with options, trade-offs, recommendations, and ADR status. | All of the above | Architecture, Roadmap |
 | 09 Repository | Defines repo layout, licensing, contribution rules, and test and release strategy. | Architecture, Roadmap | All contributors |
 

@@ -28,6 +28,12 @@ detection to fail. Manifests and package metadata record the dual-license
 identifier in their license field; documentation never duplicates the legal
 texts.
 
+Third-party components and downloaded models keep their own notices in a
+notices file at the repository root: the speech runtimes, any model weights
+offered for download under their own licence, and the conversion notices that
+travel with them. The project's canonical texts are never edited to carry
+these notices.
+
 ## Contribution guide
 
 - Documentation first. The source plan remains the single source of truth;
@@ -128,3 +134,4 @@ one-time break with every install that shipped before the change.
 - Scope and sequence: `03-product.md`, `07-roadmap.md`
 - Structure: `05-architecture.md`
 - Decision process: `08-decisions.md`, `adr/`
+- Third-party notices and the second engine family: `adr/011-second-engine-and-qwen3-asr.md`

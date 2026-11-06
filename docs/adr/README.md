@@ -24,6 +24,7 @@ This folder holds approved decisions. Proposals live in
 - `008-pill-control.md` — the pill's control and the chord's tap threshold (approved from `08-decisions.md` item 10); amends `004-cancel-gesture.md` and extends `007-chord-from-terminal-state.md`.
 - `009-liquid-glass-tokens.md` - the locked visual token set and the pill's material (approved from `08-decisions.md` item 8); amended in polish.
 - `010-runtime-packaging-and-diagnostics.md` - static two-backend engine packaging, versioned runtime installs, startup fallback, and honest failure sentences (extends `08-decisions.md` item 11 and records item 18).
+- `011-second-engine-and-qwen3-asr.md` - a second companion engine built from transcribe.cpp, per-family runtime pins, per-model source pins, and the Qwen3-ASR 0.6B option (records `08-decisions.md` item 19; extends `010`'s versioned runtime layout; lands after the MVP).
 
 ## Related
 

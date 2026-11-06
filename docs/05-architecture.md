@@ -56,8 +56,8 @@ change to the pipeline, the indicator, or the cancellation rules.
 ## Transcription runtime
 
 The speech engine runs as a supervised companion service, not inside the
-application process (ADR-002). It ships as two single executables built from
-unmodified upstream sources:
+application process (ADR-002). The present family ships as two single
+executables built from unmodified upstream sources:
 
 - `whisper-server.exe` carries the Vulkan backend for GPUs with a Vulkan
   driver.
@@ -70,10 +70,10 @@ processor path; it imports only `KERNEL32.dll`, so it brings no CRT of its own.
 The engine build verifies every import against an allowlist of Windows
 components, API sets, the Vulkan loader for the accelerated build, and the
 files the package ships; a redistributable CRT under any name, or a separate
-`whisper`/`ggml` DLL, fails the build rather than the user's first take. Both
-executables are smoke-launched before publishing.
+`whisper`/`ggml` DLL, fails the build rather than the user's first take. Each
+pair is smoke-launched before publishing.
 
-The installer bundles that runtime; the application does not run it from the
+The installer bundles that pair; the application does not run it from the
 resource directory. On first use it stages the files under
 `%APPDATA%\com.whisperlane.desktop\runtime\<pin>\` and only then renames a
 plain text `current` file into place. A per-machine install under `Program
@@ -98,7 +98,24 @@ Model presence is checked by exact byte length. A verified download records
 its length in a `.size` sidecar beside the model, and a file that no longer
 matches is reported as incomplete rather than handed to the engine. A model
 placed by hand has no sidecar and falls back to the catalog's published
-length.
+length. Model families that come from other repositories carry their own
+source pin — repository, revision, length, and digest — because a single
+source no longer describes every offered file; the digest is checked when a
+download is verified, while the status poll keeps reading only the length.
+
+A second engine family is planned after the MVP (ADR-011), built from
+transcribe.cpp sources on the same pinned, static, smoke-launched terms. It
+carries the multilingual model family the Whisper engine cannot load,
+Qwen3-ASR 0.6B being the first offered, and the supervisor chooses the family
+from the selected model. Each family has its own runtime pointer — the
+existing whisper pointer unchanged and the new family's pointer beside it —
+so an upgrade of one cannot disturb the other, while the lifecycle stays
+shared: lazy launch, warm retention, idle unload that never fires mid-take,
+crash recovery, and one processor attempt after a failed accelerated launch.
+The new engine states its backend on its own startup line, because its
+library prints no device banner; verification accepts evidence from either
+family and records what a launch actually served in the engine log, never on
+a user surface.
 
 ## Technology choices and why
 
@@ -109,7 +126,7 @@ length.
   dependency management, scripts, and testing workflow.
 - A component interface framework with static typing serves the visible
   surfaces, which are few but must feel finished.
-- A mature local speech engine serves transcription, with hardware paths
+- Mature local speech engines serve transcription, with hardware paths
   chosen per machine: vendor acceleration where present and CPU as the
   floor. On Windows this includes a Vulkan path that covers AMD and Intel
   hardware — the technical wedge.
@@ -205,7 +222,8 @@ field exposure. What transfers, in priority order:
 
 What explicitly not to copy is scope: history, dictionary, translation,
 and multi-engine choice stay out of v1. The reference informs sturdiness,
-not breadth.
+not breadth. A second engine family is planned after the MVP (ADR-011), so
+the boundary stands while the architecture is not reopened later.
 
 ## Related
 
@@ -215,4 +233,5 @@ not breadth.
 - Delivery: `07-roadmap.md` — how the structure is built up across milestones
 - Open streaming choice and the runtime decision: `08-decisions.md`
 - Runtime packaging and startup diagnostics: `adr/010-runtime-packaging-and-diagnostics.md`
+- The second engine family and the Qwen3-ASR choice: `adr/011-second-engine-and-qwen3-asr.md`, `plan/qwen3-asr-option.md`
 - Layout and licensing: `09-repository.md`

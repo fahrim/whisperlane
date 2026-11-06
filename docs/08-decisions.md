@@ -507,10 +507,12 @@ Changing the pin is a deliberate act rather than a version bump: the
 engine is the one component where a surprise is a wrong answer rather
 than a crash.
 
-Status: approved — recorded here rather than in an ADR because it
+Status: approved - recorded here rather than in an ADR because it
 constrains the build, not the product's behaviour. Extended by ADR-010:
 the runtime's internal layout, static packaging, and startup diagnostics
-are product behaviour and live in that record.
+are product behaviour and live in that record. Extended by ADR-011 (item
+19): a second engine family joins after the MVP, under the same pin and
+packaging rules.
 
 ## 12. How the name is written, and where
 
@@ -883,10 +885,139 @@ A successful download records the verified length in a `.size` sidecar; a
 file that no longer matches is reported as incomplete rather than handed to
 the engine, and a redownload repairs it.
 
-Status: approved — see `adr/010-runtime-packaging-and-diagnostics.md`. This
+Status: approved - see `adr/010-runtime-packaging-and-diagnostics.md`. This
 extends item 11, which settled where the runtime comes from; this item
 settles what the package contains, how it is installed, and what a failed
-start says.
+start says. Extended by ADR-011 (item 19): the versioned runtime layout
+gains one pointer per engine family.
+
+## 19. Whether a second speech engine joins, and which model it brings
+
+Context: the maintainer asked for Qwen3-ASR 0.6B beside the Whisper models,
+not instead of them. The model is a different architecture: the current
+engine (whisper.cpp) cannot load it, and the file the reference project pins
+is built for transcribe.cpp, a sibling library that carries sixteen model
+families. So the choice is not only a catalog row; it is also an engine.
+
+This question meets the product's own boundary: the architecture document
+keeps multi-engine choice out of v1. The answer therefore also settles when
+the option lands — after the MVP — so the boundary stands and the plan does
+not reopen the architecture later.
+
+A spike answered the questions an option needs. A minimal companion server
+built from the reference project's pinned transcribe.cpp revision, behind the
+existing request contract, downloaded and verified the pinned Qwen file
+(850,423,456 bytes, published SHA-256), answered the readiness ping and the
+multipart inference request on both backends, read a language hint and
+detected the language when none was given, and transcribed warm clips of four
+to eleven seconds in about 0.12 to 0.20 seconds accelerated and about four to
+six times faster than real time on the processor. The accelerated process held
+about 114 MB after load; the processor one about 278 MB. The first inference
+after a launch paid a one-time pipeline cost of about 3.8 seconds, against 2.4
+seconds for the shipped engine. transcribe.cpp prints no device banner, so the
+supervisor's backend verification needs the engine to state its own. Both
+engines invent closing phrases on audio that is only silence or noise; capture
+already ends a take that never rises above its silence floor, so the engine-
+level test deliberately bypassed capture to measure what the models do alone.
+The spike measured no accuracy; the reference project's per-language research
+puts the shipped Whisper model ahead on Turkish and most non-Chinese
+languages, and Qwen ahead mainly on Chinese, Cantonese and a few others.
+
+Options: bind transcribe.cpp into the application process, as the reference
+project does; teach the whisper engine the architecture (impossible); add a
+second companion engine behind the same contract and lifecycle rules;
+migrate every model to transcribe.cpp now; keep the v1 boundary and ship no
+second engine; or wait for the architecture to appear in upstream whisper.cpp
+releases (it never will). For the engine's delivery there are two more: fetch
+the pair only when the model is first chosen, or carry both families in the
+installer.
+
+Trade-offs: the in-process binding is closest integration but puts native
+inference inside the product process, the shape ADR-002 rejected on evidence,
+and it puts a C++ and Vulkan toolchain into every product build, which is why
+ADR-010 fetches a prebuilt pinned runtime at all. Adding a second companion
+engine keeps both records intact and reuses the supervisor, warm retention,
+idle unload, crash recovery, presence reporting, and versioned runtime install;
+the cost is a second pin, a second smoke launch, a second import allowlist, and
+about 16 MB more runtime before compression. Migrating everything now would
+invalidate the shipped model's quality and packaging the product is
+measured on; it stays open. Keeping the boundary costs nothing but declines
+what the maintainer asked for, and the spike shows the real cost is a runtime
+pin, not a pipeline. Fetching the engine on first model choice would keep
+install size smaller but add a network transfer at the very moment the product
+wants quiet; carrying it costs about 16 MB once.
+
+Decision: the second engine lands after the MVP and ships as two single
+executables of its own from the pinned transcribe.cpp sources, with the static
+runtime, a published tag, a reviewed digest, and a smoke launch. The pair is
+built and published by a companion build repository of its own in the same
+shape as the existing engine repository, and the new repository is recorded
+in the repository document when it is created. The import allowlist admits
+Windows components and the Vulkan loader on the accelerated build; the
+spike's build linked no OpenMP runtime and ships no companion DLL. ADR-010's
+versioned runtime layout extends to one pointer per family, the whisper
+pointer unchanged, each family pruned separately, so one family's upgrade
+cannot disturb the other. The supervisor chooses the family from the selected
+model and keeps every existing lifecycle rule. The new engine states its
+backend on its startup line; verification accepts evidence from either family
+and records the served backend in the engine log, never on a user surface.
+The catalog gains per-model source pins (repository, revision, exact length,
+digest), with Qwen3-ASR 0.6B as a multilingual choice; presence stays a
+length question, and a verified download also checks its digest, so wrong
+bytes read as incomplete. The chooser entry names the model, says it is
+multilingual, and adds the download size the fetch already reports; the model
+row keeps its one-line shape, and nothing claims better accuracy than the
+default. The language chooser keeps the product's existing list with automatic
+detection and gains no per-model filtering. The product sends no initial
+prompt today, so the new family's prompt support stays unused. The weights are
+downloaded, never bundled, and their licence and conversion notice join the
+project's third-party notices.
+
+Status: approved - see `adr/011-second-engine-and-qwen3-asr.md`. Implementation
+slices live in `plan/qwen3-asr-option.md`; the work is post-MVP.
+
+## 20. Mid-clip noise and a speech detector
+
+Context: both engines return closing phrases on audio that is only silence or
+noise. A take that stays under the capture's silence floor already ends in a
+clear state before an engine is asked, but a take with speech interrupted by
+noise can still reach an engine with noise in it. The reference project
+downloads a speech detector with every model for this.
+
+Options: do nothing until a report proves it matters; a level-based filter at
+capture, the present approach; or a speech detector model that runs beside
+transcription, with its own download and its own runtime cost.
+
+Trade-offs: the present filter costs nothing and catches a wholly silent
+take, but cannot judge noise between words; a detector catches more at the
+price of a second model download, a second runtime, and a new failure surface.
+The spike observed the engines hallucinate only on audio that is silence or
+noise throughout, which the present filter already ends before transcription,
+so no report yet justifies the detector.
+
+Recommendation: do nothing for now, and let a real report choose between the
+filter and the detector. This is recorded so the question is not buried in an
+ADR's out-of-scope list.
+
+Status: open.
+
+## 21. One engine for every model family
+
+Context: transcribe.cpp can carry the Whisper models too, so one engine could
+replace the present pair and end the two-pin maintenance.
+
+Options: keep two families as ADR-011 decides; migrate the Whisper models to
+transcribe.cpp and retire the present engine; or decide after the Qwen option
+has run in real use.
+
+Trade-offs: one engine means one pin and one allowlist, but it invalidates the
+quality and packaging the current product is measured on, and it turns a later
+maintenance decision into a re-validation of the default path.
+
+Recommendation: defer until the second family has real use behind it; then
+revisit with measurements.
+
+Status: open.
 
 ## ADR process
 - A decision becomes an ADR only after explicit approval of the
@@ -902,7 +1033,8 @@ ADR index: `adr/001-default-hotkey.md` (item 7), `adr/002-engine-hosting.md` (it
 `adr/005-text-insertion-windows.md` (item 3), `adr/006-model-default-and-download.md` (item 4),
 `adr/007-chord-from-terminal-state.md` (item 9), `adr/008-pill-control.md` (item 10),
 `adr/009-liquid-glass-tokens.md` (item 8), `adr/010-runtime-packaging-and-diagnostics.md`
-(item 18, extending item 11).
+(item 18, extending item 11), `adr/011-second-engine-and-qwen3-asr.md`
+(item 19, extending items 11 and 18, post-MVP).
 
 ## Related
 

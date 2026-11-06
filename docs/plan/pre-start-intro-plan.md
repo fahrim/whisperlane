@@ -113,7 +113,10 @@ stays simple.
   JS side.
 - **React + TypeScript** — the UI.
 - **whisper.cpp (ggml)** — ASR. Vulkan on Windows (AMD/Intel), CUDA/Metal where
-  present, CPU as the floor.
+  present, CPU as the floor. The v1 default. A second companion engine built
+  from transcribe.cpp is planned after the MVP for multilingual model families
+  such as Qwen3-ASR; the whisper engine and its default model stay as they are
+  (ADR-011).
 - **Rust** for the parts that must be native: audio capture (`cpal`), global
   hotkey (`global-hotkey`), text injection (`enigo` / `SendInput` on Windows),
   tray, model manager, and the whisper binding.
@@ -198,9 +201,17 @@ whisperlane/
 - Apps: Handy, OpenWhispr, VoiceInk, Vibe, whisper-writer, SayIt, VoiceFlow,
   and the curated `awesome-voice-typing`.
 - Core: whisper.cpp, whisper-rs, cpal, global-hotkey, enigo, Tauri, Bun, React.
+  A second speech engine built from transcribe.cpp is planned after the MVP
+  (ADR-011).
 
 ---
 
 *Next step: pick the M0 scope, scaffold `apps/desktop`, and get "speak → text on
 screen" working before any polish. The still has to stand on its own before it
 moves — same rule as the other projects.*
+
+## Related
+
+- Decisions: `../08-decisions.md`, `../adr/011-second-engine-and-qwen3-asr.md`
+- Architecture: `../05-architecture.md`
+- The second engine plan: `qwen3-asr-option.md`

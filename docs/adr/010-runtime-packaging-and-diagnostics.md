@@ -129,7 +129,7 @@ Model presence is checked by exact length, not by the path existing. A
 successful download records the verified length in a `.size` sidecar beside the
 model; a file that no longer matches that record is reported as incomplete
 rather than handed to the engine. A model placed by hand has no sidecar and
-falls back to the catalog's published length. Missing and damaged are separate
+falls back to the catalog's published length. Missing and incomplete are separate
 answers on the pill, the tray, and the model row, because only one of them
 means a previous transfer went wrong.
 

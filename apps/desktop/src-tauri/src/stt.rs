@@ -69,14 +69,56 @@ const VCOMP: &str = "vcomp140.dll";
 /// DLL set beside the engine; copying that set into a version directory
 /// leaves a second `ggml` next to a static executable.
 const RUNTIME_FILES: [&str; 3] = [VULKAN_SERVER, CPU_SERVER, VCOMP];
+
+/// The second family (ADR-011): transcribe.cpp carries the multilingual
+/// model families Whisper cannot load. It has no companion DLL.
+const TRANSCRIBE_VULKAN_SERVER: &str = "transcribe-server.exe";
+const TRANSCRIBE_CPU_SERVER: &str = "transcribe-server-cpu.exe";
+const TRANSCRIBE_FILES: [&str; 2] = [TRANSCRIBE_VULKAN_SERVER, TRANSCRIBE_CPU_SERVER];
+
 /// The runtime directory keeps versions side by side; this plain file
 /// names the one the app runs. It is replaced by rename, never by a
 /// symlink, so Windows permissions and developer mode are irrelevant.
+/// Each engine family has its own pointer, so an upgrade of one cannot
+/// disturb the other.
 const CURRENT: &str = "current";
 const CURRENT_TMP: &str = "current.tmp";
+const TRANSCRIBE_CURRENT: &str = "current-transcribe";
+const TRANSCRIBE_CURRENT_TMP: &str = "current-transcribe.tmp";
 
 /// The pin this build shipped, handed over by the build script.
 const RUNTIME_PIN: &str = env!("WHISPERLANE_RUNTIME_PIN");
+const TRANSCRIBE_RUNTIME_PIN: &str = env!("WHISPERLANE_TRANSCRIBE_RUNTIME_PIN");
+
+/// One engine family: where its versions live, which pointer names the
+/// current one, which files a package carries, and the pin this build
+/// shipped. The supervisor treats every family the same.
+struct RuntimeFamily {
+    root: &'static str,
+    pointer: &'static str,
+    pointer_tmp: &'static str,
+    engines: &'static [&'static str],
+    files: &'static [&'static str],
+    pin: &'static str,
+}
+
+const WHISPER_FAMILY: RuntimeFamily = RuntimeFamily {
+    root: "runtime",
+    pointer: CURRENT,
+    pointer_tmp: CURRENT_TMP,
+    engines: &[VULKAN_SERVER, CPU_SERVER],
+    files: &RUNTIME_FILES,
+    pin: RUNTIME_PIN,
+};
+
+const TRANSCRIBE_FAMILY: RuntimeFamily = RuntimeFamily {
+    root: "runtime-transcribe",
+    pointer: TRANSCRIBE_CURRENT,
+    pointer_tmp: TRANSCRIBE_CURRENT_TMP,
+    engines: &[TRANSCRIBE_VULKAN_SERVER, TRANSCRIBE_CPU_SERVER],
+    files: &TRANSCRIBE_FILES,
+    pin: TRANSCRIBE_RUNTIME_PIN,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -134,9 +176,9 @@ pub fn app_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 /// The directory that holds every installed runtime version and the
-/// pointer naming the current one.
-fn runtime_root(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(app_dir(app)?.join("runtime"))
+/// pointer naming the current one, for one engine family.
+fn runtime_root(app: &AppHandle, family: &RuntimeFamily) -> Result<PathBuf, String> {
+    Ok(app_dir(app)?.join(family.root))
 }
 
 /// The runtime as it was installed, next to the executable.
@@ -144,12 +186,15 @@ fn runtime_root(app: &AppHandle) -> Result<PathBuf, String> {
 /// The copy the app runs from is in the data directory rather than here
 /// because a Program Files install is not writable by the user, and the
 /// engine loads libraries by relative path from its own directory.
-fn installed_runtime_dir(app: &AppHandle) -> Result<PathBuf, String> {
+fn installed_runtime_dir(
+    app: &AppHandle,
+    family: &RuntimeFamily,
+) -> Result<PathBuf, String> {
     Ok(app
         .path()
         .resource_dir()
         .map_err(|e| format!("could not resolve resource dir: {e:?}"))?
-        .join("runtime"))
+        .join(family.root))
 }
 
 /// The runtime directory this launch runs from.
@@ -157,22 +202,22 @@ fn installed_runtime_dir(app: &AppHandle) -> Result<PathBuf, String> {
 /// A pointer naming a version that is actually present wins. Anything
 /// else falls back to the flat directory older installs used, so an
 /// upgrade never leaves the app without an engine.
-fn runtime_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    Ok(resolve_runtime_dir(&runtime_root(app)?))
+fn runtime_dir(app: &AppHandle, family: &RuntimeFamily) -> Result<PathBuf, String> {
+    Ok(resolve_runtime_dir(&runtime_root(app, family)?, family))
 }
 
-fn resolve_runtime_dir(root: &Path) -> PathBuf {
-    if let Some(id) = read_current(root) {
+fn resolve_runtime_dir(root: &Path, family: &RuntimeFamily) -> PathBuf {
+    if let Some(id) = read_current(root, family) {
         let dir = root.join(id);
-        if has_server(&dir) {
+        if has_server(&dir, family) {
             return dir;
         }
     }
     root.to_path_buf()
 }
 
-fn has_server(dir: &Path) -> bool {
-    dir.join(VULKAN_SERVER).is_file() || dir.join(CPU_SERVER).is_file()
+fn has_server(dir: &Path, family: &RuntimeFamily) -> bool {
+    family.engines.iter().any(|engine| dir.join(engine).is_file())
 }
 
 /// A runtime id is a directory name, never a path: the pointer file is
@@ -188,8 +233,8 @@ fn valid_runtime_id(id: &str) -> bool {
             .any(|c| matches!(c, '/' | '\\' | ':' | '\0'))
 }
 
-fn read_current(root: &Path) -> Option<String> {
-    let text = fs::read_to_string(root.join(CURRENT)).ok()?;
+fn read_current(root: &Path, family: &RuntimeFamily) -> Option<String> {
+    let text = fs::read_to_string(root.join(family.pointer)).ok()?;
     let id = text.trim();
     valid_runtime_id(id).then(|| id.to_owned())
 }
@@ -198,12 +243,12 @@ fn read_current(root: &Path) -> Option<String> {
 /// renames it into place. `std::fs::rename` replaces an existing file on
 /// Windows, so a reader sees the old name or the new one, never a
 /// half-written file. No symlink, no developer mode, no elevation.
-fn write_current(root: &Path, id: &str) -> Result<(), String> {
+fn write_current(root: &Path, family: &RuntimeFamily, id: &str) -> Result<(), String> {
     if !valid_runtime_id(id) {
         return Err(format!("refusing an invalid runtime id: {id}"));
     }
     fs::create_dir_all(root).map_err(|e| format!("could not create {}: {e}", root.display()))?;
-    let tmp = root.join(CURRENT_TMP);
+    let tmp = root.join(family.pointer_tmp);
     {
         let mut file =
             File::create(&tmp).map_err(|e| format!("could not write {}: {e}", tmp.display()))?;
@@ -212,39 +257,62 @@ fn write_current(root: &Path, id: &str) -> Result<(), String> {
         file.sync_all()
             .map_err(|e| format!("could not flush {}: {e}", tmp.display()))?;
     }
-    fs::rename(&tmp, root.join(CURRENT))
+    fs::rename(&tmp, root.join(family.pointer))
         .map_err(|e| format!("could not switch the runtime pointer: {e}"))
 }
 
-/// Puts the installed engine in the data directory, if this build's pin
-/// is not already the current one.
+/// Puts every installed engine family in the data directory, if this
+/// build's pin is not already the current one.
 ///
 /// The copy goes to a staging directory first and only becomes the
 /// current version once it is complete, so an interrupted install leaves
 /// the previous runtime working. Existing versions are kept side by side
-/// and pruned only after the pointer has moved.
+/// and pruned only after the pointer has moved. A family that fails to
+/// install does not stop the other from working; the failure is reported.
 pub fn seed_runtime(app: &AppHandle) -> Result<(), String> {
-    let source = installed_runtime_dir(app)?;
-    let root = runtime_root(app)?;
-    match seed_from(&source, &root, RUNTIME_PIN) {
-        Ok(leftovers) => {
-            for leftover in leftovers {
-                append_engine_log(app, &format!("runtime cleanup could not remove {leftover}"));
+    let mut failures = Vec::new();
+    for family in [&WHISPER_FAMILY, &TRANSCRIBE_FAMILY] {
+        match seed_family(app, family) {
+            Ok(leftovers) => {
+                for leftover in leftovers {
+                    append_engine_log(
+                        app,
+                        &format!("{} runtime cleanup could not remove {leftover}", family.root),
+                    );
+                }
             }
-            Ok(())
-        }
-        Err(detail) => {
-            append_engine_log(app, &format!("runtime install failed: {detail}"));
-            Err(detail)
+            Err(detail) => {
+                append_engine_log(
+                    app,
+                    &format!("{} runtime install failed: {detail}", family.root),
+                );
+                failures.push(format!("{}: {detail}", family.root));
+            }
         }
     }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
+    }
+}
+
+fn seed_family(app: &AppHandle, family: &RuntimeFamily) -> Result<Vec<String>, String> {
+    let source = installed_runtime_dir(app, family)?;
+    let root = runtime_root(app, family)?;
+    seed_from(&source, &root, family.pin, family)
 }
 
 /// Returns the files and directories the cleanup could not remove. A
 /// locked obsolete file must not fail the install, but it must not be
 /// invisible either: the next start is where someone would look.
-fn seed_from(source: &Path, root: &Path, pin: &str) -> Result<Vec<String>, String> {
-    if !has_server(source) {
+fn seed_from(
+    source: &Path,
+    root: &Path,
+    pin: &str,
+    family: &RuntimeFamily,
+) -> Result<Vec<String>, String> {
+    if !has_server(source, family) {
         // Said plainly rather than guessed at: an install with no engine
         // cannot be repaired by trying harder.
         return Err(format!(
@@ -255,19 +323,19 @@ fn seed_from(source: &Path, root: &Path, pin: &str) -> Result<Vec<String>, Strin
     if !valid_runtime_id(pin) {
         return Err(format!("refusing an invalid runtime pin: {pin}"));
     }
-    let previous = read_current(root);
+    let previous = read_current(root, family);
     let installed = root.join(pin);
-    if previous.as_deref() == Some(pin) && has_server(&installed) {
-        return Ok(finish_install(root, pin, previous.as_deref()));
+    if previous.as_deref() == Some(pin) && has_server(&installed, family) {
+        return Ok(finish_install(root, pin, previous.as_deref(), family));
     }
-    if has_server(&installed) {
-        write_current(root, pin)?;
-        return Ok(finish_install(root, pin, previous.as_deref()));
+    if has_server(&installed, family) {
+        write_current(root, family, pin)?;
+        return Ok(finish_install(root, pin, previous.as_deref(), family));
     }
     let staging = root.join(format!("{pin}.new"));
     let _ = fs::remove_dir_all(&staging);
-    install_runtime_files(source, &staging)?;
-    if !has_server(&staging) {
+    install_runtime_files(source, &staging, family.files)?;
+    if !has_server(&staging, family) {
         let _ = fs::remove_dir_all(&staging);
         return Err("the staged runtime has no speech engine".to_string());
     }
@@ -277,26 +345,31 @@ fn seed_from(source: &Path, root: &Path, pin: &str) -> Result<Vec<String>, Strin
     }
     fs::rename(&staging, &installed)
         .map_err(|e| format!("could not install the runtime at {}: {e}", installed.display()))?;
-    write_current(root, pin)?;
-    Ok(finish_install(root, pin, previous.as_deref()))
+    write_current(root, family, pin)?;
+    Ok(finish_install(root, pin, previous.as_deref(), family))
 }
 
 /// Keeps the current and previous versions, drops older ones, and clears
 /// the flat files an older install used.
-fn finish_install(root: &Path, pin: &str, previous: Option<&str>) -> Vec<String> {
+fn finish_install(
+    root: &Path,
+    pin: &str,
+    previous: Option<&str>,
+    family: &RuntimeFamily,
+) -> Vec<String> {
     let mut keep = vec![pin];
     if let Some(previous) = previous
         && previous != pin
     {
         keep.push(previous);
     }
-    let mut leftovers = prune_runtimes(root, &keep);
-    leftovers.extend(remove_stale_runtime_files(&root.join(pin)));
-    leftovers.extend(remove_legacy_files(root));
+    let mut leftovers = prune_runtimes(root, &keep, family);
+    leftovers.extend(remove_stale_runtime_files(&root.join(pin), family));
+    leftovers.extend(remove_legacy_files(root, family));
     leftovers
 }
 
-fn prune_runtimes(root: &Path, keep: &[&str]) -> Vec<String> {
+fn prune_runtimes(root: &Path, keep: &[&str], family: &RuntimeFamily) -> Vec<String> {
     let mut leftovers = Vec::new();
     let Ok(entries) = fs::read_dir(root) else {
         return leftovers;
@@ -314,7 +387,7 @@ fn prune_runtimes(root: &Path, keep: &[&str]) -> Vec<String> {
         // runtime directory carries an engine; a staging directory is
         // named for the pin it will become. Anything else belongs to
         // whoever put it there.
-        if !name.ends_with(".new") && !has_server(&path) {
+        if !name.ends_with(".new") && !has_server(&path, family) {
             continue;
         }
         if let Err(e) = fs::remove_dir_all(&path) {
@@ -327,7 +400,7 @@ fn prune_runtimes(root: &Path, keep: &[&str]) -> Vec<String> {
 /// Removes the flat engine files older installs kept directly in the
 /// runtime root. Only engine-shaped files are touched; anything else a
 /// person put there survives.
-fn remove_legacy_files(root: &Path) -> Vec<String> {
+fn remove_legacy_files(root: &Path, family: &RuntimeFamily) -> Vec<String> {
     let mut leftovers = Vec::new();
     let Ok(entries) = fs::read_dir(root) else {
         return leftovers;
@@ -338,7 +411,7 @@ fn remove_legacy_files(root: &Path) -> Vec<String> {
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
-        if name == CURRENT || name == CURRENT_TMP {
+        if name == family.pointer || name == family.pointer_tmp {
             continue;
         }
         let removable = name == ".pin"
@@ -362,8 +435,12 @@ fn remove_legacy_files(root: &Path) -> Vec<String> {
 /// `whisper.dll`, and `whisper-cli.exe` in the resource directory; a
 /// blind copy would put a second `ggml` beside the static engine, which
 /// is the crash this function exists to prevent.
-pub fn install_runtime_files(source: &Path, target: &Path) -> Result<(), String> {
-    for name in RUNTIME_FILES {
+pub fn install_runtime_files(
+    source: &Path,
+    target: &Path,
+    files: &[&str],
+) -> Result<(), String> {
+    for name in files {
         if !source.join(name).is_file() {
             return Err(format!(
                 "no transcription runtime was installed at {}: missing {name}",
@@ -373,7 +450,7 @@ pub fn install_runtime_files(source: &Path, target: &Path) -> Result<(), String>
     }
     std::fs::create_dir_all(target)
         .map_err(|e| format!("could not create {}: {e}", target.display()))?;
-    for name in RUNTIME_FILES {
+    for name in files {
         std::fs::copy(source.join(name), target.join(name))
             .map_err(|e| format!("could not install runtime file {name}: {e}"))?;
     }
@@ -383,12 +460,14 @@ pub fn install_runtime_files(source: &Path, target: &Path) -> Result<(), String>
 /// Removes the DLL set an older runtime left inside a version directory.
 /// The static engine must not find a second `ggml` beside itself, so a
 /// version that was seeded from a dirty resource directory is cleaned in
-/// place on the next start.
-fn remove_stale_runtime_files(dir: &Path) -> Vec<String> {
+/// place on the next start. The transcribe family never shipped that DLL
+/// set; only its marker is stale.
+fn remove_stale_runtime_files(dir: &Path, family: &RuntimeFamily) -> Vec<String> {
     let mut leftovers = Vec::new();
     let Ok(entries) = fs::read_dir(dir) else {
         return leftovers;
     };
+    let legacy_whisper = family.root == WHISPER_FAMILY.root;
     for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_file() {
@@ -397,9 +476,10 @@ fn remove_stale_runtime_files(dir: &Path) -> Vec<String> {
         let name = entry.file_name().to_string_lossy().into_owned();
         let lower = name.to_ascii_lowercase();
         let stale = name == ".pin"
-            || lower == "whisper.dll"
-            || lower == "whisper-cli.exe"
-            || (lower.starts_with("ggml") && lower.ends_with(".dll"));
+            || (legacy_whisper
+                && (lower == "whisper.dll"
+                    || lower == "whisper-cli.exe"
+                    || (lower.starts_with("ggml") && lower.ends_with(".dll"))));
         if stale
             && let Err(e) = fs::remove_file(&path)
         {
@@ -446,7 +526,7 @@ fn vulkan_loader_present(dir: &Path) -> bool {
 }
 
 fn has_cpu_runtime(app: &AppHandle) -> bool {
-    runtime_dir(app)
+    runtime_dir(app, &WHISPER_FAMILY)
         .map(|dir| dir.join(CPU_SERVER).is_file())
         .unwrap_or(false)
 }
@@ -769,7 +849,7 @@ pub fn ensure_ready(app: &AppHandle) -> Result<u16, String> {
             inner.starting = true;
         }
     }
-    let dir = match runtime_dir(app) {
+    let dir = match runtime_dir(app, &WHISPER_FAMILY) {
         Ok(dir) => dir,
         Err(detail) => {
             mark_start_failed(app, detail.clone());
@@ -1127,6 +1207,12 @@ mod tests {
         std::fs::write(dir.join("Release").join("leftover.txt"), b"x").unwrap();
     }
 
+    fn fake_transcribe_install(dir: &Path) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join(TRANSCRIBE_VULKAN_SERVER), b"engine").unwrap();
+        std::fs::write(dir.join(TRANSCRIBE_CPU_SERVER), b"processor").unwrap();
+    }
+
     fn temp_root(name: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!("whisperlane-stt-{name}"));
         let _ = std::fs::remove_dir_all(&root);
@@ -1143,9 +1229,9 @@ mod tests {
         let data = root.join("data");
         fake_install(&source);
 
-        seed_from(&source, &data, "pin-a").unwrap();
+        seed_from(&source, &data, "pin-a", &WHISPER_FAMILY).unwrap();
 
-        assert_eq!(read_current(&data).as_deref(), Some("pin-a"));
+        assert_eq!(read_current(&data, &WHISPER_FAMILY).as_deref(), Some("pin-a"));
         assert!(data.join("pin-a").join(VULKAN_SERVER).is_file());
         assert!(data.join("pin-a").join(CPU_SERVER).is_file());
         assert!(data.join("pin-a").join(VCOMP).is_file());
@@ -1170,7 +1256,7 @@ mod tests {
         let source = root.join("install");
         let data = root.join("data");
         fake_install(&source);
-        seed_from(&source, &data, "pin-a").unwrap();
+        seed_from(&source, &data, "pin-a", &WHISPER_FAMILY).unwrap();
 
         // The state 0.8.3 could leave behind: a version directory seeded
         // from a resource directory that still carried the old DLL set.
@@ -1179,7 +1265,7 @@ mod tests {
         std::fs::write(version.join("whisper.dll"), b"old").unwrap();
         std::fs::write(version.join(".pin"), b"old").unwrap();
 
-        seed_from(&source, &data, "pin-a").unwrap();
+        seed_from(&source, &data, "pin-a", &WHISPER_FAMILY).unwrap();
 
         assert!(!version.join("ggml-vulkan.dll").exists());
         assert!(!version.join("whisper.dll").exists());
@@ -1195,7 +1281,7 @@ mod tests {
         let root = temp_root("empty");
         let source = root.join("runtime");
         std::fs::create_dir_all(&source).unwrap();
-        let err = seed_from(&source, &root.join("data"), "pin-a").unwrap_err();
+        let err = seed_from(&source, &root.join("data"), "pin-a", &WHISPER_FAMILY).unwrap_err();
         assert!(err.contains("no transcription runtime"), "{err}");
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1204,16 +1290,83 @@ mod tests {
     fn the_runtime_pin_is_one_directory_name() {
         // The marker records the pin and the staged digest; the pin is
         // the directory name, so no whitespace or path separator may
-        // travel with it.
-        assert!(!RUNTIME_PIN.is_empty());
-        assert!(
-            !RUNTIME_PIN.chars().any(char::is_whitespace),
-            "the pin carries more than its name: {RUNTIME_PIN}"
+        // travel with it. Both families follow the rule.
+        for pin in [RUNTIME_PIN, TRANSCRIBE_RUNTIME_PIN] {
+            assert!(!pin.is_empty());
+            assert!(
+                !pin.chars().any(char::is_whitespace),
+                "the pin carries more than its name: {pin}"
+            );
+            assert!(
+                !pin.chars().any(|c| matches!(c, '/' | '\\' | ':')),
+                "the pin is not a directory name: {pin}"
+            );
+        }
+    }
+
+    #[test]
+    fn families_keep_their_own_pointer_and_pruning() {
+        // The promise ADR-011 makes: upgrading one engine family cannot
+        // disturb the other.
+        let root = temp_root("families");
+        let whisper_source = root.join("install-whisper");
+        let transcribe_source = root.join("install-transcribe");
+        let whisper_data = root.join("data-runtime");
+        let transcribe_data = root.join("data-runtime-transcribe");
+        fake_install(&whisper_source);
+        fake_transcribe_install(&transcribe_source);
+
+        seed_from(&whisper_source, &whisper_data, "w-a", &WHISPER_FAMILY).unwrap();
+        seed_from(&transcribe_source, &transcribe_data, "t-a", &TRANSCRIBE_FAMILY).unwrap();
+        assert_eq!(
+            read_current(&whisper_data, &WHISPER_FAMILY).as_deref(),
+            Some("w-a")
         );
-        assert!(
-            !RUNTIME_PIN.chars().any(|c| matches!(c, '/' | '\\' | ':')),
-            "the pin is not a directory name: {RUNTIME_PIN}"
+        assert_eq!(
+            read_current(&transcribe_data, &TRANSCRIBE_FAMILY).as_deref(),
+            Some("t-a")
         );
+        assert!(whisper_data.join("w-a").join(VULKAN_SERVER).is_file());
+        assert!(
+            transcribe_data
+                .join("t-a")
+                .join(TRANSCRIBE_VULKAN_SERVER)
+                .is_file()
+        );
+        // Each family's pointer has its own name, so a reader can never
+        // mistake one family's current version for the other's.
+        assert_ne!(WHISPER_FAMILY.pointer, TRANSCRIBE_FAMILY.pointer);
+
+        // Two whisper upgrades prune the oldest whisper version only.
+        seed_from(&whisper_source, &whisper_data, "w-b", &WHISPER_FAMILY).unwrap();
+        seed_from(&whisper_source, &whisper_data, "w-c", &WHISPER_FAMILY).unwrap();
+        assert!(!whisper_data.join("w-a").exists(), "the oldest version is gone");
+        assert!(
+            transcribe_data.join("t-a").exists(),
+            "the other family was disturbed"
+        );
+        assert_eq!(
+            read_current(&transcribe_data, &TRANSCRIBE_FAMILY).as_deref(),
+            Some("t-a")
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_family_does_not_see_the_other_family_engine() {
+        let root = temp_root("family-engines");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join(VULKAN_SERVER), b"engine").unwrap();
+
+        assert!(has_server(&root, &WHISPER_FAMILY));
+        assert!(
+            !has_server(&root, &TRANSCRIBE_FAMILY),
+            "the whisper engine was mistaken for a transcribe engine"
+        );
+
+        std::fs::write(root.join(TRANSCRIBE_VULKAN_SERVER), b"engine").unwrap();
+        assert!(has_server(&root, &TRANSCRIBE_FAMILY));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -1223,10 +1376,10 @@ mod tests {
         let data = root.join("data");
         fake_install(&source);
 
-        seed_from(&source, &data, "pin-a").unwrap();
-        seed_from(&source, &data, "pin-b").unwrap();
+        seed_from(&source, &data, "pin-a", &WHISPER_FAMILY).unwrap();
+        seed_from(&source, &data, "pin-b", &WHISPER_FAMILY).unwrap();
 
-        assert_eq!(read_current(&data).as_deref(), Some("pin-b"));
+        assert_eq!(read_current(&data, &WHISPER_FAMILY).as_deref(), Some("pin-b"));
         assert!(data.join("pin-b").join(VULKAN_SERVER).is_file());
         assert!(
             data.join("pin-a").join(VULKAN_SERVER).is_file(),
@@ -1242,11 +1395,11 @@ mod tests {
         let data = root.join("data");
         fake_install(&source);
 
-        seed_from(&source, &data, "pin-a").unwrap();
-        seed_from(&source, &data, "pin-b").unwrap();
-        seed_from(&source, &data, "pin-c").unwrap();
+        seed_from(&source, &data, "pin-a", &WHISPER_FAMILY).unwrap();
+        seed_from(&source, &data, "pin-b", &WHISPER_FAMILY).unwrap();
+        seed_from(&source, &data, "pin-c", &WHISPER_FAMILY).unwrap();
 
-        assert_eq!(read_current(&data).as_deref(), Some("pin-c"));
+        assert_eq!(read_current(&data, &WHISPER_FAMILY).as_deref(), Some("pin-c"));
         assert!(data.join("pin-b").exists());
         assert!(!data.join("pin-a").exists(), "the oldest version is gone");
         let _ = std::fs::remove_dir_all(&root);
@@ -1265,9 +1418,9 @@ mod tests {
         std::fs::create_dir_all(data.join("personal")).unwrap();
         std::fs::write(data.join("personal").join("notes.txt"), b"keep me too").unwrap();
 
-        seed_from(&source, &data, "pin-a").unwrap();
+        seed_from(&source, &data, "pin-a", &WHISPER_FAMILY).unwrap();
 
-        assert_eq!(read_current(&data).as_deref(), Some("pin-a"));
+        assert_eq!(read_current(&data, &WHISPER_FAMILY).as_deref(), Some("pin-a"));
         assert!(!data.join(VULKAN_SERVER).exists(), "legacy engine remains");
         assert!(!data.join(".pin").exists(), "legacy marker remains");
         assert!(data.join("notes.txt").is_file(), "a person's file was deleted");
@@ -1294,7 +1447,7 @@ mod tests {
             .open(&locked)
             .unwrap();
 
-        let leftovers = remove_legacy_files(&root);
+        let leftovers = remove_legacy_files(&root, &WHISPER_FAMILY);
         assert_eq!(leftovers.len(), 1, "a failed removal must be reported");
         assert!(
             locked.exists(),
@@ -1308,10 +1461,10 @@ mod tests {
     #[test]
     fn the_pointer_is_replaced_without_a_temp_file() {
         let root = temp_root("pointer");
-        write_current(&root, "pin-a").unwrap();
-        write_current(&root, "pin-b").unwrap();
+        write_current(&root, &WHISPER_FAMILY, "pin-a").unwrap();
+        write_current(&root, &WHISPER_FAMILY, "pin-b").unwrap();
 
-        assert_eq!(read_current(&root).as_deref(), Some("pin-b"));
+        assert_eq!(read_current(&root, &WHISPER_FAMILY).as_deref(), Some("pin-b"));
         assert!(!root.join(CURRENT_TMP).exists(), "the temp file was left behind");
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1323,7 +1476,7 @@ mod tests {
         std::fs::write(root.join(VULKAN_SERVER), b"engine").unwrap();
         std::fs::write(root.join(CURRENT), b"../escape").unwrap();
 
-        assert_eq!(resolve_runtime_dir(&root), root);
+        assert_eq!(resolve_runtime_dir(&root, &WHISPER_FAMILY), root);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1334,7 +1487,7 @@ mod tests {
         std::fs::write(root.join(VULKAN_SERVER), b"engine").unwrap();
         std::fs::write(root.join(CURRENT), b"pin-gone").unwrap();
 
-        assert_eq!(resolve_runtime_dir(&root), root);
+        assert_eq!(resolve_runtime_dir(&root, &WHISPER_FAMILY), root);
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -1347,10 +1500,10 @@ mod tests {
         fake_install(&source);
         std::fs::create_dir_all(&empty).unwrap();
 
-        seed_from(&source, &data, "pin-a").unwrap();
-        assert!(seed_from(&empty, &data, "pin-b").is_err());
+        seed_from(&source, &data, "pin-a", &WHISPER_FAMILY).unwrap();
+        assert!(seed_from(&empty, &data, "pin-b", &WHISPER_FAMILY).is_err());
 
-        assert_eq!(read_current(&data).as_deref(), Some("pin-a"));
+        assert_eq!(read_current(&data, &WHISPER_FAMILY).as_deref(), Some("pin-a"));
         assert!(data.join("pin-a").join(VULKAN_SERVER).is_file());
         let _ = std::fs::remove_dir_all(&root);
     }

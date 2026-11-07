@@ -101,14 +101,17 @@ jobs:
       - name: Stage the transcription runtime
         shell: pwsh
         run: |
-          # The engine is pinned by tag and checksum. It travels with the
-          # source when it is committed, and is fetched when it is not:
-          # the installer must never ship without it.
-          if (-not (Test-Path 'apps/desktop/src-tauri/runtime/whisper-server.exe')) {
+          # The engines are pinned by tag and checksum, one family each.
+          # They travel with the source when they are committed, and are
+          # fetched when they are not: the installer must never ship
+          # without either family.
+          $whisper = 'apps/desktop/src-tauri/runtime/whisper-server.exe'
+          $transcribe = 'apps/desktop/src-tauri/runtime-transcribe/transcribe-server.exe'
+          if (-not (Test-Path $whisper) -or -not (Test-Path $transcribe)) {
             ./scripts/fetch-runtime.ps1 -Force
           }
-          if (-not (Test-Path 'apps/desktop/src-tauri/runtime/whisper-server.exe')) {
-            throw 'the transcription runtime is missing; the installer would ship without an engine'
+          if (-not (Test-Path $whisper) -or -not (Test-Path $transcribe)) {
+            throw 'a transcription runtime is missing; the installer would ship without an engine'
           }
 
       - name: Build the installers

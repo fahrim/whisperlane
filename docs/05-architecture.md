@@ -73,17 +73,18 @@ files the package ships; a redistributable CRT under any name, or a separate
 `whisper`/`ggml` DLL, fails the build rather than the user's first take. Each
 pair is smoke-launched before publishing.
 
-The installer bundles that pair; the application does not run it from the
-resource directory. On first use it stages the files under
-`%APPDATA%\com.whisperlane.desktop\runtime\<pin>\` and only then renames a
-plain text `current` file into place. A per-machine install under `Program
+The installer bundles each family's pair; the application does not run either
+from the resource directory. On first use it stages each family's files under
+`%APPDATA%\com.whisperlane.desktop\runtime\<pin>\` and
+`runtime-transcribe\<pin>\`, then renames a plain text pointer (`current`,
+`current-transcribe`) into place. A per-machine install under `Program
 Files` is not writable, and the engine loads libraries relative to its own
 directory, so a writable, versioned copy is the shape that works. The pointer
 is a file rather than a symlink because creating symlinks on Windows needs
 Developer Mode or elevation, and installing an engine must need neither. The
 current and previous versions stay side by side, so an upgrade that fails
 leaves the working engine untouched; older versions are pruned after the
-pointer moves.
+pointer moves, separately for each family.
 
 Startup is lazy. There is no eager probe: the first take launches the engine,
 and the banner from that launch is the backend verification. A child that

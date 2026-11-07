@@ -17,11 +17,14 @@ use std::process::Command;
 /// The marker `fetch-runtime.ps1` writes beside the staged engine,
 /// naming the pin it staged. Beside the directory rather than inside it,
 /// so the bundle's resource glob does not ship it to every install.
+/// Each engine family has its own marker and its own staged directory.
 const RUNTIME_PIN: &str = "runtime.pin";
+const TRANSCRIBE_PIN: &str = "runtime-transcribe.pin";
 
 fn main() {
     ensure_runtime();
     publish_runtime_pin();
+    publish_transcribe_pin();
     tauri_build::build();
 }
 
@@ -88,6 +91,10 @@ fn ensure_runtime() {
         "cargo:rerun-if-changed={}",
         manifest.join("runtime").display()
     );
+    println!(
+        "cargo:rerun-if-changed={}",
+        manifest.join("runtime-transcribe").display()
+    );
     let status = Command::new("powershell.exe")
         .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
         .arg(&script)
@@ -105,13 +112,23 @@ fn ensure_runtime() {
     }
 
     // The script is the gate, but the bundle cannot work without both
-    // backends. Checking here turns a packaging mistake into a build
-    // failure rather than a first-run failure on a user's machine.
+    // engines of both families. Checking here turns a packaging mistake
+    // into a build failure rather than a first-run failure on a user's
+    // machine.
     let runtime = manifest.join("runtime");
     for engine in ["whisper-server.exe", "whisper-server-cpu.exe"] {
         if !runtime.join(engine).is_file() {
             panic!(
                 "the staged transcription runtime has no {engine}. \
+                 Run scripts\\fetch-runtime.ps1 -Force to refetch it."
+            );
+        }
+    }
+    let transcribe = manifest.join("runtime-transcribe");
+    for engine in ["transcribe-server.exe", "transcribe-server-cpu.exe"] {
+        if !transcribe.join(engine).is_file() {
+            panic!(
+                "the staged transcribe runtime has no {engine}. \
                  Run scripts\\fetch-runtime.ps1 -Force to refetch it."
             );
         }
@@ -126,8 +143,17 @@ fn ensure_runtime() {
 /// have to guess from file names, which is exactly the kind of claim
 /// ADR-010 removes.
 fn publish_runtime_pin() {
+    publish_pin(RUNTIME_PIN, "WHISPERLANE_RUNTIME_PIN");
+}
+
+/// The second family's pin, handed over the same way.
+fn publish_transcribe_pin() {
+    publish_pin(TRANSCRIBE_PIN, "WHISPERLANE_TRANSCRIBE_RUNTIME_PIN");
+}
+
+fn publish_pin(marker: &str, env_name: &str) {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let pin_file = manifest.join(RUNTIME_PIN);
+    let pin_file = manifest.join(marker);
     println!("cargo:rerun-if-changed={}", pin_file.display());
     let pin = std::fs::read_to_string(&pin_file)
         .unwrap_or_else(|e| panic!("could not read {}: {e}", pin_file.display()));
@@ -137,5 +163,5 @@ fn publish_runtime_pin() {
     if pin.is_empty() {
         panic!("{} is empty", pin_file.display());
     }
-    println!("cargo:rustc-env=WHISPERLANE_RUNTIME_PIN={pin}");
+    println!("cargo:rustc-env={env_name}={pin}");
 }

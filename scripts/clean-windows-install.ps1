@@ -177,6 +177,7 @@ $localAppData = Join-Path $env:LOCALAPPDATA 'com.whisperlane.desktop'
 
 if ($KeepModels) {
     Remove-Tree (Join-Path $appData 'runtime')
+    Remove-Tree (Join-Path $appData 'runtime-transcribe')
     Remove-Tree (Join-Path $appData 'logs')
     Remove-Tree (Join-Path $oldAppData 'runtime')
     Remove-Tree $localAppData

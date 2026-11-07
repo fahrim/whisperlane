@@ -33,7 +33,8 @@
     "createUpdaterArtifacts": true,
     "publisher": "Smarteknoloji",
     "resources": {
-      "runtime/*": "runtime/"
+      "runtime/*": "runtime/",
+      "runtime-transcribe/*": "runtime-transcribe/"
     },
     "windows": {
       "nsis": {

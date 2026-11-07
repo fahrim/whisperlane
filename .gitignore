@@ -33,6 +33,8 @@ src-tauri/resources/models/
 # relative to this file and would never match the app's nested directory.
 apps/desktop/src-tauri/runtime/
 apps/desktop/src-tauri/runtime.pin
+apps/desktop/src-tauri/runtime-transcribe/
+apps/desktop/src-tauri/runtime-transcribe.pin
 
 # Logs
 *.log

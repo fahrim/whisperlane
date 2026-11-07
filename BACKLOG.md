@@ -47,7 +47,19 @@ official NSIS installer and MSI match `SHA256SUMS.txt`. The release note
 lives in `docs/releases/0.8.5.md` and feeds both the GitHub release and
 the updater manifest.
 
-The Scoop bucket manifest is at 0.8.5. The `scoop.yml` workflow updated
+v0.8.6 is published:
+https://github.com/fahrim/whisperlane/releases/tag/v0.8.6
+It adds the second companion engine, built from transcribe.cpp by
+`fahrim/transcribe-vulkan-win` and pinned as
+`engine-transcribe-2778ae4-static`, with the Qwen3-ASR 0.6B multilingual
+option. The installer carries both engine pairs; each family keeps its own
+versioned runtime directory, pointer, and pruning. The model download is
+checked against its pinned SHA-256, and a real take served by the Vulkan
+backend was verified on the RX 7700 XT. The release note lives in
+`docs/releases/0.8.6.md`; the winget manifests for 0.8.6 are in
+`packaging/winget`.
+
+The Scoop bucket manifest is at 0.8.6. The `scoop.yml` workflow updated
 `fahrim/scoop-whisperlane` automatically on the published release; its
 one-time `SCOOP_BUCKET_TOKEN` is configured. The 0.8.4 runtime cleanup
 remains part of the line: staging copies only the three shipped files,

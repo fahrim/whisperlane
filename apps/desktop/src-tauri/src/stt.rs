@@ -120,6 +120,24 @@ const TRANSCRIBE_FAMILY: RuntimeFamily = RuntimeFamily {
     pin: TRANSCRIBE_RUNTIME_PIN,
 };
 
+impl RuntimeFamily {
+    fn accelerated(&self) -> &'static str {
+        self.engines[0]
+    }
+
+    fn processor(&self) -> &'static str {
+        self.engines[1]
+    }
+}
+
+/// The engine family that runs `model` (ADR-011).
+fn family_for(model: crate::models::ModelChoice) -> &'static RuntimeFamily {
+    match model.engine {
+        crate::models::EngineFamily::Whisper => &WHISPER_FAMILY,
+        crate::models::EngineFamily::Transcribe => &TRANSCRIBE_FAMILY,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ServiceState {
@@ -494,9 +512,13 @@ fn model_path(app: &AppHandle) -> Result<PathBuf, String> {
     crate::models::model_path(app, crate::settings::model_of(app))
 }
 
-fn server_bin_in(dir: &Path, backend: Backend) -> Result<PathBuf, String> {
-    let cpu = dir.join(CPU_SERVER);
-    let vulkan = dir.join(VULKAN_SERVER);
+fn server_bin_in(
+    dir: &Path,
+    backend: Backend,
+    family: &RuntimeFamily,
+) -> Result<PathBuf, String> {
+    let cpu = dir.join(family.processor());
+    let vulkan = dir.join(family.accelerated());
     let bin = match backend {
         Backend::Cpu if cpu.is_file() => cpu,
         _ if vulkan.is_file() => vulkan,
@@ -525,9 +547,9 @@ fn vulkan_loader_present(dir: &Path) -> bool {
             .is_some_and(|path| path.is_file())
 }
 
-fn has_cpu_runtime(app: &AppHandle) -> bool {
-    runtime_dir(app, &WHISPER_FAMILY)
-        .map(|dir| dir.join(CPU_SERVER).is_file())
+fn has_cpu_runtime(app: &AppHandle, family: &RuntimeFamily) -> bool {
+    runtime_dir(app, family)
+        .map(|dir| dir.join(family.processor()).is_file())
         .unwrap_or(false)
 }
 
@@ -625,8 +647,9 @@ fn start_server(
     backend: Backend,
     port: u16,
     model: &Path,
+    family: &RuntimeFamily,
 ) -> Result<Child, String> {
-    let bin = server_bin_in(dir, backend)?;
+    let bin = server_bin_in(dir, backend, family)?;
     // A Windows user name can contain non-ASCII characters. The engine's
     // narrow argument parser turns those into '?', so the model open
     // fails before the server is ready. The 8.3 name is the same file
@@ -636,9 +659,10 @@ fn start_server(
     append_engine_log(
         app,
         &format!(
-            "=== launch backend={} exe={} port={port} pin={RUNTIME_PIN} model={} ===",
+            "=== launch backend={} exe={} port={port} pin={} model={} ===",
             backend.as_str(),
             bin.file_name().unwrap_or_default().to_string_lossy(),
+            family.pin,
             model.display()
         ),
     );
@@ -712,6 +736,7 @@ fn failure_sentence(exit: Option<u32>, log: &str, timed_out: bool) -> String {
     if lower.contains("failed to load model")
         || lower.contains("error loading model")
         || lower.contains("whisper_model_load: failed")
+        || lower.contains("could not load")
     {
         return "the speech model could not be loaded — download it again".to_string();
     }
@@ -784,6 +809,16 @@ fn pick_port() -> u16 {
 /// device. `None` means the log has not produced evidence yet; the
 /// caller must not turn that into a measured answer.
 pub fn verified_backend_from_banner(banner: &str) -> Option<Backend> {
+    // transcribe.cpp prints no device banner; its server states the
+    // backend on its own startup line (ADR-011).
+    if let Some(rest) = banner.split("transcribe-server backend=").nth(1) {
+        match rest.split_whitespace().next().unwrap_or_default() {
+            "vulkan" => return Some(Backend::Vulkan),
+            "cuda" => return Some(Backend::Cuda),
+            "cpu" => return Some(Backend::Cpu),
+            _ => {}
+        }
+    }
     if banner.contains("ggml_vulkan: Found")
         && banner.contains("Vulkan devices")
         && !banner.contains("Found 0 Vulkan devices")
@@ -803,6 +838,7 @@ pub fn verified_backend_from_banner(banner: &str) -> Option<Backend> {
 /// report, not a crash loop.
 pub fn ensure_ready(app: &AppHandle) -> Result<u16, String> {
     let chosen = crate::settings::model_of(app);
+    let family = family_for(chosen);
     let presence = crate::models::presence_of(app, chosen);
     if presence != ModelPresence::Ready {
         let msg = match presence {
@@ -832,7 +868,7 @@ pub fn ensure_ready(app: &AppHandle) -> Result<u16, String> {
             inner.child = None;
             inner.port = None;
             inner.consecutive_crashes += 1;
-            if inner.backend == Some(Backend::Vulkan) && has_cpu_runtime(app) {
+            if inner.backend == Some(Backend::Vulkan) && has_cpu_runtime(app, family) {
                 inner.backend = Some(Backend::Cpu);
                 append_engine_log(
                     app,
@@ -849,7 +885,7 @@ pub fn ensure_ready(app: &AppHandle) -> Result<u16, String> {
             inner.starting = true;
         }
     }
-    let dir = match runtime_dir(app, &WHISPER_FAMILY) {
+    let dir = match runtime_dir(app, family) {
         Ok(dir) => dir,
         Err(detail) => {
             mark_start_failed(app, detail.clone());
@@ -863,8 +899,8 @@ pub fn ensure_ready(app: &AppHandle) -> Result<u16, String> {
             return Err(detail);
         }
     };
-    let cpu_available = dir.join(CPU_SERVER).is_file();
-    let vulkan_available = dir.join(VULKAN_SERVER).is_file() && vulkan_loader_present(&dir);
+    let cpu_available = dir.join(family.processor()).is_file();
+    let vulkan_available = dir.join(family.accelerated()).is_file() && vulkan_loader_present(&dir);
     let backend = {
         let state = app
             .try_state::<SttState>()
@@ -889,7 +925,9 @@ pub fn ensure_ready(app: &AppHandle) -> Result<u16, String> {
     prepare_engine_log(
         app,
         &format!(
-            "=== whisperlane engine ===\nstarted={started}\npin={RUNTIME_PIN}\nmodel={}\nruntime={}",
+            "=== whisperlane engine ===\nstarted={started}\npin={}\nfamily={}\nmodel={}\nruntime={}",
+            family.pin,
+            family.root,
             model.display(),
             dir.display()
         ),
@@ -897,7 +935,7 @@ pub fn ensure_ready(app: &AppHandle) -> Result<u16, String> {
     let mut last_error = "the speech engine did not start".to_string();
     for (index, attempt) in attempts.iter().enumerate() {
         let port = pick_port();
-        let mut child = match start_server(app, &dir, *attempt, port, &model) {
+        let mut child = match start_server(app, &dir, *attempt, port, &model, family) {
             Ok(child) => child,
             Err(detail) => {
                 last_error = detail;
@@ -1548,10 +1586,29 @@ mod tests {
         std::fs::write(root.join(VULKAN_SERVER), b"engine").unwrap();
         std::fs::write(root.join(CPU_SERVER), b"processor").unwrap();
 
-        assert!(server_bin_in(&root, Backend::Vulkan).unwrap().ends_with(VULKAN_SERVER));
-        assert!(server_bin_in(&root, Backend::Cpu).unwrap().ends_with(CPU_SERVER));
-        assert!(server_bin_in(&root, Backend::Cuda).unwrap().ends_with(VULKAN_SERVER));
+        assert!(server_bin_in(&root, Backend::Vulkan, &WHISPER_FAMILY).unwrap().ends_with(VULKAN_SERVER));
+        assert!(server_bin_in(&root, Backend::Cpu, &WHISPER_FAMILY).unwrap().ends_with(CPU_SERVER));
+        assert!(server_bin_in(&root, Backend::Cuda, &WHISPER_FAMILY).unwrap().ends_with(VULKAN_SERVER));
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn the_engine_family_follows_the_chosen_model() {
+        assert_eq!(
+            family_for(crate::models::ModelChoice::DEFAULT).root,
+            WHISPER_FAMILY.root,
+            "the default Whisper model must run on the whisper engine"
+        );
+        let qwen = crate::models::ModelChoice::from_id("qwen3-asr-0.6b").expect("the model is offered");
+        assert_eq!(
+            family_for(qwen).root,
+            TRANSCRIBE_FAMILY.root,
+            "the multilingual model must run on its own engine"
+        );
+        assert_ne!(
+            family_for(qwen).pin, RUNTIME_PIN,
+            "the second family keeps its own pin"
+        );
     }
 
     #[test]
@@ -1646,6 +1703,19 @@ mod tests {
 
         // No banner at all is not a backend answer.
         assert_eq!(verified_backend_from_banner(""), None);
+
+        // The second family states its backend on its own startup line,
+        // because transcribe.cpp prints no device banner.
+        let transcribe_vulkan = "transcribe-server backend=vulkan device=\"AMD Radeon RX 7700 XT\" arch=qwen3_asr load_ms=991\n";
+        assert_eq!(
+            verified_backend_from_banner(transcribe_vulkan),
+            Some(Backend::Vulkan)
+        );
+        let transcribe_cpu = "transcribe-server backend=cpu device=\"AMD Ryzen 5 5500\" arch=qwen3_asr load_ms=226\n";
+        assert_eq!(
+            verified_backend_from_banner(transcribe_cpu),
+            Some(Backend::Cpu)
+        );
 
         // A zero-device line is not acceleration; the engine fell back
         // to the processor after printing it.

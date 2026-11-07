@@ -217,7 +217,8 @@ See [`brand-kit/README.md`](brand-kit/README.md) and
 
 Dual-licensed under [MIT](LICENSE-MIT) or [Apache License 2.0](LICENSE-APACHE),
 following the common Rust-ecosystem convention. Licensing texts travel with
-every distribution.
+every distribution. The speech engines, runtime components, and model weights
+carry their own notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ---
 

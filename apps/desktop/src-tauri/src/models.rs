@@ -32,9 +32,126 @@ use tauri::{AppHandle, Manager};
 
 
 
-/// Where the speech models come from: the whisper.cpp model repository,
-/// resolved through its download endpoint.
-const MODEL_SOURCE: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
+/// The companion engine that runs a model (ADR-011). Whisper models load
+/// from whisper.cpp; the multilingual families load from transcribe.cpp.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EngineFamily {
+    Whisper,
+    Transcribe,
+}
+
+/// A model the user can choose.
+///
+/// The default is first and is the one every install is expected to use;
+/// the smaller ones exist for slower hardware, and the larger one for
+/// hardware that can afford it (ADR-006). Each entry carries its own
+/// source pin because the families live in different repositories.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ModelChoice {
+    pub id: &'static str,
+    pub label: &'static str,
+    /// Which companion engine loads it.
+    pub engine: EngineFamily,
+    pub file: &'static str,
+    /// Rounded size, for the settings surface only.
+    pub size_mb: u32,
+    /// Exact length of the model as published when this catalog was
+    /// written. Used only when a file has no recorded length beside it,
+    /// which is the case for a model placed by hand.
+    pub size_bytes: u64,
+    /// The published digest, when the catalog can promise one. The
+    /// whisper.cpp table's hashes are stale upstream (ADR-006), so those
+    /// entries carry none; a model pinned to an immutable revision
+    /// carries its SHA-256 and the download is checked against it.
+    pub sha256: Option<&'static str>,
+    /// Where the file comes from, pinned per model: repository, revision.
+    pub repository: &'static str,
+    pub revision: &'static str,
+    pub is_default: bool,
+}
+
+impl ModelChoice {
+    pub const ALL: [ModelChoice; 5] = [
+        ModelChoice {
+            id: "large-v3-turbo-q5_0",
+            label: "Large v3 Turbo (default)",
+            engine: EngineFamily::Whisper,
+            file: "ggml-large-v3-turbo-q5_0.bin",
+            size_mb: 547,
+            size_bytes: 574_041_195,
+            sha256: None,
+            repository: "ggerganov/whisper.cpp",
+            revision: "main",
+            is_default: true,
+        },
+        ModelChoice {
+            id: "large-v3-turbo-q8_0",
+            label: "Large v3 Turbo, higher precision",
+            engine: EngineFamily::Whisper,
+            file: "ggml-large-v3-turbo-q8_0.bin",
+            size_mb: 834,
+            size_bytes: 874_188_075,
+            sha256: None,
+            repository: "ggerganov/whisper.cpp",
+            revision: "main",
+            is_default: false,
+        },
+        ModelChoice {
+            id: "large-v3-q5_0",
+            label: "Large v3 (slowest, most accurate)",
+            engine: EngineFamily::Whisper,
+            file: "ggml-large-v3-q5_0.bin",
+            size_mb: 1031,
+            size_bytes: 1_081_140_203,
+            sha256: None,
+            repository: "ggerganov/whisper.cpp",
+            revision: "main",
+            is_default: false,
+        },
+        ModelChoice {
+            id: "base-q5_1",
+            label: "Base (fastest, for slow hardware)",
+            engine: EngineFamily::Whisper,
+            file: "ggml-base-q5_1.bin",
+            size_mb: 57,
+            size_bytes: 59_707_625,
+            sha256: None,
+            repository: "ggerganov/whisper.cpp",
+            revision: "main",
+            is_default: false,
+        },
+        ModelChoice {
+            id: "qwen3-asr-0.6b",
+            label: "Qwen3-ASR 0.6B (multilingual)",
+            engine: EngineFamily::Transcribe,
+            file: "Qwen3-ASR-0.6B-Q8_0.gguf",
+            size_mb: 811,
+            size_bytes: 850_423_456,
+            sha256: Some("f081b2d5e23bd669d92cc331d722a8a0681943b8e6f34b48996fd5c319b5acd8"),
+            repository: "handy-computer/Qwen3-ASR-0.6B-gguf",
+            revision: "e4e16599b900eb0cb36e524514756bb92eb092b7",
+            is_default: false,
+        },
+    ];
+
+    pub const DEFAULT: ModelChoice = ModelChoice::ALL[0];
+
+    /// Resolves a chosen model. An unknown name is refused rather than
+    /// guessed: a silent fallback would transcribe with a model the
+    /// user did not pick.
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.iter().copied().find(|model| model.id == id)
+    }
+
+    pub fn url(&self) -> String {
+        format!(
+            "https://huggingface.co/{}/resolve/{}/{}",
+            self.repository, self.revision, self.file
+        )
+    }
+}
 
 /// Bytes read per chunk while downloading. Large enough to keep the
 /// network busy, small enough that progress stays responsive.
@@ -68,76 +185,6 @@ fn fetch_agent(connect: std::time::Duration, read: std::time::Duration) -> ureq:
         .timeout_connect(connect)
         .timeout_read(read)
         .build()
-}
-
-/// A model the user can choose.
-///
-/// The default is first and is the one every install is expected to use;
-/// the smaller ones exist for slower hardware, and the larger one for
-/// hardware that can afford it (ADR-006).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub struct ModelChoice {
-    pub id: &'static str,
-    pub label: &'static str,
-    pub file: &'static str,
-    /// Rounded size, for the settings surface only.
-    pub size_mb: u32,
-    /// Exact length of the model as published when this catalog was
-    /// written. Used only when a file has no recorded length beside it,
-    /// which is the case for a model placed by hand.
-    pub size_bytes: u64,
-    pub is_default: bool,
-}
-
-impl ModelChoice {
-    pub const ALL: [ModelChoice; 4] = [
-        ModelChoice {
-            id: "large-v3-turbo-q5_0",
-            label: "Large v3 Turbo (default)",
-            file: "ggml-large-v3-turbo-q5_0.bin",
-            size_mb: 547,
-            size_bytes: 574_041_195,
-            is_default: true,
-        },
-        ModelChoice {
-            id: "large-v3-turbo-q8_0",
-            label: "Large v3 Turbo, higher precision",
-            file: "ggml-large-v3-turbo-q8_0.bin",
-            size_mb: 834,
-            size_bytes: 874_188_075,
-            is_default: false,
-        },
-        ModelChoice {
-            id: "large-v3-q5_0",
-            label: "Large v3 (slowest, most accurate)",
-            file: "ggml-large-v3-q5_0.bin",
-            size_mb: 1031,
-            size_bytes: 1_081_140_203,
-            is_default: false,
-        },
-        ModelChoice {
-            id: "base-q5_1",
-            label: "Base (fastest, for slow hardware)",
-            file: "ggml-base-q5_1.bin",
-            size_mb: 57,
-            size_bytes: 59_707_625,
-            is_default: false,
-        },
-    ];
-
-    pub const DEFAULT: ModelChoice = ModelChoice::ALL[0];
-
-    /// Resolves a chosen model. An unknown name is refused rather than
-    /// guessed: a silent fallback would transcribe with a model the
-    /// user did not pick.
-    pub fn from_id(id: &str) -> Option<Self> {
-        Self::ALL.iter().copied().find(|model| model.id == id)
-    }
-
-    pub fn url(&self) -> String {
-        format!("{MODEL_SOURCE}/{}", self.file)
-    }
 }
 
 /// One offered model, as the settings surface needs it.
@@ -452,6 +499,9 @@ fn run_download(app: &AppHandle, model: ModelChoice) {
         let declared = fetch(&agent, &model.url(), &partial, app)?;
         let expected = expected_download_length(declared, model.size_bytes);
         verify_size(&partial, expected)?;
+        if let Some(digest) = model.sha256 {
+            verify_sha256(&partial, digest)?;
+        }
         std::fs::rename(&partial, &target)
             .map_err(|e| format!("could not store the model: {e}"))?;
         if let Err(detail) = record_size(&target, expected) {
@@ -563,6 +613,39 @@ fn verify_size(path: &Path, expected: u64) -> Result<(), String> {
     }
 }
 
+/// Refuses a file whose bytes do not match the digest its catalog pins.
+///
+/// A length check catches a truncated transfer; it cannot catch a transfer
+/// that completed with the wrong bytes. A model pinned to an immutable
+/// revision carries its SHA-256, and this is the check that honours it.
+fn verify_sha256(path: &Path, expected: &str) -> Result<(), String> {
+    use sha2::{Digest, Sha256};
+
+    let mut file =
+        std::fs::File::open(path).map_err(|e| format!("could not read the downloaded model: {e}"))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0u8; CHUNK];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|e| format!("could not read the downloaded model: {e}"))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    let actual: String = hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    if actual == expected.to_ascii_lowercase() {
+        Ok(())
+    } else {
+        Err("the model download did not match its pinned checksum — not installed".to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -593,14 +676,58 @@ mod tests {
             assert!(model.size_mb > 0, "{} has no size", model.id);
             assert!(model.size_bytes > 0, "{} has no exact size", model.id);
             assert!(!model.label.is_empty(), "{} has no label", model.id);
-            assert!(model.file.ends_with(".bin"), "{} is not a model file", model.id);
+            assert!(
+                model.file.ends_with(".bin") || model.file.ends_with(".gguf"),
+                "{} is not a model file",
+                model.id
+            );
+            assert!(!model.repository.is_empty(), "{} has no source", model.id);
+            assert!(!model.revision.is_empty(), "{} has no revision", model.id);
+            if let Some(digest) = model.sha256 {
+                assert_eq!(digest.len(), 64, "{} has a malformed digest", model.id);
+            }
         }
     }
 
     #[test]
-    fn download_urls_come_from_the_official_model_repository() {
+    fn the_multilingual_model_is_pinned_to_its_own_source() {
+        let qwen = ModelChoice::from_id("qwen3-asr-0.6b").expect("the model is offered");
+        assert_eq!(qwen.engine, EngineFamily::Transcribe);
+        assert!(qwen.url().contains("handy-computer/Qwen3-ASR-0.6B-gguf"));
+        assert!(
+            qwen.url()
+                .contains("e4e16599b900eb0cb36e524514756bb92eb092b7"),
+            "the file is pinned to an immutable revision"
+        );
+        assert!(
+            qwen.sha256.is_some(),
+            "a pinned model carries the digest it is verified against"
+        );
+        // The Whisper entries keep the whisper repository and carry no
+        // digest, because that upstream table is regenerated (ADR-006).
+        let whisper = ModelChoice::DEFAULT;
+        assert_eq!(whisper.engine, EngineFamily::Whisper);
+        assert!(whisper.url().contains("ggerganov/whisper.cpp"));
+        assert_eq!(whisper.sha256, None);
+    }
+
+    #[test]
+    fn a_wrong_digest_is_refused() {
+        let path = std::env::temp_dir().join("whisperlane-sha-check.bin");
+        std::fs::write(&path, b"hello").unwrap();
+
+        // sha256("hello")
+        let expected = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+        assert!(verify_sha256(&path, expected).is_ok());
+        assert!(verify_sha256(&path, &"0".repeat(64)).is_err());
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn download_urls_come_from_each_models_pinned_source() {
         let url = ModelChoice::DEFAULT.url();
-        assert!(url.starts_with(MODEL_SOURCE), "unexpected source: {url}");
+        assert!(url.starts_with("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/"));
         assert!(url.ends_with(ModelChoice::DEFAULT.file));
     }
 
